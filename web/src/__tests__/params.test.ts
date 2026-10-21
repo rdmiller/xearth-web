@@ -18,6 +18,12 @@ describe('parseSettings', () => {
     expect(s.time?.toISOString()).toBe('2026-06-21T08:24:00.000Z');
   });
 
+  it('reads the star mode', () => {
+    expect(parseSettings('?stars=photo').stars).toBe('photo');
+    expect(parseSettings('?stars=0').stars).toBe('off');
+    expect(parseSettings('?stars=1').stars).toBe('on');
+  });
+
   it('ignores junk values', () => {
     const d = defaults();
     const s = parseSettings('?view=mars&mag=abc&time=yesterday', d);
@@ -31,7 +37,7 @@ describe('toQuery', () => {
   it('round-trips and omits defaults', () => {
     const d = defaults();
     expect(toQuery(d, d)).toBe('');
-    const s = { ...d, view: 'moon' as const, mag: 1.5, stars: false };
+    const s = { ...d, view: 'moon' as const, mag: 1.5, stars: 'photo' as const };
     const q = toQuery(s, d);
     expect(q).toContain('view=moon');
     expect(q).not.toContain('lat=');

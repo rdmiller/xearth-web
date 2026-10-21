@@ -1,8 +1,11 @@
-// WebGL2 plumbing: one program, one full-screen triangle, five textures.
+// WebGL2 plumbing: a star point pass, then the globe as one full-screen
+// triangle (four textures) blended over it.
 
+import type { StarCatalog } from '../stars';
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
+import { StarLayer } from './stars';
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -15,7 +18,9 @@ export interface FrameState {
   clouds: boolean;
   lights: boolean;
   grid: boolean;
-  stars: boolean;
+  /** Star layer, or null when stars are off. */
+  stars: { frame: Float32Array; focal: number; magShift: number } | null;
+  dpr: number;
 }
 
 type Slot = 'day' | 'night' | 'cloudPrev' | 'cloudCur';
@@ -26,6 +31,8 @@ export class GlobeRenderer {
   readonly gl: WebGL2RenderingContext;
   readonly maxTextureSize: number;
   private readonly program: WebGLProgram;
+  private readonly vao: WebGLVertexArrayObject;
+  private readonly stars: StarLayer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -40,13 +47,17 @@ export class GlobeRenderer {
     this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
     this.program = link(gl, VERT, fragSrc);
+    this.stars = new StarLayer(gl, (vs, fs) => link(gl, vs, fs));
 
+    this.vao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.vao);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(this.program, 'aPos');
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
     gl.useProgram(this.program);
     const blank = (rgba: number[]) => {
@@ -112,6 +123,10 @@ export class GlobeRenderer {
     return this.loaded.cloudCur;
   }
 
+  setStars(catalog: StarCatalog) {
+    this.stars.setCatalog(catalog);
+  }
+
   /** Match the drawing buffer to the canvas's CSS size × devicePixelRatio. */
   resize(): boolean {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -127,7 +142,20 @@ export class GlobeRenderer {
     const gl = this.gl;
     const { camera: cam } = f;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.disable(gl.BLEND);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (f.stars) {
+      this.stars.draw(
+        { camera: cam, radiusPx: f.radiusPx, dpr: f.dpr, ...f.stars },
+        [this.canvas.width, this.canvas.height],
+      );
+    }
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.program);
+    gl.bindVertexArray(this.vao);
     for (const slot of Object.keys(UNIT) as Slot[]) {
       gl.activeTexture(gl.TEXTURE0 + UNIT[slot]);
       gl.bindTexture(gl.TEXTURE_2D, this.textures[slot]);
@@ -146,8 +174,8 @@ export class GlobeRenderer {
     gl.uniform1f(this.u('uCloudOn'), f.clouds && this.loaded.cloudCur ? 1 : 0);
     gl.uniform1f(this.u('uLights'), f.lights ? 1 : 0);
     gl.uniform1f(this.u('uGrid'), f.grid ? 1 : 0);
-    gl.uniform1f(this.u('uStars'), f.stars ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
   }
 }
 

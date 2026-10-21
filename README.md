@@ -9,6 +9,11 @@ global cloud layer refreshed every hour from geostationary satellites.
   through civil twilight into NASA Black Marble city lights.
 - **Views** — xearth's `fixed`, `sunrel`, `orbit` and `moon` positions; orthographic by
   default, perspective with `dist`. Drag to look around, scroll to zoom.
+- **Stars** — the ~9,100 naked-eye stars of the Yale Bright Star Catalogue, placed in the
+  real sky (precessed to date and turned with sidereal time), so the constellations behind
+  the globe are the right ones and move with the view. Magnitude sets both brightness and
+  dot size, B−V sets a gentle blackbody tint, and `stars=photo` dims them the way a camera
+  exposed for the sunlit Earth would.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), converted hourly to an equirectangular alpha map and cross-faded in.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
@@ -18,7 +23,8 @@ global cloud layer refreshed every hour from geostationary satellites.
 
 | Keys | Action |
 |---|---|
-| `C` `S` `N` `G` `M` `L` | clouds, stars, city lights, grid, markers, label |
+| `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
+| `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `5` | dusk line down the middle · `V` cycles modes · `Home` back over your time zone |
 | arrows (`Shift` = faster) | look around; in the Sun-facing view they shift the offset from the Sun |
@@ -37,6 +43,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/view.ts        view modes, camera, projection
   src/renderer/      full-screen ray-sphere shader
   src/cloudSync.ts   polls clouds/latest.json, hands new maps to the renderer
+  src/stars.ts       star frame, magnitude → brightness/size, B−V → colour
+  public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json
 .github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages
@@ -69,7 +77,8 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `mag`, `rot` | size, rotation (° counter-clockwise) | 1, 0 |
 | `wait` | seconds between redraws | 60 |
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
-| `clouds`, `lights`, `grid`, `markers`, `stars`, `label` | `0` / `1` | 1,1,0,1,1,1 |
+| `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
+| `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
 | `cloudsrc` | folder holding `latest.json` (e.g. an R2/S3 bucket) | `clouds/` |
 
 ## How the cloud map is made
@@ -91,9 +100,28 @@ GMGSI_LW files (`s3://noaa-gmgsi-pds/GMGSI_LW/YYYY/MM/DD/HH/`) are 4999×3000 Me
 Infrared can't see low warm cloud (marine stratocumulus reads faint) and cold high terrain can
 read as thin cloud. Both are limits of a single IR channel.
 
+## How the stars are drawn
+
+- **Where:** J2000 catalogue positions go through astronomy-engine's precession/nutation
+  matrix and Greenwich apparent sidereal time into the Earth-fixed frame, the same frame as
+  the globe. Perspective views use the true focal length. Orthographic views have no real
+  field of view, so the sky borrows one (~30° across the shorter side).
+- **How bright:** Sirius is ~1,500× a magnitude 6.5 star, which no screen can show. Planetarium
+  software compresses that range, and so does this: `t = (6.5 − V) / 8` sets both the peak
+  (`0.07 + 0.93·t^0.7`) and a Gaussian dot width (`0.55 + 1.6·t^1.8` px). Faint stars stay
+  sub-pixel dust and only the brightest few dozen get a visible glow. Stars fade out over the
+  magnitude past 6.5.
+- **Colour:** B−V gives an effective temperature (Ballesteros 2012), then a blackbody colour,
+  pulled 30% of the way toward white.
+- **`stars=photo`:** dims every star by `16 · f^0.6` magnitudes, where `f` is the share of the
+  screen covered by sunlit Earth. Faint stars go first, and the night side brings them all back.
+- No twinkling: that comes from Earth's atmosphere, so it doesn't happen in space.
+
 ## Data and credits
 
 - Earth imagery: NASA Visible Earth — Blue Marble Next Generation (Reto Stöckli, NASA Earth
   Observatory) and Black Marble 2016. Public domain.
+- Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
+  (catalogue V/50).
 - Clouds: NOAA/NESDIS Global Mosaic of Geostationary Satellite Imagery (GMGSI) via the NOAA
   Open Data Dissemination program. Use does not imply NOAA endorsement.

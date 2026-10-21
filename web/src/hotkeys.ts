@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type Settings } from './params';
+import { defaults, type Settings, type StarMode } from './params';
 import { wrapLon } from './vec';
 import type { ViewMode } from './view';
 
@@ -64,7 +64,14 @@ export const VIEW_LABELS: Record<ViewMode, string> = {
 };
 const VIEW_ORDER: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon'];
 
-type Layer = 'clouds' | 'stars' | 'lights' | 'grid' | 'markers' | 'label';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label';
+
+const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
+export const STAR_LABELS: Record<StarMode, string> = {
+  on: 'Stars on',
+  photo: 'Stars: camera exposure',
+  off: 'Stars off',
+};
 
 function layer(key: string, field: Layer, name: string): Hotkey {
   return {
@@ -138,7 +145,17 @@ const panKey = (key: string, arrow: string, dLat: number, dLon: number): Hotkey 
 
 export const HOTKEYS: readonly Hotkey[] = [
   layer('c', 'clouds', 'Clouds'),
-  layer('s', 'stars', 'Stars'),
+  {
+    keys: ['s'],
+    label: 'S',
+    description: 'Stars: on → camera exposure → off',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_STARS[ctx.settings.stars];
+      ctx.update({ stars: next });
+      ctx.toast(STAR_LABELS[next]);
+    },
+  },
   layer('n', 'lights', 'City lights'),
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),

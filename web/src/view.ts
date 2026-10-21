@@ -84,6 +84,18 @@ export function cameraFor(s: ViewSettings, date: Date): Camera {
 }
 
 /**
+ * Orthographic views have no real field of view, so the star layer borrows
+ * one: the shorter screen side spans ~30° at mag 1 (the disc is drawn 0.9 of
+ * that side, so its half-width is 1/0.9 Earth radii). Perspective views use
+ * the true focal length, which keeps the stars and the globe consistent.
+ */
+export const ORTHO_SKY_FOCAL = 1 / 0.9 / Math.tan(15 * DEG);
+
+export function skyFocal(cam: Camera): number {
+  return cam.dist ? cam.focal : ORTHO_SKY_FOCAL;
+}
+
+/**
  * Project a point on the unit sphere to screen units (Earth radii, y up, disc
  * centred at the origin). `visible` is false on the far side.
  */

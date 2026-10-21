@@ -7,9 +7,10 @@ import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContex
 import { drawOverlay } from './overlay';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
+import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
 import { fromLatLon } from './vec';
-import { cameraFor, viewerLatLon } from './view';
+import { cameraFor, skyFocal, viewerLatLon } from './view';
 
 const BASE = import.meta.env.BASE_URL;
 const FADE_MS = 2500;
@@ -80,6 +81,17 @@ loadImage(nightTextureUrl(BASE), renderer.maxTextureSize)
     requestRedraw();
   });
 
+fetch(`${BASE}stars.json`)
+  .then((r) => {
+    if (!r.ok) throw new Error(`${r.status} stars.json`);
+    return r.json();
+  })
+  .then((json) => {
+    renderer.setStars(decodeCatalog(json));
+    requestRedraw();
+  })
+  .catch((err) => console.warn('stars:', err));
+
 // ---- clouds -----------------------------------------------------------------
 let cloudStatus: CloudStatus = { state: 'idle' };
 let fadeStart = 0;
@@ -130,15 +142,22 @@ function frame() {
 
   const camera = cameraFor(settings, date);
   const sun = subsolarPoint(date);
+  const sunDir = fromLatLon(sun.lat, sun.lon);
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
+  const radiusPx = radiusCss() * scale;
+  const magShift =
+    settings.stars === 'photo'
+      ? photoMagShift(litScreenFraction(radiusPx, globeCanvas.width, globeCanvas.height, camera.dir, sunDir))
+      : 0;
   renderer.render({
     camera,
-    sun: fromLatLon(sun.lat, sun.lon),
-    radiusPx: radiusCss() * scale,
+    sun: sunDir,
+    radiusPx,
     clouds: settings.clouds,
     lights: settings.lights,
     grid: settings.grid,
-    stars: settings.stars,
+    stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
+    dpr: scale,
   });
   drawOverlay(overlayCanvas, {
     camera,

@@ -3,6 +3,9 @@
 
 import type { ViewMode, ViewSettings } from './view';
 
+/** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
+export type StarMode = 'on' | 'off' | 'photo';
+
 export interface Settings extends ViewSettings {
   /** Disc diameter as a fraction of 90% of the window's shorter side. */
   mag: number;
@@ -12,7 +15,7 @@ export interface Settings extends ViewSettings {
   lights: boolean;
   grid: boolean;
   markers: boolean;
-  stars: boolean;
+  stars: StarMode;
   label: boolean;
   /** Fixed start time (ISO), or null for "now". */
   time: Date | null;
@@ -44,7 +47,7 @@ export function defaults(): Settings {
     lights: true,
     grid: false,
     markers: true,
-    stars: true,
+    stars: 'on',
     label: true,
     time: null,
     speed: 1,
@@ -59,10 +62,19 @@ function num(q: URLSearchParams, key: string, fallback: number, min = -Infinity,
   return Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback;
 }
 
+const FALSY = ['0', 'false', 'off', 'no'];
+
 function bool(q: URLSearchParams, key: string, fallback: boolean): boolean {
   const raw = q.get(key);
   if (raw === null) return fallback;
-  return !['0', 'false', 'off', 'no'].includes(raw.toLowerCase());
+  return !FALSY.includes(raw.toLowerCase());
+}
+
+function starMode(q: URLSearchParams, fallback: StarMode): StarMode {
+  const raw = q.get('stars')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'photo') return 'photo';
+  return FALSY.includes(raw) ? 'off' : 'on';
 }
 
 export function parseSettings(search: string, base: Settings = defaults()): Settings {
@@ -84,7 +96,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     lights: bool(q, 'lights', base.lights),
     grid: bool(q, 'grid', base.grid),
     markers: bool(q, 'markers', base.markers),
-    stars: bool(q, 'stars', base.stars),
+    stars: starMode(q, base.stars),
     label: bool(q, 'label', base.label),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),

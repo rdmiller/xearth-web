@@ -59,7 +59,6 @@ describe('matchHotkey', () => {
 describe('layer toggles', () => {
   it.each([
     ['c', 'clouds'],
-    ['s', 'stars'],
     ['n', 'lights'],
     ['g', 'grid'],
     ['m', 'markers'],
@@ -72,6 +71,15 @@ describe('layer toggles', () => {
     expect(h.ctx.toasts.at(-1)).toMatch(before ? / off$/ : / on$/);
     h.press(key);
     expect(h.s[field]).toBe(before);
+  });
+});
+
+describe('S cycles the star modes', () => {
+  it('on → camera exposure → off → on', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('s'), h.s.stars));
+    expect(seen).toEqual(['photo', 'off', 'on']);
+    expect(h.ctx.toasts).toEqual(['Stars: camera exposure', 'Stars off', 'Stars on']);
   });
 });
 

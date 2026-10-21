@@ -2,7 +2,8 @@
 // One full-screen pass: a ray per pixel, intersected with the unit sphere.
 // Orthographic (uDist == 0, like xearth) or perspective from uDist radii.
 // Everything is computed without divergent branches so the limb can be
-// antialiased by blending globe and sky with a coverage term.
+// antialiased with a coverage term. Output is premultiplied (alpha = disc
+// coverage) and blended over the star layer drawn underneath.
 precision highp float;
 
 uniform vec2 uRes;
@@ -24,17 +25,10 @@ uniform float uCloudMix;   // 0 → prev, 1 → cur
 uniform float uCloudOn;
 uniform float uLights;
 uniform float uGrid;
-uniform float uStars;
 
 out vec4 outColor;
 
 const float PI = 3.14159265359;
-
-float hash(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
 
 vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 
@@ -66,15 +60,9 @@ void main() {
   float t = -b - sqrt(max(h, 0.0));
   vec3 n = normalize(ro + t * rd);
 
-  // ---- sky ---------------------------------------------------------------
-  vec3 sky = vec3(0.0);
-  if (uStars > 0.5) {
-    vec2 cell = floor(gl_FragCoord.xy / 2.0);
-    float s = step(0.998, hash(cell));
-    sky += vec3(0.85, 0.9, 1.0) * s * (0.35 + 0.65 * hash(cell + 7.0));
-  }
+  // ---- sky: just the atmosphere's glow past the limb (stars are their own pass)
   float glowLit = smoothstep(-0.3, 0.35, dot(normalize(closest), uSun));
-  sky += vec3(0.30, 0.55, 1.0) * 0.55 * exp(-max(dq - 1.0, 0.0) * 22.0) * glowLit;
+  vec3 glow = vec3(0.30, 0.55, 1.0) * 0.55 * exp(-max(dq - 1.0, 0.0) * 22.0) * glowLit;
 
   // ---- surface -----------------------------------------------------------
   float lat = asin(clamp(n.z, -1.0, 1.0));
@@ -125,7 +113,9 @@ void main() {
   }
 
   // ---- composite ---------------------------------------------------------
+  // Premultiplied: the globe covers the stars; the glow adds over them.
   float cover = clamp((1.0 - dq) * uRadiusPx + 0.5, 0.0, 1.0);
-  vec3 outLin = mix(sky, col, cover);
-  outColor = vec4(pow(outLin, vec3(1.0 / 2.2)), 1.0);
+  vec3 globe = pow(col, vec3(1.0 / 2.2));
+  vec3 halo = pow(glow, vec3(1.0 / 2.2));
+  outColor = vec4(globe * cover + halo * (1.0 - cover), cover);
 }
