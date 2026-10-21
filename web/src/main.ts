@@ -8,6 +8,7 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
+import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
   decodeFires,
   fireMinIntensity,
@@ -410,6 +411,32 @@ let aurora: AuroraGrid | undefined;
 let stormManifest: StormManifest | undefined;
 let firePoints: FirePoints | undefined;
 let quakes: Quake[] = [];
+let spaceWeather: SpaceWeather | undefined;
+
+// The SUVI Sun image (~1 MB) is fetched only while the Sun is actually in frame.
+const SUN_IMAGE_EVERY_MS = 15 * 60_000;
+let sunImageAt = 0;
+let sunImageTime: string | undefined;
+let sunImageLoading = false;
+
+async function loadSunImage() {
+  if (sunImageLoading || Date.now() - sunImageAt < SUN_IMAGE_EVERY_MS) return;
+  sunImageLoading = true;
+  try {
+    const r = await fetch(SUVI_URL, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`${r.status} ${SUVI_URL}`);
+    const modified = r.headers.get('last-modified');
+    renderer.setSun(await createImageBitmap(await r.blob()), SUVI_LIMB);
+    sunImageTime = modified ? new Date(modified).toISOString().slice(11, 16) : undefined;
+    sunImageAt = Date.now();
+    requestRedraw();
+  } catch (err) {
+    console.warn('sun image:', err);
+    sunImageAt = Date.now() - SUN_IMAGE_EVERY_MS + 60_000; // retry in a minute
+  } finally {
+    sunImageLoading = false;
+  }
+}
 
 async function fetchJson(url: string): Promise<unknown> {
   const r = await fetch(url, { cache: 'no-cache' });
@@ -429,6 +456,8 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       if (!isOvation(o)) throw new Error('not an OVATION aurora forecast');
       aurora = decodeOvation(o);
       renderer.setAurora(aurora);
+      // Space weather drives the aurora, so it refreshes with it.
+      spaceWeather = await fetchSpaceWeather(fetchJson);
     },
   },
   storms: {
@@ -598,7 +627,12 @@ function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, 
     const p = placeBody(camera, focal, e.pos, e.ang * settings.bodyscale);
     markers.push({
       kind: e.kind,
-      label: e.kind === 'sun' ? 'SUN' : `MOON · ${Math.round(sky.moonLit * 100)}% LIT`,
+      label:
+        e.kind === 'sun'
+          ? sunImageTime
+            ? `SUN · SUVI 304 Å ${sunImageTime}Z`
+            : 'SUN'
+          : `MOON · ${Math.round(sky.moonLit * 100)}% LIT`,
       x: p.x,
       y: p.y,
       radius: p.radius,
@@ -625,6 +659,7 @@ function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, 
       moonFrame: e.kind === 'moon' ? sky.moonFrame : undefined,
     });
   }
+  if (draws.some((d) => d.kind === 'sun')) void loadSunImage();
   return { draws, markers, sunInShot };
 }
 
@@ -717,6 +752,7 @@ function frame(now: number) {
     storms: stormOverlays(),
     quakes: quakeOverlays(),
     hazardLine: hazardLine(),
+    spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps
       ? {
           summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),

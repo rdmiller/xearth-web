@@ -31,6 +31,9 @@ uniform vec3 uMy;
 uniform vec3 uMz;
 uniform sampler2D uMoonTex;
 uniform float uHasTex;
+uniform sampler2D uSunTex;   // GOES SUVI image, Sun centred
+uniform float uHasSunTex;
+uniform float uSunLimb;      // limb radius as a fraction of the image width
 out vec4 outColor;
 const float PI = 3.14159265359;
 void main() {
@@ -42,8 +45,15 @@ void main() {
     vec3 disc = vec3(1.0, 0.97, 0.9) * (0.4 + 0.6 * mu);
     float edge = 1.0 - smoothstep(0.6 * uQuad, uQuad, r);
     float glow = 0.55 * pow(1.0 / max(r, 1.0), 1.6) * edge;
-    vec3 col = disc * cover + vec3(1.0, 0.82, 0.55) * glow * (1.0 - cover);
-    outColor = vec4(col, 0.0); // additive
+    vec3 halo = vec3(1.0, 0.82, 0.55) * glow * (1.0 - cover);
+    if (uHasSunTex > 0.5 && r < 1.45) {
+      // GOES SUVI 304 Å: active regions and filaments on the disc, prominences just
+      // off the limb — faded out before the image's caption (~1.5 solar radii below).
+      vec3 img = texture(uSunTex, vec2(0.5 + vQ.x * uSunLimb, 0.5 - vQ.y * uSunLimb)).rgb;
+      disc = img * 1.35;
+      halo += img * (1.0 - smoothstep(1.15, 1.45, r)) * (1.0 - cover) * 0.9;
+    }
+    outColor = vec4(disc * cover + halo, 0.0); // additive
     return;
   }
   if (cover <= 0.0) discard;
@@ -81,6 +91,9 @@ export class BodyLayer {
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly moonTex: WebGLTexture;
   private hasMoonTex = false;
+  private readonly sunTex: WebGLTexture;
+  private hasSunTex = false;
+  private sunLimb = 0.3;
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -96,6 +109,22 @@ export class BodyLayer {
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
     this.moonTex = gl.createTexture()!;
+    this.sunTex = gl.createTexture()!;
+  }
+
+  /** A full-disc solar image with the Sun centred; `limb` = limb radius / image width. */
+  setSunTexture(image: TexImageSource, limb: number) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.sunTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasSunTex = true;
+    this.sunLimb = limb;
   }
 
   private u(name: string) {
@@ -125,6 +154,11 @@ export class BodyLayer {
     gl.bindTexture(gl.TEXTURE_2D, this.moonTex);
     gl.uniform1i(this.u('uMoonTex'), 4);
     gl.uniform1f(this.u('uHasTex'), this.hasMoonTex ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.sunTex);
+    gl.uniform1i(this.u('uSunTex'), 6);
+    gl.uniform1f(this.u('uHasSunTex'), this.hasSunTex ? 1 : 0);
+    gl.uniform1f(this.u('uSunLimb'), this.sunLimb);
     gl.enable(gl.BLEND);
     for (const b of bodies) {
       // The Sun's glow needs room; the Moon's quad just covers the disc.

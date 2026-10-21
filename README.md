@@ -14,6 +14,8 @@ global cloud layer refreshed every hour from geostationary satellites.
   the globe are the right ones and move with the view. Magnitude sets both brightness and
   dot size, B−V sets a gentle blackbody tint, and `stars=photo` dims them the way a camera
   exposed for the sunlit Earth would.
+- **Space weather:** Kp (with NOAA G-scale storm level), GOES X-ray class and the last flare,
+  and solar wind speed and Bz, from NOAA SWPC. The Sun disc shows the live GOES SUVI 304 Å image.
 - **Sun and Moon:** both are drawn at their true positions and angular size (~0.5°), behind
   the globe like the stars. The Sun is a limb-darkened disc with a glow. The Moon uses NASA's
   LRO colour map, near side to Earth, lit by the real Sun (so it shows its phase) with faint
@@ -34,10 +36,12 @@ global cloud layer refreshed every hour from geostationary satellites.
     by age, with labels on the largest.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
-  The ~10,600 Starlinks are drawn as a point cloud. All are propagated live with SGP4 from
+  The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
+  (via CelesTrak supplemental GP), which include newly launched ones not yet catalogued. All are propagated live with SGP4 from
   CelesTrak elements, hidden behind the Earth, and dimmed in its shadow.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
-  Himawari), converted hourly to an equirectangular alpha map and cross-faded in.
+  Himawari), plus its visible band by day for the low cloud infrared misses, converted
+  hourly to an equirectangular alpha map and cross-faded in.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
 
@@ -144,8 +148,28 @@ GMGSI_LW files (`s3://noaa-gmgsi-pds/GMGSI_LW/YYYY/MM/DD/HH/`) are 4999×3000 Me
    view) with a deliberately featureless haze that fades out of the last reliable rows.
 5. Writes a WebP, then `latest.json` atomically, and keeps the last three maps.
 
-Infrared can't see low warm cloud (marine stratocumulus reads faint) and cold high terrain can
-read as thin cloud. Both are limits of a single IR channel.
+### Day side: the visible band
+
+Infrared can't see low, warm cloud: marine stratocumulus reads faint or clear. The same hour's
+GMGSI visible file fills that in by day.
+1. **Clear-sky table.** For every bin of (Blue Marble surface brightness × sun height ×
+   geostationary satellite), the 20th-percentile visible brightness among IR-clear pixels,
+   rebuilt from each scene.
+2. **Visible alpha** is brightness above that expectation, and **final alpha =
+   max(IR, visible)**.
+3. **Fading.** The visible contribution fades as the Sun gets low (nothing below ~5° elevation)
+   and within ~12–30° of sunglint on the ocean. Glint is computed per pixel against the nearest
+   of GOES-West, GOES-East, Meteosat 0°, Meteosat IODC and Himawari.
+4. **Dark surfaces only.** The visible band is used only where the surface is dark (Blue Marble
+   luminance < ~0.22). Over deserts, salt flats, snow and ice, cloud and ground differ too
+   little in this band. On 2026-10-21 18Z an unrestricted blend put 0.6–0.9 "cloud" on the
+   clear Altiplano and Salar de Uyuni, so those areas stay infrared only.
+
+With the dark-surface rule, at 18Z: Peru/Chile stratocumulus 0.09 → 0.23, Southern Ocean by day
+0.25 → 0.73, Amazon afternoon cumulus 0.48 → 0.66, while Uyuni, the Atacama, the Sonoran desert
+and Greenland are unchanged. Night and dusk low cloud is still infrared-limited: the southeast
+Atlantic deck at dusk stayed at 0.02. The cloud job needs the month's Blue Marble
+(`textures/day-MM.jpg` beside `--out`, or `--surface`); without it, it uses infrared only.
 
 ## How the stars are drawn
 
@@ -166,8 +190,11 @@ read as thin cloud. Both are limits of a single IR channel.
 
 ## How the satellites work
 
-- **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites and
-  the Starlink group. It keeps the 11 numbers SGP4 needs per satellite (1.1 MB, ~400 KB
+- **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites.
+  Starlink comes from CelesTrak's supplemental GP, fitted to SpaceX's own published
+  ephemerides: more accurate than the catalogue, and it includes satellites not yet
+  catalogued (499 under temporary IDs on 2026-10-21). If that fails it falls back to the
+  catalogue group, and the manifest's `groupSources` records which was used. It keeps the 11 numbers SGP4 needs per satellite (1.1 MB, ~400 KB
   gzipped) and publishes `satellites/latest.json`. CelesTrak updates every 2 hours and answers
   a repeat download with HTTP 403 "has not updated", so the pipeline refetches only when its
   file is over 3 hours old, and reuses the previous data on that 403. The deploy workflow
@@ -212,6 +239,8 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Layer | Source | Fetched by | Every |
 |---|---|---|---|
 | Aurora | NOAA SWPC OVATION (1° grid, ~156 KB gzipped) | browser | 10 min |
+| Space weather | NOAA SWPC Kp, latest flare, solar-wind summaries (< 1 KB each) | browser, with the aurora | 10 min |
+| Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
 | Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 30 min |
@@ -277,7 +306,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
-- Aurora: NOAA Space Weather Prediction Center (OVATION). Earthquakes: USGS. Tropical cyclones:
+- Aurora, space weather and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
   Earth Science Data and Information System (ESDIS)."

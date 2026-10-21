@@ -297,6 +297,8 @@ export interface OverlayState {
   quakes?: QuakeOverlay[];
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
+  /** Kp, X-ray class, solar wind. */
+  spaceLine?: string;
   perf?: PerfOverlay;
   note?: string;
 }
@@ -674,9 +676,12 @@ function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
     if (onScreen) {
       ctx.globalAlpha = b.occluded ? 0.45 : 0.95;
       ctx.fillStyle = color;
-      ctx.textAlign = 'left';
       const text = b.occluded ? `${b.label} · BEHIND EARTH` : b.label;
-      ctx.fillText(text, px + Math.max(r, 4) + (b.kind === 'sun' ? 14 : 8), py);
+      const gap = Math.max(r, 4) + (b.kind === 'sun' ? 14 : 8);
+      // Right of the disc, unless that would run off the screen.
+      const right = px + gap + ctx.measureText(text).width <= w - 8;
+      ctx.textAlign = right ? 'left' : 'right';
+      ctx.fillText(text, right ? px + gap : px - gap, py);
       continue;
     }
     // Off screen: chevron on the edge, label on the inward side.
@@ -912,8 +917,15 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     }
     if (s.launchLine) lines.push(s.launchLine);
     if (s.hazardLine) lines.push(s.hazardLine);
+    if (s.spaceLine) lines.push(s.spaceLine);
     if (s.note) lines.push(s.note);
-    // A thin accent rule down the left, like an instrument readout.
+    // A dark backing so the readout stays legible over bright cloud, then a thin
+    // accent rule down the left, like an instrument readout.
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(8, 8, width + 26, lines.length * 17 + 6, 4);
+    ctx.fill();
     ctx.fillStyle = HUD.line;
     ctx.fillRect(14, 14, 1.5, lines.length * 17 - 4);
     // No glow: this text changes every frame (so can't be cached) and sits on black sky.
@@ -929,7 +941,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora: NOAA SWPC · Storms: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · press H',
     w - 10,
     h - 8,
   );

@@ -162,6 +162,10 @@ export class GlobeRenderer {
     this.fireLayer.setFires(points);
   }
 
+  setSun(image: TexImageSource, limb: number) {
+    this.bodies.setSunTexture(image, limb);
+  }
+
   setMoon(image: TexImageSource) {
     this.bodies.setMoonTexture(image);
   }
