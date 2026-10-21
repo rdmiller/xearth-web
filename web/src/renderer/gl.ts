@@ -8,7 +8,7 @@ import fragSrc from './globe.frag.glsl?raw';
 import { BodyLayer, type BodyDraw } from './bodies';
 import { FIRE_STYLE, LIGHTNING_STYLE, SurfacePointLayer, type SurfacePoints } from './points';
 import type { AuroraGrid } from '../hazards';
-import { SatLayer } from './sats';
+import { SatLayer, type SatCategoryLook } from './sats';
 import { StarLayer } from './stars';
 
 const VERT = `#version 300 es
@@ -38,7 +38,7 @@ export interface FrameState {
   /** Lightning layer: flashes at most `windowMin` old. */
   lightning: { windowMin: number } | null;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
-  satellites: { dt: number } | null;
+  satellites: { dt: number; categories: SatCategoryLook[] } | null;
   dpr: number;
 }
 
@@ -252,6 +252,11 @@ export class GlobeRenderer {
     this.sats.setPositions(xyz, vel);
   }
 
+  /** Category per bulk satellite (index into the frame's `satellites.categories`). */
+  setSatelliteCategories(category: Uint8Array) {
+    this.sats.setCategories(category);
+  }
+
   /** Match the drawing buffer to the canvas's CSS size × devicePixelRatio. */
   resize(): boolean {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -330,7 +335,7 @@ export class GlobeRenderer {
 
     if (f.satellites) {
       this.sats.draw(
-        { camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr, dt: f.satellites.dt },
+        { camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr, dt: f.satellites.dt, categories: f.satellites.categories },
         [this.canvas.width, this.canvas.height],
       );
     }

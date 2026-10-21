@@ -305,6 +305,8 @@ export interface OverlayState {
   tsunamiZones?: ZoneOverlay[];
   /** NASA ISS live telemetry panel. */
   issPanel?: IssPanel;
+  /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
+  satLabels?: SatLabelOverlay[];
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
   /** Lightning and GDACS summary. */
@@ -690,6 +692,45 @@ function tsunamiRequests(s: OverlayState): CalloutRequest[] {
       optional: !t.alert,
     }));
   return [...zones, ...bulletins];
+}
+
+// ---- satellite name labels ----------------------------------------------------------------
+
+export interface SatLabelOverlay {
+  pos: Vec3;
+  name: string;
+  color: string;
+}
+
+/** A small name in the category's colour, offset right of the point. Cached per name. */
+function satLabelSprite(name: string, color: string, dpr: number): Sprite {
+  const w = name.length * 6.2 + 4;
+  return sprite(`satlabel|${name}|${color}`, dpr, { x: 5, y: -7, w, h: 14 }, (c) => {
+    c.font = `500 10px ${UI_FONT}`;
+    c.letterSpacing = '0.06em';
+    c.textBaseline = 'middle';
+    c.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    c.shadowBlur = 3;
+    c.fillStyle = color;
+    c.fillText(name, 7, 0);
+  });
+}
+
+/** Greedy: a label that would overlap a callout or an earlier name is left out. */
+function drawSatLabels(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number, reserved: Rect[]) {
+  if (!s.satLabels?.length) return;
+  const taken = [...reserved];
+  for (const l of s.satLabels) {
+    const p = project(s.camera, l.pos);
+    if (!p.visible) continue;
+    const x = w / 2 + p.x * s.radiusPx;
+    const y = h / 2 - p.y * s.radiusPx;
+    if (x < 0 || y < 0 || x > w || y > h) continue;
+    const box = { x: x + 4, y: y - 7, w: l.name.length * 6.2 + 4, h: 14 };
+    if (taken.some((t) => overlaps(t, box))) continue;
+    taken.push(box);
+    stamp(ctx, satLabelSprite(l.name, l.color, dpr), x, y, dpr);
+  }
 }
 
 // ---- ISS live telemetry -----------------------------------------------------------------
@@ -1188,6 +1229,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   drawStorms(ctx, s, w, h, dpr);
   if (s.markers) drawCities(ctx, s, w, h, dpr, callouts.map((c) => c.rect));
   drawSatellites(ctx, s, w, h, dpr);
+  drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...(readout ? [readout] : [])]);
   drawLaunches(ctx, s, w, h, dpr);
   drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);

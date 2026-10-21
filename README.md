@@ -52,8 +52,14 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
-  (via CelesTrak supplemental GP), which include newly launched ones not yet catalogued. All are propagated live with SGP4 from
-  CelesTrak elements, hidden behind the Earth, and dimmed in its shadow.
+  (via CelesTrak supplemental GP), which include newly launched ones not yet catalogued.
+  Weather satellites (geostationary, highly elliptical and low orbit), GPS and GLONASS are
+  their own colour-coded categories; zoom out to see the navigation shells (~20,000 km) and
+  the geostationary ring (~36,000 km). All are propagated live with SGP4 from CelesTrak
+  elements, hidden behind the Earth, and dimmed in its shadow.
+  - **Satellite panel** (bottom-left button, or Shift+O): a tree of every category with
+    tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
+    small enough to label (geostationary weather is labelled by default).
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), plus its visible band by day for the low cloud infrared misses, converted
   hourly to an equirectangular alpha map and cross-faded in.
@@ -74,7 +80,8 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
-| `O` | satellites: Starlink + named → named only → off |
+| `O` | satellites: everything ticked → named only → off |
+| `Shift+O` | satellite categories panel |
 | `5` | dusk line down the middle · `V` cycles modes · `Home` back over your time zone |
 | `E` | frame the Sun just past the Earth, then the Moon beside it |
 | arrows (`Shift` = faster) | look around; in the Sun-facing view they shift the offset from the Sun |
@@ -99,7 +106,9 @@ web/        Vite + TypeScript + WebGL2 app
   src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
   src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
-  src/satWorker.ts   Starlink propagation off the main thread
+  src/satWorker.ts   bulk satellite propagation off the main thread
+  src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
+  src/satTree.ts     the satellite panel (tri-state checkbox tree)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
@@ -146,7 +155,9 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
-| `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
+| `sats` | `all` (everything ticked), `featured` (named only), `0` | `all` |
+| `satshow` | categories ticked in the satellite panel: comma list of `iss`, `tiangong`, `satgus`, `starlink`, `weather-geo`, `weather-heo`, `weather-leo`, `gps`, `glonass`, or `none` | all |
+| `satlabels` | categories with name labels (same keys) | `weather-geo` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |
@@ -217,7 +228,10 @@ Atlantic deck at dusk stayed at 0.02. The cloud job needs the month's Blue Marbl
 
 ## How the satellites work
 
-- **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites.
+- **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites
+  and four groups: `starlink`, `weather` (73 on 2026-10-21), `gps-ops` (32) and `glo-ops`
+  (28). The three small groups also carry names, for labels. A group CelesTrak reports as
+  "not updated" with nothing to reuse (one just added) is skipped for that run, not fatal.
   Starlink comes from CelesTrak's supplemental GP, fitted to SpaceX's own published
   ephemerides: more accurate than the catalogue, and it includes satellites not yet
   catalogued (499 under temporary IDs on 2026-10-21). If that fails it falls back to the
@@ -231,9 +245,22 @@ Atlantic deck at dusk stayed at 0.02. The cloud job needs the month's Blue Marbl
   frame as the globe. The 3 named satellites run on the main thread, with an orbit line over
   ±½ period. Starlink (~20 ms a pass on a desktop) runs in a Web Worker, once per simulated
   second.
-- **Drawing:** Starlink is a GL point layer after the globe. Each point is tested against the
+- **Categories:** the web app splits the weather group by mean motion: geostationary
+  (~1 rev/day: GOES, Himawari, Meteosat/MTG, FengYun 2/4, INSAT, GK-2A, Elektro), highly
+  elliptical (~2: Arktika-M) and low orbit (14–16: NOAA/JPSS, MetOp, FengYun 3, Meteor-M,
+  DMSP, Sentinel-3, Tianmu, CYGNSS). Every bulk satellite goes to the worker in one list with a
+  category index; a category that's off is skipped by SGP4 and hidden by a per-category size
+  of zero, so ticking one in the panel costs a uniform change and, when it turns on, one pass.
+  `sats` (the O key) and `satshow` (the panel) combine: a category shows when both allow it.
+  Ticking in the panel keeps everything else exactly as it looks.
+- **Drawing:** the bulk satellites are one GL point layer after the globe, coloured per
+  category. Starlink and low-orbit weather are soft dots; the far constellations (GPS,
+  GLONASS, geostationary and elliptical weather) are 7 px hollow diamonds, since a dot that
+  far out reads as a star. Name labels (GOES 19, GPS PRN 02, GLONASS 720…) are propagated on
+  the main thread, a few dozen at most, and placed greedily so they never overlap a callout,
+  the status readout or each other. Each point is tested against the
   Earth (disc silhouette in orthographic, ray-sphere in perspective) and against a
-  one-radius shadow cylinder, so it dims on the night side. Named satellites are drawn on the
+  one-radius shadow cylinder, so it dims in the Earth's shadow. Named satellites are drawn on the
   overlay: a filled marker when sunlit, hollow in shadow, the past half-orbit as a fading
   trail and the next half dashed. The top-left label shows the tracked satellite's altitude,
   speed and sunlit state.

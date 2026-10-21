@@ -10,6 +10,10 @@ import type { Vec3 } from '../vec';
 const VERT = `#version 300 es
 in vec3 aPos;            // Earth-fixed, Earth radii; the origin means "no position"
 in vec3 aVel;            // Earth-fixed, Earth radii per second
+in float aCat;           // category: index into the colour / size / on tables
+uniform vec3 uColors[8];
+uniform float uSizes[8]; // CSS px; 0 = category off
+uniform float uShapes[8]; // 0 = soft dot, 1 = hollow diamond
 uniform float uDt;       // seconds from the SGP4 pass to this frame
 uniform vec3 uDir;
 uniform vec3 uRight;
@@ -19,10 +23,15 @@ uniform float uFocal;
 uniform float uRadiusPx;
 uniform vec2 uRes;
 uniform vec3 uSun;
-uniform float uSize;
+uniform float uDpr;
 out float vLight;
+out vec3 vColor;
+flat out float vShape;
 void main() {
-  bool ok = dot(aPos, aPos) > 0.5;
+  int cat = int(aCat + 0.5);
+  vColor = uColors[cat];
+  vShape = uShapes[cat];
+  bool ok = dot(aPos, aPos) > 0.5 && uSizes[cat] > 0.0;
   vec3 p = aPos + aVel * uDt;
   vec2 q;
   bool hidden;
@@ -48,22 +57,41 @@ void main() {
   vLight = mix(0.14, 1.0, lit);
   bool show = ok && !hidden;
   gl_Position = show ? vec4(q * uRadiusPx / (0.5 * uRes), 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
-  gl_PointSize = show ? uSize : 0.0;
+  gl_PointSize = show ? uSizes[cat] * uDpr : 0.0;
 }`;
 
 const FRAG = `#version 300 es
 precision highp float;
 in float vLight;
-uniform vec3 uColor;
+in vec3 vColor;
+flat in float vShape;
 out vec4 outColor;
 void main() {
-  float r = length(gl_PointCoord - 0.5) * 2.0;
-  float a = (1.0 - smoothstep(0.45, 1.0, r)) * vLight * 0.9;
-  outColor = vec4(uColor * a, a); // premultiplied
+  float a;
+  if (vShape > 0.5) {
+    // Hollow diamond with a pip in the middle: unmistakably not a star.
+    vec2 c = abs(gl_PointCoord - 0.5) * 2.0;
+    float d = c.x + c.y;
+    float edge = 1.0 - smoothstep(0.12, 0.26, abs(d - 0.78));
+    float pip = 1.0 - smoothstep(0.18, 0.3, d);
+    a = max(edge, pip) * vLight;
+  } else {
+    float r = length(gl_PointCoord - 0.5) * 2.0;
+    a = (1.0 - smoothstep(0.45, 1.0, r)) * vLight * 0.9;
+  }
+  outColor = vec4(vColor * a, a); // premultiplied
 }`;
+
+/** A bulk category's look: colour (0–1 RGB) and point size in CSS px, 0 when off. */
+export interface SatCategoryLook {
+  color: [number, number, number];
+  size: number;
+  diamond?: boolean;
+}
 
 export interface SatFrameState {
   camera: Camera;
+  categories: SatCategoryLook[];
   /** Seconds from the positions' SGP4 pass to this frame (simulated time). */
   dt: number;
   radiusPx: number;
@@ -76,6 +104,7 @@ export class SatLayer {
   private readonly vao: WebGLVertexArrayObject;
   private readonly buf: WebGLBuffer;
   private readonly velBuf: WebGLBuffer;
+  private readonly catBuf: WebGLBuffer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private count = 0;
   private capacity = 0;
@@ -88,6 +117,7 @@ export class SatLayer {
     this.vao = gl.createVertexArray()!;
     this.buf = gl.createBuffer()!;
     this.velBuf = gl.createBuffer()!;
+    this.catBuf = gl.createBuffer()!;
     gl.bindVertexArray(this.vao);
     for (const [name, buf] of [
       ['aPos', this.buf],
@@ -98,7 +128,18 @@ export class SatLayer {
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
     }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.catBuf);
+    const cat = gl.getAttribLocation(this.program, 'aCat');
+    gl.enableVertexAttribArray(cat);
+    gl.vertexAttribPointer(cat, 1, gl.UNSIGNED_BYTE, false, 0, 0);
     gl.bindVertexArray(null);
+  }
+
+  /** Each satellite's category, in the same order as the positions. */
+  setCategories(category: Uint8Array) {
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.catBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, category, gl.STATIC_DRAW);
   }
 
   private u(name: string) {
@@ -139,8 +180,18 @@ export class SatLayer {
     gl.uniform2f(this.u('uRes'), res[0], res[1]);
     gl.uniform3fv(this.u('uSun'), f.sun);
     gl.uniform1f(this.u('uDt'), f.dt);
-    gl.uniform1f(this.u('uSize'), 2.2 * f.dpr);
-    gl.uniform3f(this.u('uColor'), 0.82, 0.9, 1.0);
+    gl.uniform1f(this.u('uDpr'), f.dpr);
+    const colors = new Float32Array(24);
+    const sizes = new Float32Array(8);
+    const shapes = new Float32Array(8);
+    f.categories.slice(0, 8).forEach((c, i) => {
+      colors.set(c.color, i * 3);
+      sizes[i] = c.size;
+      shapes[i] = c.diamond ? 1 : 0;
+    });
+    gl.uniform3fv(this.u('uColors'), colors);
+    gl.uniform1fv(this.u('uSizes'), sizes);
+    gl.uniform1fv(this.u('uShapes'), shapes);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, 0, this.count);

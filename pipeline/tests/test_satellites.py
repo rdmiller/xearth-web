@@ -123,3 +123,36 @@ def test_write_is_compact_json(tmp_path):
     text = path.read_text()
     assert ", " not in text  # compact separators
     assert json.loads(text)["featured"]["62713"][0] == 62713
+
+
+def test_small_groups_carry_names_and_starlink_does_not():
+    goes = {**SATGUS, "OBJECT_NAME": "GOES 19", "NORAD_CAT_ID": 60133, "MEAN_MOTION": 1.0027}
+
+    def fetch(query):
+        if query == "GROUP=weather":
+            return [goes]
+        if query.startswith("CATNR="):
+            return [SATGUS]
+        return [starlink(44714)]
+
+    m = satellites.build(fetch, featured=[62713], groups=["starlink", "weather"])
+    assert m["names"] == {"weather": {"60133": "GOES 19"}}
+    assert [r[0] for r in m["groups"]["weather"]] == [60133]
+
+
+def test_a_new_group_not_updated_is_skipped_not_fatal():
+    previous = {"groups": {"starlink": [["old"]]}, "groupSources": {"starlink": "CelesTrak SupGP"}}
+
+    def fetch(query):
+        if query.startswith("CATNR="):
+            return [SATGUS]
+        raise satellites.NotUpdated("GP data has not updated")
+
+    m = satellites.build(fetch, featured=[62713], groups=["starlink", "gps-ops"], previous=previous)
+    assert m["groups"] == {"starlink": [["old"]]}
+    assert "gps-ops" not in m["groups"]
+
+
+def test_default_groups_include_weather_and_navigation():
+    assert set(satellites.GROUPS) >= {"starlink", "weather", "gps-ops", "glo-ops"}
+    assert "starlink" not in satellites.NAMED_GROUPS

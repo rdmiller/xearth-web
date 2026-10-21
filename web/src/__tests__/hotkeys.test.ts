@@ -23,6 +23,7 @@ function harness(initial: Partial<Settings> = {}) {
     refreshClouds: vi.fn(),
     toggleFullscreen: vi.fn(),
     toggleHelp: vi.fn(),
+    toggleSatTree: vi.fn(),
     toast(m) {
       this.toasts.push(m);
     },
@@ -52,6 +53,28 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: 'C', shiftKey: true })?.description).toBe('Clouds');
     expect(matchHotkey({ key: '?', shiftKey: true })?.description).toBe('This help');
     expect(matchHotkey({ key: 'T', shiftKey: true })?.description).toBe('Tsunami alerts (NOAA)');
+  });
+
+  it('Shift+O opens the satellite panel; Esc closes it with help', () => {
+    const h = harness();
+    h.press('O', { shiftKey: true });
+    expect(h.ctx.toggleSatTree).toHaveBeenCalledWith();
+    h.press('Escape');
+    expect(h.ctx.toggleSatTree).toHaveBeenLastCalledWith(false);
+    expect(h.ctx.toggleHelp).toHaveBeenLastCalledWith(false);
+  });
+
+  it('O back on with nothing ticked in the tree ticks everything', () => {
+    const h = harness({ sats: 'off', satshow: [] });
+    h.press('o');
+    expect(h.s.sats).toBe('all');
+    expect(h.s.satshow.length).toBeGreaterThan(5);
+  });
+
+  it('tracking a named satellite ticks it in the tree', () => {
+    const h = harness({ satshow: ['starlink'] });
+    h.press('6');
+    expect(h.s.satshow).toContain('iss');
   });
 
   it('Shift+L cycles ISS telemetry: while tracking → always → off', () => {

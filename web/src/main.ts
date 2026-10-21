@@ -10,6 +10,20 @@ import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies 
 import { describeCadence, redrawInterval } from './cadence';
 import { IssLive, issFromTelemetry, issPanel } from './isslive';
 import {
+  BULK_LEAVES,
+  bulkCatalog,
+  bulkSummary,
+  findNode,
+  leafOn,
+  rgb,
+  shortName,
+  toggleLabels,
+  toggleNode,
+  type BulkCatalog,
+  type SatLeaf,
+} from './satcategories';
+import { SatTree } from './satTree';
+import {
   decodeNwsAlerts,
   isAlertCategory,
   isTsunamiManifest,
@@ -97,6 +111,7 @@ import {
   type LaunchOverlay,
   type QuakeOverlay,
   type SatelliteOverlay,
+  type SatLabelOverlay,
   type StormOverlay,
 } from './overlay';
 import { FrameStats, GpuTimer } from './perf';
@@ -269,6 +284,11 @@ let satManifest: SatelliteManifest | undefined;
 let satError: string | undefined;
 const featuredRecs = new Map<string, { rec: SatRec; elements: Elements }>();
 let bulkCount = 0;
+let catalog: BulkCatalog | undefined;
+/** Labelable satellites per category: SGP4 records and short names, propagated on the main thread. */
+const labelRecs = new Map<string, { rec: SatRec; name: string }[]>();
+/** Which categories the GPU positions were propagated for. */
+let activeKey = '';
 let workerBusy = false;
 /** Simulated time of the last pass requested, and of the positions now on the GPU. */
 let requestedTime = NaN;
@@ -310,8 +330,18 @@ async function loadSatellites() {
         const rec = el ? satrecFor(el) : null;
         if (rec && el) featuredRecs.set(f.key, { rec, elements: el });
       }
+      catalog = bulkCatalog(m);
+      renderer.setSatelliteCategories(catalog.category);
+      labelRecs.clear();
+      catalog.elements.forEach((el, i) => {
+        const leaf = BULK_LEAVES[catalog!.category[i]];
+        const name = catalog!.names.get(el[0]);
+        const rec = leaf.labelable && name ? satrecFor(el) : null;
+        if (rec && name) labelRecs.set(leaf.key, [...(labelRecs.get(leaf.key) ?? []), { rec, name: shortName(name) }]);
+      });
       workerBusy = true;
-      post({ type: 'load', elements: m.groups.starlink ?? [] });
+      post({ type: 'load', elements: catalog.elements, category: catalog.category });
+      satTree.refresh(settings, treeCounts());
     }
   } catch (err) {
     satError = err instanceof Error ? err.message : String(err);
@@ -853,6 +883,7 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   if (settings.sats === 'off') return undefined;
   if (!satManifest) return { featured: [], summary: satError ? 'satellites unavailable' : 'satellites loading…' };
   const featured = FEATURED.flatMap((sat) => {
+    if (!leafOn(findNode(sat.key) as SatLeaf, settings)) return [];
     const entry = featuredRecs.get(sat.key);
     const live = sat.key === 'iss' ? issLiveState(date, sun) : undefined;
     const state = live ?? (entry ? stateAt(entry.rec, date, sun) : null);
@@ -862,12 +893,38 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
     return [{ sat, state, track, live: !!live }];
   });
   const fetched = formatAge(new Date(satManifest.generated), new Date());
-  const bulk = settings.sats === 'all' && bulkCount ? `${bulkCount.toLocaleString()} Starlink · ` : '';
+  const shown = bulkSummary(catalog, settings);
+  const bulk = shown ? `${shown} · ` : '';
   return {
     featured,
     tracking: settings.view === 'track' ? settings.track : undefined,
     summary: `satellites ${bulk}elements fetched ${fetched}${satError ? ' (update failed)' : ''}`,
   };
+}
+
+/** Name labels for the categories ticked for labels (a few dozen SGP4 runs a frame at most). */
+function satLabels(date: Date): SatLabelOverlay[] {
+  if (!settings.satlabels.length) return [];
+  return BULK_LEAVES.filter((l) => l.labelable && settings.satlabels.includes(l.key) && leafOn(l, settings)).flatMap((leaf) =>
+    (labelRecs.get(leaf.key) ?? []).flatMap(({ rec, name }) => {
+      const pos = positionAt(rec, date);
+      return pos ? [{ pos, name, color: leaf.color }] : [];
+    }),
+  );
+}
+
+// ---- satellite tree -----------------------------------------------------------------
+
+const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, document.getElementById('sat-tree-btn') as HTMLButtonElement, {
+  toggle: (node) => update(toggleNode(node, settings)),
+  toggleLabels: (leaf) => update({ satlabels: toggleLabels(leaf, settings.satlabels) }),
+});
+
+/** Satellites per category for the tree: the bulk counts, and 1 for each named one we have. */
+function treeCounts(): Record<string, number> {
+  const counts: Record<string, number> = { ...(catalog?.counts ?? {}) };
+  for (const f of FEATURED) if (featuredRecs.has(f.key)) counts[f.key] = 1;
+  return counts;
 }
 
 // ---- frame & schedule -------------------------------------------------------
@@ -952,13 +1009,20 @@ function frame(now: number) {
   const sun = subsolarPoint(date);
   const sunDir = fromLatLon(sun.lat, sun.lon);
 
-  const showBulk = settings.sats === 'all' && bulkCount > 0;
+  const active = BULK_LEAVES.map((l) => leafOn(l, settings));
+  const showBulk = bulkCount > 0 && active.some(Boolean);
+  // A category just switched on has no positions yet: propagate again now.
+  if (active.join() !== activeKey) {
+    activeKey = active.join();
+    requestedTime = NaN;
+  }
   const tMs = date.getTime();
   if (showBulk && !workerBusy && !(Math.abs(tMs - requestedTime) < SAT_REFRESH_MS)) {
     workerBusy = true;
     requestedTime = tMs;
-    post({ type: 'propagate', time: tMs });
+    post({ type: 'propagate', time: tMs, active });
   }
+  const satLooks = BULK_LEAVES.map((l, i) => ({ color: rgb(l.color), size: active[i] ? (l.size ?? 2.2) : 0, diamond: l.shape === 'diamond' }));
   const bulkDt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (tMs - bulkTime) / 1000));
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
   const radiusPx = radiusCss() * scale;
@@ -991,7 +1055,7 @@ function frame(now: number) {
     lights: settings.lights,
     grid: settings.grid,
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
-    satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt } : null,
+    satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt, categories: satLooks } : null,
     bodies: bodies.draws,
     aurora: settings.aurora,
     fires: settings.fires
@@ -1012,6 +1076,7 @@ function frame(now: number) {
     date,
     viewer: viewerLatLon(settings, date, resolveTrack),
     satellites: satOverlay,
+    satLabels: satLabels(date),
     bodies: settings.bodies ? bodies.markers : undefined,
     launches: launch.overlays,
     launchLine: launch.line,
@@ -1102,6 +1167,7 @@ function update(patch: Partial<Settings>) {
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
   syncIssLive();
+  satTree.refresh(settings, treeCounts());
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
   // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
@@ -1204,12 +1270,17 @@ const hotkeyContext: HotkeyContext = {
   toggleHelp(open) {
     help.hidden = open === undefined ? !help.hidden : !open;
   },
+  toggleSatTree(open) {
+    satTree.toggle(open);
+  },
   toast,
 };
 
 window.addEventListener('keydown', (e) => {
   const target = e.target as HTMLElement | null;
-  if (target?.closest('input, textarea, select, [contenteditable]')) return;
+  if (target?.closest('textarea, select, [contenteditable], input:not([type="checkbox"])')) return;
+  // In the satellite panel, Space and Enter work its checkboxes and buttons.
+  if (target?.closest('#sat-tree') && (e.key === ' ' || e.key === 'Enter')) return;
   const hk = matchHotkey(e);
   if (!hk) return;
   e.preventDefault(); // Space would scroll, arrows would pan the page
@@ -1239,4 +1310,5 @@ syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 radarCredit.hidden = !settings.radar;
 syncIssLive();
+satTree.refresh(settings, treeCounts());
 requestRedraw();

@@ -39,6 +39,48 @@
         color: rgba(170, 205, 235, 0.7); text-decoration: none;
       }
       #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
+      /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
+      #sat-tree-btn {
+        position: fixed; left: 12px; bottom: 12px; z-index: 2; padding: 6px 12px 6px 10px;
+        font: 600 11px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.14em; text-transform: uppercase;
+        color: #62e6ff; background: rgba(8, 12, 24, 0.78); border: 1px solid rgba(98, 230, 255, 0.35);
+        border-radius: 6px; box-shadow: 0 0 14px rgba(0, 200, 255, 0.08); cursor: pointer;
+      }
+      #sat-tree-btn::before { content: '◎'; margin-right: 7px; }
+      #sat-tree-btn:hover, #sat-tree-btn[aria-expanded="true"] { background: rgba(14, 30, 48, 0.92); border-color: rgba(98, 230, 255, 0.6); }
+      #sat-tree-btn:focus-visible, #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      #sat-tree {
+        position: fixed; left: 12px; bottom: 50px; z-index: 2; width: min(320px, calc(100vw - 24px));
+        max-height: calc(100vh - 130px); overflow: auto; box-sizing: border-box; padding: 12px 12px 10px 10px;
+        border-radius: 8px; background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.28);
+        box-shadow: 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px;
+      }
+      #sat-tree header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
+      #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #62e6ff; }
+      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #sat-tree ul { list-style: none; margin: 0; padding: 0; }
+      #sat-tree ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid rgba(98, 230, 255, 0.14); }
+      #sat-tree li.collapsed > ul { display: none; }
+      #sat-tree .row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+      #sat-tree .caret { flex: none; width: 16px; height: 16px; padding: 0; font-size: 10px; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #sat-tree .caret::before { content: '▾'; }
+      #sat-tree li.collapsed > .row .caret::before { content: '▸'; }
+      #sat-tree .caret:disabled { cursor: default; }
+      #sat-tree .caret:disabled::before { content: ''; }
+      #sat-tree label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+      #sat-tree input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: #62e6ff; cursor: pointer; }
+      #sat-tree .swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+      #sat-tree .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #sat-tree li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8fd8f0; }
+      #sat-tree .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(223, 230, 255, 0.55); }
+      #sat-tree .labels, #sat-tree .labels-spacer { flex: none; width: 28px; }
+      #sat-tree .labels {
+        padding: 1px 0; font: 600 10px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.04em;
+        color: rgba(143, 216, 240, 0.65); background: none; border: 1px solid rgba(98, 230, 255, 0.22); border-radius: 4px; cursor: pointer;
+      }
+      #sat-tree .labels[aria-pressed="true"] { color: #04101a; background: #62e6ff; border-color: #62e6ff; }
+      #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); }
+      #sat-tree kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>
@@ -46,6 +88,12 @@
     <canvas id="globe"></canvas>
     <canvas id="overlay"></canvas>
     <div id="toast" role="status" aria-live="polite"></div>
+    <button id="sat-tree-btn" type="button" aria-controls="sat-tree" aria-expanded="false">Satellites</button>
+    <aside id="sat-tree" aria-label="Satellite categories" hidden>
+      <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
+      <ul role="tree" aria-label="Satellite categories"></ul>
+      <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> panel</footer>
+    </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <aside id="help" hidden>
       <h2>xearth web</h2>

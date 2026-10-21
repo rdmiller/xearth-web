@@ -3,6 +3,7 @@
 
 import { defaults, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
+import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
 import type { ViewMode } from './view';
 
@@ -31,6 +32,8 @@ export interface HotkeyContext {
   refreshClouds(): void;
   toggleFullscreen(): void;
   toggleHelp(open?: boolean): void;
+  /** The satellite tree panel. */
+  toggleSatTree(open?: boolean): void;
   toast(message: string): void;
 }
 
@@ -79,7 +82,8 @@ export const SAT_LABELS: Record<SatMode, string> = {
 export function track(ctx: HotkeyContext, key: string) {
   const sat = featuredByKey(key);
   if (!sat) return;
-  ctx.update({ view: 'track', track: key, ...(ctx.settings.sats === 'off' ? { sats: 'featured' as const } : {}) });
+  const satshow = ctx.settings.satshow.includes(key) ? ctx.settings.satshow : [...ctx.settings.satshow, key];
+  ctx.update({ view: 'track', track: key, satshow, ...(ctx.settings.sats === 'off' ? { sats: 'featured' as const } : {}) });
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
@@ -187,11 +191,13 @@ export const HOTKEYS: readonly Hotkey[] = [
   {
     keys: ['o'],
     label: 'O',
-    description: 'Satellites: Starlink + named → named only → off',
+    description: 'Satellites: everything ticked → named only → off',
     group: 'Layers',
     run(ctx) {
       const next = NEXT_SATS[ctx.settings.sats];
-      ctx.update({ sats: next });
+      // Coming back on with nothing ticked in the tree would show nothing: tick everything.
+      const reset = next !== 'off' && !ctx.settings.satshow.length ? { satshow: [...ALL_LEAVES] } : {};
+      ctx.update({ sats: next, ...reset });
       ctx.toast(SAT_LABELS[next]);
     },
   },
@@ -208,6 +214,13 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
+  {
+    keys: ['shift+o'],
+    label: 'Shift+O',
+    description: 'Satellite categories panel',
+    group: 'Layers',
+    run: (ctx) => ctx.toggleSatTree(),
+  },
   {
     keys: ['shift+l'],
     label: 'Shift+L',
@@ -416,7 +429,16 @@ export const HOTKEYS: readonly Hotkey[] = [
   { keys: ['f'], label: 'F', description: 'Fullscreen', group: 'App', run: (ctx) => ctx.toggleFullscreen() },
   { ...layer('d', 'fps', 'Frame-rate display'), group: 'App' },
   { keys: ['h', '?'], label: 'H', description: 'This help', group: 'App', run: (ctx) => ctx.toggleHelp() },
-  { keys: ['escape'], label: 'Esc', description: 'Close help', group: 'App', run: (ctx) => ctx.toggleHelp(false) },
+  {
+    keys: ['escape'],
+    label: 'Esc',
+    description: 'Close help and the satellite panel',
+    group: 'App',
+    run: (ctx) => {
+      ctx.toggleHelp(false);
+      ctx.toggleSatTree(false);
+    },
+  },
 ];
 
 const BY_KEY = new Map<string, Hotkey>();

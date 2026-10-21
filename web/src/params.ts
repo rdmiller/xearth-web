@@ -1,6 +1,7 @@
 // Settings ⇄ URL query string. Every setting is shareable as a link, the way
 // xearth's behaviour was set entirely by command-line flags.
 
+import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
 
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
@@ -23,6 +24,10 @@ export interface Settings extends ViewSettings {
   markers: boolean;
   stars: StarMode;
   sats: SatMode;
+  /** Satellite categories ticked in the satellite tree (leaf keys). */
+  satshow: string[];
+  /** Categories whose satellites carry name labels. */
+  satlabels: string[];
   label: boolean;
   /** Frame-rate display. */
   fps: boolean;
@@ -98,6 +103,8 @@ export function defaults(): Settings {
     markers: true,
     stars: 'on',
     sats: 'all',
+    satshow: [...ALL_LEAVES],
+    satlabels: [...DEFAULT_LABELS],
     label: true,
     fps: false,
     bodies: true,
@@ -166,6 +173,14 @@ function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
   return FALSY.includes(raw) ? 'off' : 'on';
 }
 
+/** A comma list of satellite category keys; unknown keys are dropped, `none` is empty. */
+function keyList(q: URLSearchParams, key: string, fallback: string[]): string[] {
+  const raw = q.get(key);
+  if (raw === null) return fallback;
+  const wanted = new Set(raw.toLowerCase().split(',').map((k) => k.trim()));
+  return ALL_LEAVES.filter((k) => wanted.has(k));
+}
+
 export function parseSettings(search: string, base: Settings = defaults()): Settings {
   const q = new URLSearchParams(search);
   const view = q.get('view') as ViewMode | null;
@@ -188,6 +203,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     markers: bool(q, 'markers', base.markers),
     stars: starMode(q, base.stars),
     sats: satMode(q, base.sats),
+    satshow: keyList(q, 'satshow', base.satshow),
+    satlabels: keyList(q, 'satlabels', base.satlabels),
     label: bool(q, 'label', base.label),
     fps: bool(q, 'fps', base.fps),
     bodies: bool(q, 'bodies', base.bodies),
@@ -228,6 +245,10 @@ export function toQuery(s: Settings, base: Settings = defaults()): string {
     const d = base[key];
     if (key === 'time') {
       if (v instanceof Date) q.set('time', v.toISOString());
+      continue;
+    }
+    if (Array.isArray(v)) {
+      if (v.join(',') !== (d as string[]).join(',')) q.set(key, v.length ? v.join(',') : 'none');
       continue;
     }
     if (v === d) continue;

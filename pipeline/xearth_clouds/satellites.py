@@ -45,7 +45,10 @@ FEATURED = {
     48274: "CSS (TIANHE) — Tiangong core module",
     62713: "SATGUS — Mark Rober / CrunchLabs Space Selfie",
 }
-GROUPS = ("starlink",)
+# Bulk groups, drawn as point clouds. The web app splits and colours them (weather by orbit).
+GROUPS = ("starlink", "weather", "gps-ops", "glo-ops")
+# Groups small enough to carry names (for labels and the satellite tree); Starlink isn't.
+NAMED_GROUPS = ("weather", "gps-ops", "glo-ops")
 
 # Order of the compact element arrays; the web app mirrors this.
 FIELDS = (
@@ -195,6 +198,7 @@ def build(
             objects[key] = compact(recs[0])
     group_data = {}
     group_sources = {}
+    names: dict[str, dict[str, str]] = {}
     for group in groups:
         if group in seeds:
             recs, source = seeds[group], "local seed"
@@ -203,12 +207,18 @@ def build(
                 recs, source = _fetch_group(fetch, group)
             except NotUpdated:
                 if group not in previous.get("groups", {}):
-                    raise
+                    # Nothing to reuse (e.g. a group added since the last run): skip it this time.
+                    print(f"satellites: {group} not updated and not in the previous run; skipped", file=sys.stderr)
+                    continue
                 group_data[group] = previous["groups"][group]
                 group_sources[group] = previous.get("groupSources", {}).get(group, "previous run")
+                if group in previous.get("names", {}):
+                    names[group] = previous["names"][group]
                 continue
         group_data[group] = sorted((compact(r) for r in recs), key=lambda a: a[0])
         group_sources[group] = source
+        if group in NAMED_GROUPS:
+            names[group] = {str(r["NORAD_CAT_ID"]): str(r.get("OBJECT_NAME", "")).strip() for r in recs}
     return {
         "generated": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "source": "CelesTrak GP data (celestrak.org)",
@@ -216,6 +226,7 @@ def build(
         "featured": objects,
         "groups": group_data,
         "groupSources": group_sources,
+        "names": names,
     }
 
 

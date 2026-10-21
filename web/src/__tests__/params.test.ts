@@ -30,6 +30,18 @@ describe('parseSettings', () => {
     expect(parseSettings('?view=track&track=SATGUS')).toMatchObject({ view: 'track', track: 'satgus' });
   });
 
+  it('reads satellite categories and labels as comma lists, dropping unknown keys', () => {
+    expect(parseSettings('?satshow=GPS,glonass,bogus').satshow).toEqual(['gps', 'glonass']);
+    expect(parseSettings('?satshow=none').satshow).toEqual([]);
+    expect(parseSettings('?satlabels=gps').satlabels).toEqual(['gps']);
+    expect(parseSettings('').satlabels).toEqual(['weather-geo']);
+    // Listed in any order, written back in tree order; defaults stay out of the URL.
+    const s = parseSettings('?satshow=glonass,gps');
+    expect(toQuery(s)).toBe('?satshow=gps%2Cglonass');
+    expect(toQuery({ ...s, satshow: [] })).toBe('?satshow=none');
+    expect(toQuery(parseSettings(''))).toBe('');
+  });
+
   it('reads the Sun/Moon settings and clamps bodyscale to 1–30', () => {
     expect(parseSettings('?bodies=0').bodies).toBe(false);
     expect(parseSettings('?bodyscale=12').bodyscale).toBe(12);

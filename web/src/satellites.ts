@@ -51,6 +51,8 @@ export interface SatelliteManifest {
   fields: string[];
   featured: Record<string, Elements>;
   groups: Record<string, Elements[]>;
+  /** NORAD → name, for the groups small enough to label (not Starlink). */
+  names?: Record<string, Record<string, string>>;
 }
 
 export function isSatelliteManifest(v: unknown): v is SatelliteManifest {
