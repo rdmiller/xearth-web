@@ -5,9 +5,27 @@
 import '@fontsource/chakra-petch/500.css';
 import '@fontsource/chakra-petch/600.css';
 import type { SatRec } from 'satellite.js';
-import { subsolarPoint } from './astronomy';
+import { subsolarPoint, sunDirection } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
+import { IssLive, issFromTelemetry, issPanel } from './isslive';
+import {
+  decodeNwsAlerts,
+  isAlertCategory,
+  isTsunamiManifest,
+  NWS_TSUNAMI_URL,
+  nwsColor,
+  nwsRows,
+  sampleZones,
+  TSUNAMI_COLOR,
+  tsunamiLabelled,
+  tsunamiLine,
+  tsunamiRows,
+  tsunamiShown,
+  zoneCentroid,
+  type NwsTsunamiAlert,
+  type TsunamiManifest,
+} from './tsunami';
 import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
 import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
@@ -74,6 +92,8 @@ import {
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
+  type TsunamiOverlay,
+  type ZoneOverlay,
   type LaunchOverlay,
   type QuakeOverlay,
   type SatelliteOverlay,
@@ -84,7 +104,9 @@ import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
+  EARTH_RADIUS_KM,
   FEATURED,
+  inShadow,
   isSatelliteManifest,
   periodMinutes,
   positionAt,
@@ -437,6 +459,12 @@ let lightningManifest: LightningManifest | undefined;
 let eventManifest: EventManifest | undefined;
 let snowIce: SnowIceManifest | undefined;
 let smoke: SmokeManifest | undefined;
+let tsunamiManifest: TsunamiManifest | undefined;
+let nwsTsunami: NwsTsunamiAlert[] = [];
+/** NWS zone URL → centroid [lon, lat] (null: no geometry). Zones don't move, so this is kept. */
+const zoneCentroids = new Map<string, [number, number] | null>();
+/** NWS alerts already announced with a toast. */
+const announced = new Set<string>();
 let radarFrame: RadarFrame | undefined;
 let radarZoomShown = 0;
 const radarCredit = document.getElementById('radar-credit') as HTMLElement;
@@ -475,7 +503,7 @@ async function fetchJson(url: string): Promise<unknown> {
 
 const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
 
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }> = {
   aurora: {
@@ -558,6 +586,27 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       if (!r.ok) throw new Error(`${r.status} ${m.image}`);
       renderer.setSmoke(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
       smoke = m;
+    },
+  },
+  // Live US alerts from NWS every 2 min (CORS-enabled); the centers' bulletins from the
+  // pipeline alongside. During an alert, a sample of its coastal zones is fetched once each.
+  tsunami: {
+    everyMs: 2 * 60_000,
+    load: async () => {
+      const [m, nws] = await Promise.allSettled([fetchJson(pipelineFile(settings.tsunamisrc)), fetchJson(NWS_TSUNAMI_URL)]);
+      if (m.status === 'fulfilled' && isTsunamiManifest(m.value)) tsunamiManifest = m.value;
+      if (nws.status === 'rejected') throw nws.reason;
+      nwsTsunami = decodeNwsAlerts(nws.value);
+      const missing = [...new Set(nwsTsunami.flatMap((a) => sampleZones(a.zones)))].filter((z) => !zoneCentroids.has(z));
+      await Promise.allSettled(
+        missing.map(async (z) => zoneCentroids.set(z, zoneCentroid(((await fetchJson(z)) as { geometry?: unknown }).geometry))),
+      );
+      for (const a of nwsTsunami) {
+        if (announced.has(a.id)) continue;
+        announced.add(a.id);
+        toast(`${a.event} in effect — ${a.areaDesc.split(';')[0]}`);
+      }
+      tsunamiCache = undefined;
     },
   },
   // RainViewer publishes a frame every 10 min. Its tiles are fetched only for a new
@@ -676,6 +725,74 @@ function surfaceLine(): string | undefined {
   return parts.length ? parts.join(' · ') : undefined;
 }
 
+/** Tsunami markers change only with their data (and statements' label windows), so built per load. */
+let tsunamiCache: { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[]; at: number } | undefined;
+function tsunamiOverlays(): { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[] } {
+  if (!settings.tsunami) return { bulletins: [], zones: [] };
+  const now = Date.now();
+  if (tsunamiCache && now - tsunamiCache.at < 60_000) return tsunamiCache;
+  const bulletins = (tsunamiManifest?.bulletins ?? [])
+    .filter((b) => tsunamiShown(b, now))
+    .map((b) => ({
+      pos: fromLatLon(b.lat, b.lon),
+      color: TSUNAMI_COLOR[b.category] ?? TSUNAMI_COLOR.information,
+      alert: isAlertCategory(b.category),
+      rows: tsunamiLabelled(b, now) ? tsunamiRows(b, now) : undefined,
+    }));
+  const zones = nwsTsunami.flatMap((a) => {
+    const points = sampleZones(a.zones)
+      .map((z) => zoneCentroids.get(z))
+      .filter((c): c is [number, number] => !!c)
+      .map(([lon, lat]) => fromLatLon(lat, lon));
+    if (!points.length) return [];
+    const mid = normalize(points.reduce((s, p) => [s[0] + p[0], s[1] + p[1], s[2] + p[2]], [0, 0, 0]));
+    const anchor = points.reduce((best, p) => (dot(p, mid) > dot(best, mid) ? p : best));
+    return [{ points, anchor, color: nwsColor(a.event), rows: nwsRows(a) }];
+  });
+  tsunamiCache = { bulletins, zones, at: now };
+  return tsunamiCache;
+}
+
+// ---- ISS live telemetry -----------------------------------------------------------------
+// NASA's ISSLive stream. Updates arrive for ~20 items a second while the ISS has signal,
+// so they ask for a redraw at most once a second. In the default "track" mode the stream
+// is only opened while the ISS is being tracked.
+
+let issRedrawPending = false;
+const issLive = new IssLive(() => {
+  if (issRedrawPending) return;
+  issRedrawPending = true;
+  setTimeout(() => {
+    issRedrawPending = false;
+    requestRedraw();
+  }, 1000);
+});
+
+const trackingIss = () => settings.view === 'track' && settings.track === 'iss';
+const issLiveWanted = () => settings.sats !== 'off' && (settings.isslive === 'on' || (settings.isslive === 'track' && trackingIss()));
+
+function syncIssLive() {
+  if (issLiveWanted()) issLive.start().catch((err) => console.warn('ISS live telemetry:', err));
+  else issLive.stop();
+}
+
+/** The ISS from telemetry, when it's current for `date` (so never in simulated time). */
+function issLiveState(date: Date, sun: Vec3) {
+  if (!issLiveWanted()) return undefined;
+  const t = issFromTelemetry(issLive.values, date);
+  return t && { pos: t.pos, lat: t.lat, lon: t.lon, altKm: t.altKm, speed: t.speed, sunlit: !inShadow(t.pos, sun) };
+}
+
+function issPanelState(sun: Vec3) {
+  if (!issLiveWanted()) return undefined;
+  const now = new Date();
+  const live = issLiveState(now, sun);
+  const rec = featuredRecs.get('iss')?.rec;
+  const sgp = live && rec ? positionAt(rec, now) : null;
+  const deltaKm = live && sgp ? Math.hypot(live.pos[0] - sgp[0], live.pos[1] - sgp[1], live.pos[2] - sgp[2]) * EARTH_RADIUS_KM : undefined;
+  return issPanel(issLive.values, now.getTime(), live && { altKm: live.altKm, speed: live.speed, deltaKm });
+}
+
 function weatherLine(): string | undefined {
   const parts: string[] = [];
   if (settings.radar && radarFrame) parts.push(`radar ${new Date(radarFrame.time * 1000).toISOString().slice(11, 16)}Z (RainViewer)`);
@@ -696,6 +813,10 @@ function hazardLine(): string | undefined {
     parts.push(`fires ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} (last ${settings.firehours} h)`);
   }
   if (settings.quakes && quakes.length) parts.push(`${quakes.length} quakes M2.5+ (24 h)`);
+  if (settings.tsunami) {
+    const t = tsunamiLine(tsunamiManifest, nwsTsunami, Date.now());
+    if (t) parts.push(t);
+  }
   return parts.length ? parts.join(' · ') : undefined;
 }
 
@@ -719,6 +840,10 @@ const resolveTrack: TrackResolver = (key, date) => {
     const f = focusLaunch(launchStates(date));
     return f ? toLatLon(f.pos) : null;
   }
+  if (key === 'iss') {
+    const live = issLiveState(date, sunDirection(date));
+    if (live) return toLatLon(live.pos);
+  }
   const rec = featuredRecs.get(key)?.rec;
   const p = rec ? positionAt(rec, date) : null;
   return p ? toLatLon(p) : null;
@@ -729,11 +854,12 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   if (!satManifest) return { featured: [], summary: satError ? 'satellites unavailable' : 'satellites loading…' };
   const featured = FEATURED.flatMap((sat) => {
     const entry = featuredRecs.get(sat.key);
-    const state = entry ? stateAt(entry.rec, date, sun) : null;
+    const live = sat.key === 'iss' ? issLiveState(date, sun) : undefined;
+    const state = live ?? (entry ? stateAt(entry.rec, date, sun) : null);
     if (!entry || !state) return [];
     const period = periodMinutes(entry.elements);
     const track = tracks.track(sat.key, entry.rec, date, period / 2, period / 2, period / ORBIT_STEPS, state.pos);
-    return [{ sat, state, track }];
+    return [{ sat, state, track, live: !!live }];
   });
   const fetched = formatAge(new Date(satManifest.generated), new Date());
   const bulk = settings.sats === 'all' && bulkCount ? `${bulkCount.toLocaleString()} Starlink · ` : '';
@@ -892,6 +1018,9 @@ function frame(now: number) {
     storms: stormOverlays(),
     quakes: quakeOverlays(),
     events: eventOverlays(),
+    tsunami: tsunamiOverlays().bulletins,
+    tsunamiZones: tsunamiOverlays().zones,
+    issPanel: issPanelState(sunDir),
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
     weatherLine: weatherLine(),
@@ -972,6 +1101,7 @@ function update(patch: Partial<Settings>) {
     if (settings[key] !== hazardsBefore[key]) syncHazard(key);
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
+  syncIssLive();
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
   // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
@@ -1108,4 +1238,5 @@ syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 radarCredit.hidden = !settings.radar;
+syncIssLive();
 requestRedraw();

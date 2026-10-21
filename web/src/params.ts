@@ -9,6 +9,9 @@ export type StarMode = 'on' | 'off' | 'photo';
 /** `featured` = only the named satellites (ISS, Tiangong, SAT GUS); `all` adds Starlink. */
 export type SatMode = 'all' | 'featured' | 'off';
 
+/** NASA ISS telemetry panel: while tracking the ISS, always, or off (no connection). */
+export type IssLiveMode = 'track' | 'on' | 'off';
+
 export interface Settings extends ViewSettings {
   /** Disc diameter as a fraction of 90% of the window's shorter side. */
   mag: number;
@@ -42,6 +45,10 @@ export interface Settings extends ViewSettings {
   snow: boolean;
   /** RainViewer weather radar. */
   radar: boolean;
+  /** NOAA tsunami bulletins and NWS tsunami alerts. */
+  tsunami: boolean;
+  /** NASA ISS live telemetry. */
+  isslive: IssLiveMode;
   /** NOAA HMS smoke plumes. */
   smoke: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
@@ -56,13 +63,14 @@ export interface Settings extends ViewSettings {
   satsrc: string;
   /** Where the launches' latest.json lives. */
   launchsrc: string;
-  /** Where the pipeline's storm, fire, lightning, GDACS event, snow/ice and smoke files live. */
+  /** Where the pipeline's storm, fire, lightning, GDACS event, snow/ice, smoke and tsunami files live. */
   stormsrc: string;
   firesrc: string;
   lightningsrc: string;
   eventsrc: string;
   snowsrc: string;
   smokesrc: string;
+  tsunamisrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -104,6 +112,8 @@ export function defaults(): Settings {
     snow: true,
     radar: true,
     smoke: true,
+    tsunami: true,
+    isslive: 'track',
     bodyscale: 1,
     time: null,
     speed: 1,
@@ -116,6 +126,7 @@ export function defaults(): Settings {
     eventsrc: (import.meta.env?.VITE_EVENT_BASE as string | undefined) ?? 'events/',
     snowsrc: (import.meta.env?.VITE_SNOW_BASE as string | undefined) ?? 'snowice/',
     smokesrc: (import.meta.env?.VITE_SMOKE_BASE as string | undefined) ?? 'smoke/',
+    tsunamisrc: (import.meta.env?.VITE_TSUNAMI_BASE as string | undefined) ?? 'tsunami/',
   };
 }
 
@@ -146,6 +157,13 @@ function satMode(q: URLSearchParams, fallback: SatMode): SatMode {
   if (raw === undefined) return fallback;
   if (raw === 'featured' || raw === 'named') return 'featured';
   return FALSY.includes(raw) ? 'off' : 'all';
+}
+
+function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
+  const raw = q.get('isslive')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'track') return 'track';
+  return FALSY.includes(raw) ? 'off' : 'on';
 }
 
 export function parseSettings(search: string, base: Settings = defaults()): Settings {
@@ -184,6 +202,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     snow: bool(q, 'snow', base.snow),
     radar: bool(q, 'radar', base.radar),
     smoke: bool(q, 'smoke', base.smoke),
+    tsunami: bool(q, 'tsunami', base.tsunami),
+    isslive: issLiveMode(q, base.isslive),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
@@ -196,6 +216,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     eventsrc: q.get('eventsrc') ?? base.eventsrc,
     snowsrc: q.get('snowsrc') ?? base.snowsrc,
     smokesrc: q.get('smokesrc') ?? base.smokesrc,
+    tsunamisrc: q.get('tsunamisrc') ?? base.tsunamisrc,
   };
 }
 

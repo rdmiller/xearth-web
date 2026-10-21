@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type SatMode, type Settings, type StarMode } from './params';
+import { defaults, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { wrapLon } from './vec';
 import type { ViewMode } from './view';
@@ -83,9 +83,15 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
+const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
+export const ISSLIVE_LABELS: Record<IssLiveMode, string> = {
+  track: 'ISS telemetry while tracking the ISS',
+  on: 'ISS telemetry always',
+  off: 'ISS telemetry off',
+};
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
   photo: 'Stars: camera exposure',
@@ -201,6 +207,18 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('i', 'snow', 'Snow and ice (today)'),
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
+  layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
+  {
+    keys: ['shift+l'],
+    label: 'Shift+L',
+    description: 'ISS live telemetry: while tracking the ISS → always → off',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_ISSLIVE[ctx.settings.isslive];
+      ctx.update({ isslive: next });
+      ctx.toast(ISSLIVE_LABELS[next]);
+    },
+  },
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
   layer('l', 'label', 'Label'),

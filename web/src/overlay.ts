@@ -5,6 +5,7 @@
 import { CITIES } from './cities';
 import type { CloudStatus } from './cloudSync';
 import type { PerfSummary } from './perf';
+import type { IssPanel } from './isslive';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
 import { project, type Camera } from './view';
@@ -267,6 +268,8 @@ export interface FeaturedOverlay {
   state: SatState;
   /** Path over the ground: t in minutes from now (negative = past). */
   track: { t: number; pos: Vec3 | null }[];
+  /** Placed from NASA's live telemetry rather than SGP4. */
+  live?: boolean;
 }
 
 export interface SatelliteOverlay {
@@ -297,6 +300,11 @@ export interface OverlayState {
   quakes?: QuakeOverlay[];
   /** GDACS floods, wildfires and eruptions. */
   events?: EventOverlay[];
+  /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
+  tsunami?: TsunamiOverlay[];
+  tsunamiZones?: ZoneOverlay[];
+  /** NASA ISS live telemetry panel. */
+  issPanel?: IssPanel;
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
   /** Lightning and GDACS summary. */
@@ -597,6 +605,127 @@ function quakeRequests(s: OverlayState): CalloutRequest[] {
       rows: q.rows!.map((text, i) => [{ text, color: i === 0 ? q.color : HUD.dim }]),
       gap: q.radius + 7,
     }));
+}
+
+// ---- tsunami ---------------------------------------------------------------------------
+
+export interface TsunamiOverlay {
+  pos: Vec3;
+  color: string;
+  /** Warning / threat / advisory / watch: drawn larger, with an outer ring. */
+  alert: boolean;
+  rows?: string[];
+}
+
+export interface ZoneOverlay {
+  /** Sampled zone centroids along the coast. */
+  points: Vec3[];
+  /** Where the label goes (the sample nearest their middle). */
+  anchor: Vec3;
+  color: string;
+  rows: string[];
+}
+
+/** A dot with waves radiating left and right; alerts add a ring. Cached per look. */
+function tsunamiSprite(color: string, alert: boolean, dpr: number): Sprite {
+  const r = alert ? 12 : 8;
+  return sprite(`tsunami|${color}|${alert}`, dpr, { x: -r - 3, y: -r - 3, w: 2 * r + 6, h: 2 * r + 6 }, (c) => {
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = 1.5;
+    c.lineCap = 'round';
+    c.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    c.shadowBlur = 3;
+    c.beginPath();
+    c.arc(0, 0, 2, 0, Math.PI * 2);
+    c.fill();
+    for (const k of [0.55, 1]) {
+      for (const side of [0, Math.PI]) {
+        c.beginPath();
+        c.arc(0, 0, r * k, side - 0.6, side + 0.6);
+        c.stroke();
+      }
+    }
+    if (alert) {
+      c.globalAlpha = 0.45;
+      c.beginPath();
+      c.arc(0, 0, r + 2, 0, Math.PI * 2);
+      c.stroke();
+    }
+  });
+}
+
+function drawTsunami(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  ctx.save();
+  for (const z of s.tsunamiZones ?? []) {
+    ctx.fillStyle = z.color;
+    for (const p of z.points) {
+      const q = project(s.camera, p);
+      if (!q.visible) continue;
+      ctx.beginPath();
+      ctx.arc(w / 2 + q.x * s.radiusPx, h / 2 - q.y * s.radiusPx, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  for (const t of s.tsunami ?? []) {
+    const q = project(s.camera, t.pos);
+    if (q.visible) stamp(ctx, tsunamiSprite(t.color, t.alert, dpr), w / 2 + q.x * s.radiusPx, h / 2 - q.y * s.radiusPx, dpr);
+  }
+  ctx.restore();
+}
+
+function tsunamiRequests(s: OverlayState): CalloutRequest[] {
+  const zones = (s.tsunamiZones ?? []).map((z) => ({
+    anchor: z.anchor,
+    rows: z.rows.map((text, i) => [{ text, color: i === 0 ? z.color : HUD.dim }]),
+    gap: 8,
+  }));
+  const bulletins = (s.tsunami ?? [])
+    .filter((t) => t.rows)
+    .map((t) => ({
+      anchor: t.pos,
+      rows: t.rows!.map((text, i) => [{ text, color: i === 0 ? t.color : HUD.dim }]),
+      gap: t.alert ? 16 : 11,
+      // Statements give way to other labels; alerts never do.
+      optional: !t.alert,
+    }));
+  return [...zones, ...bulletins];
+}
+
+// ---- ISS live telemetry -----------------------------------------------------------------
+
+/** Top right (below the frame-rate panel when that's shown): title, signal chip, rows. */
+function drawIssPanel(ctx: CanvasRenderingContext2D, p: IssPanel, w: number, top: number) {
+  ctx.save();
+  ctx.font = `500 11px ${UI_FONT}`;
+  ctx.letterSpacing = '0.06em';
+  ctx.textBaseline = 'top';
+  const title = 'ISS · NASA LIVE TELEMETRY';
+  const width = Math.max(ctx.measureText(title).width + 90, ...p.rows.map((r) => ctx.measureText(r).width)) + 20;
+  const x = w - width - 14;
+  const height = 26 + p.rows.length * 15 + 6;
+  ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
+  ctx.strokeStyle = 'rgba(98, 230, 255, 0.28)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, top, width, height, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = `600 11px ${UI_FONT}`;
+  ctx.fillStyle = HUD.accent;
+  ctx.fillText(title, x + 10, top + 8);
+  // Signal chip: green while the stream is live, amber with the age when it isn't.
+  ctx.textAlign = 'right';
+  ctx.fillStyle = p.aos ? '#7dffa8' : '#ffc857';
+  ctx.fillText(`${p.aos ? '●' : '○'} ${p.status}`, x + width - 10, top + 8);
+  ctx.textAlign = 'left';
+  ctx.font = `500 11px ${UI_FONT}`;
+  p.rows.forEach((row, i) => {
+    ctx.fillStyle = HUD.dim;
+    ctx.fillText(row, x + 10, top + 26 + i * 15);
+  });
+  ctx.restore();
+  ctx.letterSpacing = '0px';
 }
 
 // ---- GDACS floods, wildfires, eruptions ------------------------------------------------
@@ -972,7 +1101,8 @@ function drawSatellites(ctx: CanvasRenderingContext2D, s: OverlayState, w: numbe
     if (!here.visible) continue;
     const tracked = sats.tracking === f.sat.key;
     if (tracked) stamp(ctx, reticleSprite(f.sat.color, dpr), here.x, here.y, dpr);
-    stamp(ctx, satSprite(f.sat.name, f.sat.color, f.state.sunlit, tracked ? 16 : 9, dpr), here.x, here.y, dpr);
+    const name = f.live ? `${f.sat.name} · LIVE` : f.sat.name;
+    stamp(ctx, satSprite(name, f.sat.color, f.state.sunlit, tracked ? 16 : 9, dpr), here.x, here.y, dpr);
   }
 }
 
@@ -1043,17 +1173,18 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     ? { x: 8, y: 8, w: Math.max(...lines.map((line) => ctx.measureText(line).width)) + 26, h: lines.length * 17 + 6 }
     : null;
   ctx.letterSpacing = '0px';
-  // Priority for label space: launches, storms, quakes, GDACS events, then cities.
+  // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
   const callouts = placeCallouts(
     ctx,
     s,
     w,
     h,
-    [...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
+    [...tsunamiRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
     readout ? [readout] : [],
   );
   drawEvents(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
+  drawTsunami(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
   if (s.markers) drawCities(ctx, s, w, h, dpr, callouts.map((c) => c.rect));
   drawSatellites(ctx, s, w, h, dpr);
@@ -1061,6 +1192,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);
   if (s.perf) drawPerf(ctx, s.perf, w);
+  if (s.issPanel) drawIssPanel(ctx, s.issPanel, w, s.perf ? 170 : 8);
 
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
@@ -1087,7 +1219,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · press H',
     w - 10,
     h - 8,
   );

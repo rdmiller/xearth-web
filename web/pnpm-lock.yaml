@@ -172,6 +172,9 @@ importers:
       astronomy-engine:
         specifier: ^2.1.19
         version: 2.1.19
+      lightstreamer-client-web:
+        specifier: ^9.2.3
+        version: 9.2.3
       satellite.js:
         specifier: ^7.1.0
         version: 7.1.0
@@ -444,6 +447,9 @@ packages:
   lightningcss@1.33.0:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
+
+  lightstreamer-client-web@9.2.3:
+    resolution: {integrity: sha512-Sir2zhENt0w6UHcULtvwl0qmrSZwSxh+0oNGRK6a75HN7bzmEdcy+yjSbLwKvKCY3P+xORBYKNFJ/FsRqzAQbA==}
 
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
@@ -749,6 +755,8 @@ snapshots:
       lightningcss-linux-x64-musl: 1.33.0
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
+
+  lightstreamer-client-web@9.2.3: {}
 
   magic-string@1.4.3:
     dependencies:

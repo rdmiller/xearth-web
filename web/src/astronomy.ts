@@ -14,7 +14,7 @@ import {
   RotateVector,
   Rotation_EQJ_EQD,
   SiderealTime,
-  type Vector,
+  Vector,
 } from 'astronomy-engine';
 import { fromLatLon, wrapLon, type Vec3 } from './vec';
 
@@ -30,6 +30,20 @@ export interface SubPoint {
 /** Greenwich apparent sidereal time as an angle, degrees. */
 export function gastDeg(date: Date): number {
   return SiderealTime(MakeTime(date)) * 15;
+}
+
+/**
+ * A J2000 (EQJ) vector in Earth-fixed axes: precess/nutate to the true equator and
+ * equinox of date, then turn by −GAST. Units pass through. (Skipping precession
+ * would misplace a low orbit by ~40 km in 2026.)
+ */
+export function j2000ToEarthFixed(v: Vec3, date: Date): Vec3 {
+  const time = MakeTime(date);
+  const eqd = RotateVector(Rotation_EQJ_EQD(time), new Vector(v[0], v[1], v[2], time));
+  const g = (gastDeg(date) * Math.PI) / 180;
+  const c = Math.cos(g);
+  const s = Math.sin(g);
+  return [c * eqd.x + s * eqd.y, -s * eqd.x + c * eqd.y, eqd.z];
 }
 
 function subPoint(eqj: Vector, date: Date): SubPoint {

@@ -58,8 +58,9 @@ jobs:
       # Aurora and earthquakes are fetched by the browser straight from NOAA SWPC and
       # USGS. Storms (GDACS + NHC need merging), fires (FIRMS, ~20 MB raw), lightning (GLM
       # buckets send no CORS headers), GDACS events, snow/ice (IMS needs reprojecting) and
-      # smoke (HMS sends no CORS headers) come from here. Radar is read by the browser from
-      # RainViewer.
+      # smoke and tsunami bulletins (HMS and tsunami.gov send no CORS headers) come from here.
+      # Radar (RainViewer), US tsunami alerts (NWS) and ISS telemetry (NASA ISSLive) are read
+      # by the browser.
       - name: Tropical cyclones (GDACS + NHC)
         continue-on-error: true
         run: python -m xearth_clouds.storms --out web/public/storms
@@ -78,6 +79,9 @@ jobs:
       - name: Smoke plumes (NOAA HMS)
         continue-on-error: true
         run: python -m xearth_clouds.smoke --out web/public/smoke
+      - name: Tsunami bulletins (NOAA NTWC + PTWC)
+        continue-on-error: true
+        run: python -m xearth_clouds.tsunami --out web/public/tsunami
 
       - name: Cache NASA textures
         uses: actions/cache@v4

@@ -44,6 +44,11 @@ global cloud layer refreshed every hour from geostationary satellites.
     drawn over the clouds the way a weather map shows rain.
   - **Smoke:** NOAA's Hazard Mapping System smoke plumes (light, medium, heavy) over North
     America, as a grey-brown haze on the sunlit ground.
+  - **Tsunami alerts:** bulletins from NOAA's two Tsunami Warning Centers at the earthquake's
+    epicentre, and live NWS tsunami warnings, watches and advisories lit along US coasts.
+- **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
+  panel while the ISS is tracked: signal, trajectory, attitude, cabin air, solar arrays. While
+  the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
@@ -64,7 +69,8 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Z` `Y` `I` | lightning, GDACS floods/wildfires/eruptions, snow and ice on/off |
-| `Shift+R` `Shift+S` | weather radar, smoke on/off |
+| `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
+| `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -117,6 +123,7 @@ pnpm lightning               # GOES GLM, last 30 min (~70 MB download) → publi
 pnpm events                  # GDACS floods, wildfires, eruptions → public/events/
 pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
 pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
+pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
 pnpm dev
 ```
 
@@ -134,9 +141,10 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
-| `radar`, `smoke` | RainViewer radar, NOAA HMS smoke on/off | 1 |
+| `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
+| `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
-| `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc` | folders holding the lightning / GDACS / snow-and-ice / smoke `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/` |
+| `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
@@ -268,6 +276,9 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
 | Smoke | NOAA/NESDIS HMS smoke polygons (KML) | pipeline | through the day, hourly; browser re-reads every 30 min |
+| Tsunami (US alerts) | NWS alerts API: active Tsunami Warning / Watch / Advisory, plus sampled zone geometry | browser | 2 min |
+| Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
+| ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
 - **Aurora** is drawn in the globe shader above the clouds, only where the Sun is at least ~6°
   below the horizon, using a 1 − exp(−2.5·p^1.4) response so the oval's core is bright and its
@@ -344,7 +355,36 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   (~23 KB on 2026-10-21, 234 plumes). The shader mixes a grey-brown haze into the sunlit
   ground under the clouds, up to ~55% for heavy smoke, and suppresses sun glint under it.
   Small plumes are drawn to scale, so a 10 km plume is one faint pixel at globe zoom.
-- Launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
+- **Tsunami alerts:**
+  - *Bulletins:* NTWC (US mainland, Alaska, Canada) and PTWC (Hawaii, US Pacific and Caribbean
+    territories, and threat messages for other nations) each publish an Atom feed of their
+    latest bulletins: epicentre, preliminary magnitude, category, note. tsunami.gov sends no
+    CORS headers, so the pipeline keeps the last 48 h. Warnings, threats, advisories and
+    watches show for the whole window with a ringed red/orange/yellow marker; information
+    statements and cancellations show for a day and are labelled for 6 h.
+  - *Live US alerts:* the NWS alerts API is CORS-enabled, so the browser checks it every two
+    minutes. NWS sends routine "Test" tsunami warnings through the same feed, so only
+    `status: Actual` alerts count. An alert lists the coastal zones it covers (up to hundreds,
+    ~90 KB of polygon each), so up to 24, spread evenly along the list, are fetched once each
+    and drawn as dots along the coast. A new alert also raises a toast.
+  - Tsunami labels take precedence over every other callout.
+- **ISS live telemetry:** NASA publishes Mission Control's ISS console data through a
+  Lightstreamer server (adapter set `ISSLIVE` at push.lightstreamer.com); the symbol list is
+  NASA's PUIList.xml. The client library (~50 KB gzipped) is loaded only when wanted, and by
+  default the stream is only opened while the ISS is tracked.
+  - *Units, checked against the live stream (2026-10-21):* the J2000 state vector is km and m/s
+    (the dictionary's unit fields say ft); pressures are mmHg (cabin 748), not psi. Each
+    update's time stamp is hours counted from 00:00 UTC on 31 December; the state vector's
+    own time tag is GPS seconds (less 18 leap seconds for UTC). The two agree to ~2 s.
+  - *Position:* the state vector is precessed from J2000 to the equator of date and turned by
+    sidereal time (astronomy-engine). That lands within ~1 km of SGP4 from the same day's
+    elements; skipping precession would be ~40 km off. Within two minutes of the vector's
+    epoch (two-body propagation covers the gap), the ISS marker uses it and is tagged LIVE,
+    and the panel shows how far SGP4 is from it. Otherwise SGP4 places the ISS as before.
+  - *Signal:* the stream only moves while the ISS has a TDRS link. Out of signal, or when the
+    feed itself stalls, the server keeps serving the last values, so the panel shows LOS
+    and how old they are. On 2026-10-21 the newest values were from 01:02Z, ~21 h earlier.
+- Tsunami, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
 
@@ -394,6 +434,10 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
 - Smoke: NOAA/NESDIS Hazard Mapping System (HMS) fire and smoke analysis.
+- Tsunami: NOAA National Tsunami Warning Center and Pacific Tsunami Warning Center
+  (tsunami.gov); NOAA National Weather Service alerts.
+- ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer
+  (lightstreamer-client-web, Apache-2.0).
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
   Ice Analysis at 4 km (NSIDC G02156); Fetterer et al., Sea Ice Index, Version 4 (NSIDC
   G02135).

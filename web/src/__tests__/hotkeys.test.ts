@@ -51,6 +51,13 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: 'r' })?.description).toBe('Check for new clouds now');
     expect(matchHotkey({ key: 'C', shiftKey: true })?.description).toBe('Clouds');
     expect(matchHotkey({ key: '?', shiftKey: true })?.description).toBe('This help');
+    expect(matchHotkey({ key: 'T', shiftKey: true })?.description).toBe('Tsunami alerts (NOAA)');
+  });
+
+  it('Shift+L cycles ISS telemetry: while tracking → always → off', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('L', { shiftKey: true }), h.s.isslive));
+    expect(seen).toEqual(['on', 'off', 'track']);
   });
 
   it('ignores auto-repeat for toggles but not for pan/zoom', () => {

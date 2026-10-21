@@ -20,11 +20,13 @@
     "lightning": "cd ../pipeline && python -m xearth_clouds.lightning --out ../web/public/lightning",
     "events": "cd ../pipeline && python -m xearth_clouds.events --out ../web/public/events",
     "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice",
-    "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke"
+    "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke",
+    "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
     "astronomy-engine": "^2.1.19",
+    "lightstreamer-client-web": "^9.2.3",
     "satellite.js": "^7.1.0"
   },
   "devDependencies": {
