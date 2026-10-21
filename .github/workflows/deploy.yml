@@ -1,0 +1,70 @@
+# Build the site with a fresh cloud map and publish it to GitHub Pages — on
+# every push to main and once an hour. GMGSI files land in NOAA's bucket about
+# 35–45 minutes after the hour, so the hourly run is scheduled at :50.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '50 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ./pipeline
+      - name: Build cloud map from the newest GMGSI file
+        # A NOAA outage shouldn't block a deploy; the page says "clouds unavailable".
+        continue-on-error: true
+        run: python -m xearth_clouds --out web/public/clouds
+
+      - name: Cache NASA textures
+        uses: actions/cache@v4
+        with:
+          path: web/public/textures
+          key: nasa-textures-v1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm textures
+        working-directory: web
+      - run: pnpm build
+        working-directory: web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

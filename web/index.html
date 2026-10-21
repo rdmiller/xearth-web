@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A live space view of Earth, lit by the real Sun, with hourly clouds." />
+    <meta name="theme-color" content="#000000" />
+    <title>xearth web</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; color: #dfe6ff; overflow: hidden; }
+      body { font: 14px/1.45 system-ui, sans-serif; }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      #overlay { touch-action: none; cursor: grab; }
+      #overlay:active { cursor: grabbing; }
+      #help {
+        position: fixed; right: 16px; top: 16px; max-width: min(420px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
+        padding: 14px 16px; border-radius: 8px; background: rgba(8, 12, 24, 0.88);
+        border: 1px solid rgba(140, 160, 220, 0.25);
+      }
+      #help h2 { margin: 0 0 6px; font-size: 15px; }
+      #help h3 { margin: 12px 0 4px; font-size: 13px; color: #9fb2e8; }
+      #help table { border-collapse: collapse; width: 100%; }
+      #help td { padding: 1px 8px 1px 0; vertical-align: top; }
+      #help code, #help kbd { font: 12px ui-monospace, Consolas, monospace; color: #fff; }
+      .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
+    </style>
+  </head>
+  <body>
+    <canvas id="globe"></canvas>
+    <canvas id="overlay"></canvas>
+    <aside id="help" hidden>
+      <h2>xearth web</h2>
+      Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
+      <h3>Keys</h3>
+      <table>
+        <tr><td><kbd>C</kbd></td><td>clouds</td><td><kbd>N</kbd></td><td>city lights</td></tr>
+        <tr><td><kbd>G</kbd></td><td>grid</td><td><kbd>M</kbd></td><td>markers</td></tr>
+        <tr><td><kbd>L</kbd></td><td>label</td><td><kbd>S</kbd></td><td>stars</td></tr>
+        <tr><td><kbd>V</kbd></td><td>next view mode</td><td><kbd>F</kbd></td><td>fullscreen</td></tr>
+      </table>
+      <h3>URL parameters</h3>
+      <table>
+        <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code></td></tr>
+        <tr><td><code>lat</code>, <code>lon</code></td><td>viewer position (fixed) or offset from the subsolar point (sunrel)</td></tr>
+        <tr><td><code>period</code>, <code>inc</code></td><td>orbit period (hours) and inclination (°)</td></tr>
+        <tr><td><code>dist</code></td><td>viewer distance in Earth radii; 0 = orthographic</td></tr>
+        <tr><td><code>mag</code>, <code>rot</code></td><td>size and rotation (°)</td></tr>
+        <tr><td><code>wait</code></td><td>seconds between redraws (default 60)</td></tr>
+        <tr><td><code>time</code>, <code>speed</code></td><td>ISO start time; clock multiplier</td></tr>
+        <tr><td><code>clouds</code>, <code>lights</code>, <code>grid</code>, <code>markers</code>, <code>stars</code>, <code>label</code></td><td><code>0</code> or <code>1</code></td></tr>
+        <tr><td><code>cloudsrc</code></td><td>folder holding <code>latest.json</code></td></tr>
+      </table>
+    </aside>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

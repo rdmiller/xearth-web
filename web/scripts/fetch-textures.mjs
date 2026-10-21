@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+// Download NASA's Blue Marble Next Generation (one per month, 5400×2700, topography +
+// bathymetry) and Black Marble 2016 (night lights) into public/textures/.
+// Both are NASA public-domain imagery. Existing files are skipped.
+//
+//   node scripts/fetch-textures.mjs            all 12 months + night
+//   node scripts/fetch-textures.mjs --current  just this month + night (fast start)
+
+import { createWriteStream, existsSync, mkdirSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
+
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'textures');
+const BASE = 'https://eoimages.gsfc.nasa.gov/images/imagerecords';
+const MONTH_RECORDS = ['73580', '73605', '73630', '73655', '73701', '73726', '73751', '73776', '73801', '73826', '73884', '73909'];
+
+const files = MONTH_RECORDS.map((id, i) => {
+  const mm = String(i + 1).padStart(2, '0');
+  return { name: `day-${mm}.jpg`, url: `${BASE}/73000/${id}/world.topo.bathy.2004${mm}.3x5400x2700.jpg`, month: i };
+});
+files.push({ name: 'night.jpg', url: `${BASE}/144000/144898/BlackMarble_2016_01deg.jpg`, month: -1 });
+
+const currentOnly = process.argv.includes('--current');
+const month = new Date().getUTCMonth();
+mkdirSync(OUT, { recursive: true });
+
+for (const f of files) {
+  if (currentOnly && f.month !== -1 && f.month !== month) continue;
+  const dest = join(OUT, f.name);
+  if (existsSync(dest)) {
+    console.log(`have ${f.name}`);
+    continue;
+  }
+  process.stdout.write(`get  ${f.name} … `);
+  const resp = await fetch(f.url);
+  if (!resp.ok || !resp.body) throw new Error(`${resp.status} ${f.url}`);
+  const part = `${dest}.part`;
+  await pipeline(Readable.fromWeb(resp.body), createWriteStream(part));
+  renameSync(part, dest);
+  console.log('ok');
+}
