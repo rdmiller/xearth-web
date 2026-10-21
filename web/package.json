@@ -16,6 +16,7 @@
     "satellites": "cd ../pipeline && python -m xearth_clouds.satellites --out ../web/public/satellites"
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
     "astronomy-engine": "^2.1.19",
     "satellite.js": "^7.1.0"
   },

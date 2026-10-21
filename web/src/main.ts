@@ -2,11 +2,13 @@
 // schedule (xearth's -wait), with hourly cloud maps faded in as they arrive
 // and satellites propagated from CelesTrak elements.
 
+import '@fontsource/chakra-petch/500.css';
+import '@fontsource/chakra-petch/600.css';
 import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
-import { drawOverlay, formatAge, type SatelliteOverlay } from './overlay';
+import { drawOverlay, formatAge, UI_FONT, type SatelliteOverlay } from './overlay';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
@@ -423,6 +425,11 @@ helpKeys.innerHTML = helpRows()
         .join('')}</table>`,
   )
   .join('');
+
+// Canvas text doesn't trigger web-font loading; ask for the HUD font, redraw once it's in.
+Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.fonts.load(f)))
+  .then(requestRedraw)
+  .catch(() => {});
 
 syncClouds();
 syncSatellites();

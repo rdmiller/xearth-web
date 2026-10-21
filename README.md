@@ -157,6 +157,8 @@ read as thin cloud. Both are limits of a single IR channel.
   Observatory) and Black Marble 2016. Public domain.
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
+- Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
+  Fontsource.
 - Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP
   data. SGP4: satellite.js (MIT). SAT GUS is operated by CrunchLabs.
 - Clouds: NOAA/NESDIS Global Mosaic of Geostationary Satellite Imagery (GMGSI) via the NOAA
