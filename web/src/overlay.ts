@@ -295,8 +295,12 @@ export interface OverlayState {
   launchLine?: string;
   storms?: StormOverlay[];
   quakes?: QuakeOverlay[];
+  /** GDACS floods, wildfires and eruptions. */
+  events?: EventOverlay[];
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
+  /** Lightning, GDACS and snow-and-ice summary. */
+  surfaceLine?: string;
   /** Kp, X-ray class, solar wind. */
   spaceLine?: string;
   perf?: PerfOverlay;
@@ -346,6 +350,8 @@ interface CalloutRequest {
   rows: Row[];
   /** Distance from the anchor to the label, px. */
   gap: number;
+  /** Drop the label (the marker still shows) when every spot is taken, rather than overlap. */
+  optional?: boolean;
 }
 
 interface Callout {
@@ -362,7 +368,14 @@ interface Callout {
  * right of the anchor, else left, below, above — whichever doesn't hit one
  * already placed. Measured once, so city placement can avoid exactly these boxes.
  */
-function placeCallouts(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, reqs: CalloutRequest[]): Callout[] {
+function placeCallouts(
+  ctx: CanvasRenderingContext2D,
+  s: OverlayState,
+  w: number,
+  h: number,
+  reqs: CalloutRequest[],
+  reserved: Rect[] = [],
+): Callout[] {
   const out: Callout[] = [];
   ctx.save();
   ctx.font = `600 11px ${UI_FONT}`;
@@ -386,7 +399,12 @@ function placeCallouts(ctx: CanvasRenderingContext2D, s: OverlayState, w: number
       w: width + 8,
       h: r.rows.length * LABEL_ROW + 2,
     });
-    const pick = candidates.find((c) => !out.some((o) => overlaps(o.rect, boxAt(c)))) ?? candidates[0];
+    // On screen and clear of the status readout and of labels already placed.
+    const onScreen = (b: Rect) => b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h;
+    const clear = (b: Rect) => !reserved.some((t) => overlaps(t, b)) && !out.some((o) => overlaps(o.rect, b));
+    const free = candidates.find((c) => onScreen(boxAt(c)) && clear(boxAt(c)));
+    if (!free && r.optional) continue;
+    const pick = free ?? candidates.find((c) => onScreen(boxAt(c))) ?? candidates[0];
     out.push({ x: pick.x, y: pick.y, rows: r.rows, rect: boxAt(pick) });
   }
   ctx.restore();
@@ -576,6 +594,110 @@ function quakeRequests(s: OverlayState): CalloutRequest[] {
       anchor: q.pos,
       rows: q.rows!.map((text, i) => [{ text, color: i === 0 ? q.color : HUD.dim }]),
       gap: q.radius + 7,
+    }));
+}
+
+// ---- GDACS floods, wildfires, eruptions ------------------------------------------------
+
+export interface EventOverlay {
+  kind: 'FL' | 'WF' | 'VO';
+  pos: Vec3;
+  color: string;
+  /** Marker half-size, px (grows with the alert level). */
+  size: number;
+  /** Wildfires: burned area as a circle, km (drawn once it outgrows the marker). */
+  areaRadiusKm?: number;
+  /** Labelled ones: title, detail, alert level (drawn in its colour). */
+  rows?: { title: string; detail: string; alert: string; alertColor: string };
+}
+
+/** Flood: two waves; wildfire: a flame; eruption: a cone with a plume dot. Cached per look. */
+function eventSprite(kind: EventOverlay['kind'], color: string, size: number, dpr: number): Sprite {
+  const s = Math.round(size * 2) / 2;
+  const pad = s + 3;
+  return sprite(`event|${kind}|${color}|${s}`, dpr, { x: -pad, y: -pad, w: 2 * pad, h: 2 * pad }, (c) => {
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = 1.4;
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    c.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    c.shadowBlur = 3;
+    if (kind === 'FL') {
+      for (const dy of [-s * 0.35, s * 0.35]) {
+        c.beginPath();
+        c.moveTo(-s, dy);
+        c.bezierCurveTo(-s / 2, dy - s * 0.5, 0, dy + s * 0.5, s / 2, dy);
+        c.quadraticCurveTo(s * 0.75, dy - s * 0.25, s, dy);
+        c.stroke();
+      }
+    } else if (kind === 'WF') {
+      c.beginPath();
+      c.moveTo(0, -s);
+      c.bezierCurveTo(s * 0.9, -s * 0.2, s * 0.8, s, 0, s);
+      c.bezierCurveTo(-s * 0.8, s, -s * 0.9, -s * 0.2, 0, -s);
+      c.globalAlpha = 0.35;
+      c.fill();
+      c.globalAlpha = 1;
+      c.stroke();
+    } else {
+      c.beginPath();
+      c.moveTo(-s, s * 0.8);
+      c.lineTo(-s * 0.25, -s * 0.35);
+      c.lineTo(s * 0.25, -s * 0.35);
+      c.lineTo(s, s * 0.8);
+      c.closePath();
+      c.globalAlpha = 0.35;
+      c.fill();
+      c.globalAlpha = 1;
+      c.stroke();
+      c.beginPath();
+      c.arc(0, -s * 0.8, s * 0.22, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
+}
+
+function drawEvents(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  if (!s.events?.length) return;
+  ctx.save();
+  for (const e of s.events) {
+    const p = project(s.camera, e.pos);
+    if (!p.visible) continue;
+    const x = w / 2 + p.x * s.radiusPx;
+    const y = h / 2 - p.y * s.radiusPx;
+    // The burned area to scale, once it's bigger than the marker.
+    const r = e.areaRadiusKm ? (e.areaRadiusKm * s.radiusPx) / 6371 : 0;
+    if (r > e.size) {
+      ctx.strokeStyle = e.color;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+    stamp(ctx, eventSprite(e.kind, e.color, e.size, dpr), x, y, dpr);
+  }
+  ctx.restore();
+}
+
+function eventRequests(s: OverlayState): CalloutRequest[] {
+  return (s.events ?? [])
+    .filter((e) => e.rows)
+    .map((e) => ({
+      anchor: e.pos,
+      rows: [
+        [{ text: e.rows!.title, color: e.color }],
+        [
+          { text: e.rows!.detail, color: HUD.dim },
+          { text: ` · ${e.rows!.alert.toUpperCase()}`, color: e.rows!.alertColor },
+        ],
+      ],
+      gap: e.size + 6,
+      optional: true,
     }));
 }
 
@@ -877,6 +999,28 @@ export function cloudLine(status: CloudStatus, enabled: boolean, now: Date): str
   }
 }
 
+/** The status readout, top left: time, viewpoint, then one line per active layer group. */
+function readoutLines(s: OverlayState): string[] {
+  const d = s.date;
+  const lines = [
+    `${d.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`,
+    `view ${fmtLat(s.viewer.lat)} ${fmtLon(s.viewer.lon)}`,
+    `sun  ${fmtLat(s.sun.lat)} ${fmtLon(s.sun.lon)}`,
+    cloudLine(s.cloudStatus, s.clouds, new Date()),
+  ];
+  if (s.satellites) {
+    lines.push(s.satellites.summary);
+    const tracked = s.satellites.featured.find((f) => f.sat.key === s.satellites?.tracking);
+    if (tracked) lines.push(`tracking ${describeSat(tracked)}`);
+  }
+  if (s.launchLine) lines.push(s.launchLine);
+  if (s.hazardLine) lines.push(s.hazardLine);
+  if (s.surfaceLine) lines.push(s.surfaceLine);
+  if (s.spaceLine) lines.push(s.spaceLine);
+  if (s.note) lines.push(s.note);
+  return lines;
+}
+
 export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
@@ -888,8 +1032,24 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  // Priority for label space: launches, then storms, then quakes, then cities.
-  const callouts = placeCallouts(ctx, s, w, h, [...launchRequests(s), ...stormRequests(s), ...quakeRequests(s)]);
+  // The status readout is laid out first so callouts can keep clear of it.
+  ctx.font = `500 12px ${UI_FONT}`;
+  ctx.letterSpacing = '0.05em';
+  const lines = s.label ? readoutLines(s) : [];
+  const readout: Rect | null = lines.length
+    ? { x: 8, y: 8, w: Math.max(...lines.map((line) => ctx.measureText(line).width)) + 26, h: lines.length * 17 + 6 }
+    : null;
+  ctx.letterSpacing = '0px';
+  // Priority for label space: launches, storms, quakes, GDACS events, then cities.
+  const callouts = placeCallouts(
+    ctx,
+    s,
+    w,
+    h,
+    [...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
+    readout ? [readout] : [],
+  );
+  drawEvents(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
   if (s.markers) drawCities(ctx, s, w, h, dpr, callouts.map((c) => c.rect));
@@ -902,29 +1062,12 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
   ctx.textBaseline = 'top';
-  if (s.label) {
-    const d = s.date;
-    const lines = [
-      `${d.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`,
-      `view ${fmtLat(s.viewer.lat)} ${fmtLon(s.viewer.lon)}`,
-      `sun  ${fmtLat(s.sun.lat)} ${fmtLon(s.sun.lon)}`,
-      cloudLine(s.cloudStatus, s.clouds, new Date()),
-    ];
-    if (s.satellites) {
-      lines.push(s.satellites.summary);
-      const tracked = s.satellites.featured.find((f) => f.sat.key === s.satellites?.tracking);
-      if (tracked) lines.push(`tracking ${describeSat(tracked)}`);
-    }
-    if (s.launchLine) lines.push(s.launchLine);
-    if (s.hazardLine) lines.push(s.hazardLine);
-    if (s.spaceLine) lines.push(s.spaceLine);
-    if (s.note) lines.push(s.note);
+  if (readout) {
     // A dark backing so the readout stays legible over bright cloud, then a thin
     // accent rule down the left, like an instrument readout.
-    const width = Math.max(...lines.map((line) => ctx.measureText(line).width));
     ctx.fillStyle = 'rgba(4, 10, 20, 0.6)';
     ctx.beginPath();
-    ctx.roundRect(8, 8, width + 26, lines.length * 17 + 6, 4);
+    ctx.roundRect(readout.x, readout.y, readout.w, readout.h, 4);
     ctx.fill();
     ctx.fillStyle = HUD.line;
     ctx.fillRect(14, 14, 1.5, lines.length * 17 - 4);
@@ -941,7 +1084,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · press H',
     w - 10,
     h - 8,
   );

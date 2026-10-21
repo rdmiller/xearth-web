@@ -10,6 +10,19 @@ import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies 
 import { describeCadence, redrawInterval } from './cadence';
 import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
+  ALERT_COLOR,
+  burnedRadiusKm,
+  decodeLightning,
+  EVENT_COLOR,
+  eventDetail,
+  eventLine,
+  eventSize,
+  eventTitle,
+  isEventManifest,
+  isLightningManifest,
+  isSnowIceManifest,
+  labelledEvents,
+  snowIceLine,
   decodeFires,
   fireMinIntensity,
   firesWithin,
@@ -30,8 +43,11 @@ import {
   stormTitle,
   USGS_QUAKES_URL,
   type AuroraGrid,
+  type EventManifest,
   type FirePoints,
+  type LightningManifest,
   type Quake,
+  type SnowIceManifest,
   type StormManifest,
 } from './hazards';
 import {
@@ -53,6 +69,7 @@ import {
   formatAge,
   UI_FONT,
   type BodyMarker,
+  type EventOverlay,
   type LaunchOverlay,
   type QuakeOverlay,
   type SatelliteOverlay,
@@ -402,15 +419,19 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
   return { overlays, line };
 }
 
-// ---- hazards: aurora, tropical cyclones, fires, earthquakes ------------------------
+// ---- hazards: aurora, cyclones, fires, quakes, lightning, GDACS events, snow/ice -----
 // Aurora and earthquakes come straight from NOAA SWPC and USGS (both CORS-enabled,
-// small, updated every few minutes). Storms and fires come from the pipeline
-// (GDACS/NHC need merging; FIRMS is ~20 MB raw). Each polls only while shown.
+// small, updated every few minutes). The rest come from the pipeline: GDACS/NHC
+// need merging, FIRMS is ~20 MB raw, GLM sits in buckets without CORS, and IMS
+// needs reprojecting. Each polls only while shown.
 
 let aurora: AuroraGrid | undefined;
 let stormManifest: StormManifest | undefined;
 let firePoints: FirePoints | undefined;
 let quakes: Quake[] = [];
+let lightningManifest: LightningManifest | undefined;
+let eventManifest: EventManifest | undefined;
+let snowIce: SnowIceManifest | undefined;
 let spaceWeather: SpaceWeather | undefined;
 
 // The SUVI Sun image (~1 MB) is fetched only while the Sun is actually in frame.
@@ -446,7 +467,7 @@ async function fetchJson(url: string): Promise<unknown> {
 
 const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow';
 
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }> = {
   aurora: {
@@ -484,6 +505,38 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       const f = await fetchJson(USGS_QUAKES_URL);
       if (!isQuakeFeed(f)) throw new Error('not a USGS earthquake feed');
       quakes = decodeQuakes(f);
+    },
+  },
+  lightning: {
+    everyMs: 15 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.lightningsrc));
+      if (!isLightningManifest(m)) throw new Error('lightning/latest.json is not a lightning manifest');
+      lightningManifest = m;
+      renderer.setLightning(decodeLightning(m));
+    },
+  },
+  events: {
+    everyMs: 30 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.eventsrc));
+      if (!isEventManifest(m)) throw new Error('events/latest.json is not a GDACS event manifest');
+      eventManifest = m;
+      eventCache = undefined;
+    },
+  },
+  snow: {
+    everyMs: 60 * 60_000,
+    load: async () => {
+      const url = pipelineFile(settings.snowsrc);
+      const m = await fetchJson(url);
+      if (!isSnowIceManifest(m)) throw new Error('snowice/latest.json is not a snow-and-ice manifest');
+      if (snowIce?.generated === m.generated) return;
+      const r = await fetch(new URL(m.image, url).href, { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${m.image}`);
+      // A data image: no colour management, or the ice concentrations shift.
+      renderer.setSnowIce(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
+      snowIce = m;
     },
   },
 };
@@ -546,6 +599,39 @@ function quakeOverlays(): QuakeOverlay[] {
         : undefined,
     };
   });
+}
+
+/** GDACS markers are fixed per manifest, apart from eruption ages (days), so built once per load. */
+let eventCache: EventOverlay[] | undefined;
+function eventOverlays(): EventOverlay[] {
+  if (!settings.events || !eventManifest) return [];
+  if (!eventCache) {
+    const now = Date.now();
+    const labelled = new Set(labelledEvents(eventManifest.events).map((e) => e.id));
+    eventCache = eventManifest.events.map((e) => ({
+      kind: e.type,
+      pos: fromLatLon(e.pos[1], e.pos[0]),
+      color: EVENT_COLOR[e.type],
+      size: eventSize(e.alert),
+      areaRadiusKm: e.areaHa ? burnedRadiusKm(e.areaHa) : undefined,
+      rows: labelled.has(e.id)
+        ? { title: eventTitle(e), detail: eventDetail(e, now), alert: e.alert, alertColor: ALERT_COLOR[e.alert] ?? '#c8d6e5' }
+        : undefined,
+    }));
+  }
+  return eventCache;
+}
+
+function surfaceLine(): string | undefined {
+  const parts: string[] = [];
+  if (settings.lightning && lightningManifest) {
+    const n = lightningManifest.flashes;
+    const end = lightningManifest.latest?.slice(11, 16);
+    parts.push(`lightning ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} flashes (${lightningManifest.windowMin} min${end ? ` to ${end}Z` : ''}, GOES)`);
+  }
+  if (settings.events && eventManifest) parts.push(eventLine(eventManifest));
+  if (settings.snow && snowIce) parts.push(snowIceLine(snowIce));
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 function hazardLine(): string | undefined {
@@ -735,6 +821,8 @@ function frame(now: number) {
     fires: settings.fires
       ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)) }
       : null,
+    lightning: settings.lightning && lightningManifest ? { windowMin: lightningManifest.windowMin } : null,
+    snowIce: settings.snow,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);
@@ -751,7 +839,9 @@ function frame(now: number) {
     launchLine: launch.line,
     storms: stormOverlays(),
     quakes: quakeOverlays(),
+    events: eventOverlays(),
     hazardLine: hazardLine(),
+    surfaceLine: surfaceLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps
       ? {
@@ -820,7 +910,7 @@ function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
-  const hazardsBefore = { aurora: settings.aurora, storms: settings.storms, fires: settings.fires, quakes: settings.quakes };
+  const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
   for (const key of Object.keys(hazardsBefore) as HazardKey[]) {

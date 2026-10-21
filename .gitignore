@@ -7,6 +7,9 @@ web/public/satellites/
 web/public/launches/
 web/public/storms/
 web/public/fires/
+web/public/snowice/
+web/public/lightning/
+web/public/events/
 *.part
 __pycache__/
 *.egg-info/

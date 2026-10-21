@@ -1,7 +1,10 @@
 // Live hazard layers: aurora (NOAA SWPC OVATION), tropical cyclones
-// (GDACS + NHC, via the pipeline) and active fires (NASA FIRMS VIIRS, via the
-// pipeline). Decoding and naming only; drawing is in renderer/ and overlay.ts.
+// (GDACS + NHC, via the pipeline), active fires (NASA FIRMS VIIRS, via the
+// pipeline), earthquakes (USGS), lightning (GOES GLM), snow and ice (NOAA IMS)
+// and GDACS floods, wildfires and eruptions. Decoding and naming only; drawing
+// is in renderer/ and overlay.ts.
 
+import type { SurfacePoints } from './renderer/points';
 import { fromLatLon } from './vec';
 
 // ---- aurora ------------------------------------------------------------------------
@@ -168,10 +171,7 @@ export function isFireManifest(v: unknown): v is FireManifest {
   return !!m && typeof m.generated === 'string' && Array.isArray(m.data) && typeof m.cellDeg === 'number';
 }
 
-export interface FirePoints {
-  count: number;
-  /** Unit-sphere position per cell, Earth-fixed. */
-  pos: Float32Array;
+export interface FirePoints extends SurfacePoints {
   /** Per cell: brightness 0…1 (log fire power), hours since the latest detection, footprint diameter km. */
   look: Float32Array;
   /** Per cell: hours since the latest detection, and detections merged into it (for counting). */
@@ -311,4 +311,155 @@ export function quakeAge(ageMs: number): string {
 /** Label the biggest few, and anything notable (M6+, a tsunami flag, a PAGER alert). */
 export function labelledQuakes(quakes: Quake[], max = 4): Quake[] {
   return quakes.filter((q, i) => i < max || q.mag >= 6 || q.tsunami || (q.alert && q.alert !== 'green'));
+}
+
+// ---- lightning (GOES GLM, via the pipeline) -------------------------------------------
+
+export interface LightningManifest {
+  generated: string;
+  source: string;
+  satellites: string[];
+  /** Flashes gathered over this many minutes, ending at `latest`. */
+  windowMin: number;
+  latest: string | null;
+  cellDeg: number;
+  flashes: number;
+  count: number;
+  /** Flat [lat_index, lon_index, flashes, minutes_ago] per cell. */
+  data: number[];
+}
+
+export function isLightningManifest(v: unknown): v is LightningManifest {
+  const m = v as Partial<LightningManifest> | null;
+  return !!m && typeof m.generated === 'string' && Array.isArray(m.data) && typeof m.cellDeg === 'number' && typeof m.windowMin === 'number';
+}
+
+/** A GLM pixel is ~8 km across at nadir: a flash is placed within one. */
+export const GLM_PIXEL_KM = 8;
+
+/** One flash in the window → 0.15; ~300 (a vigorous storm cell) → 1. */
+export function lightningIntensity(flashes: number): number {
+  return Math.max(0, Math.min(1, 0.15 + (0.85 * Math.log10(Math.max(1, flashes))) / Math.log10(300)));
+}
+
+/** Points for the GL layer: ages in minutes before the newest file. */
+export function decodeLightning(m: LightningManifest): SurfacePoints {
+  const n = Math.floor(m.data.length / 4);
+  const pos = new Float32Array(n * 3);
+  const look = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const [latI, lonI, flashes, age] = m.data.slice(i * 4, i * 4 + 4);
+    pos.set(fromLatLon(latI * m.cellDeg, lonI * m.cellDeg), i * 3);
+    look[i * 3] = lightningIntensity(flashes);
+    look[i * 3 + 1] = age;
+    look[i * 3 + 2] = GLM_PIXEL_KM;
+  }
+  return { count: n, pos, look };
+}
+
+// ---- snow and ice (NOAA IMS + Sea Ice Index, via the pipeline) ------------------------
+
+export interface SnowIceManifest {
+  generated: string;
+  source: string;
+  /** PNG beside latest.json: red = snow, green = ice concentration. */
+  image: string;
+  /** IMS chart date (Northern Hemisphere snow and ice). */
+  ims: string;
+  /** Sea Ice Index date (Antarctic sea ice), when one was found. */
+  seaIceSouth?: string;
+}
+
+export function isSnowIceManifest(v: unknown): v is SnowIceManifest {
+  const m = v as Partial<SnowIceManifest> | null;
+  return !!m && typeof m.generated === 'string' && typeof m.image === 'string' && typeof m.ims === 'string';
+}
+
+const shortDate = (iso: string) =>
+  new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+export function snowIceLine(m: SnowIceManifest): string {
+  return `snow & ice ${shortDate(m.ims)} (IMS)${m.seaIceSouth ? ` · Antarctic sea ice ${shortDate(m.seaIceSouth)}` : ''}`;
+}
+
+// ---- GDACS floods, wildfires, volcanoes (via the pipeline) -----------------------------
+
+export type GdacsType = 'FL' | 'WF' | 'VO';
+
+export interface GdacsEvent {
+  id: string;
+  type: GdacsType;
+  /** Country for floods and fires, the volcano's name for eruptions. */
+  name: string;
+  country: string;
+  /** Green / Orange / Red. */
+  alert: string;
+  /** [lon, lat] */
+  pos: [number, number];
+  from: string | null;
+  to: string | null;
+  url: string;
+  /** Wildfires: burned area, hectares. */
+  areaHa?: number;
+}
+
+export interface EventManifest {
+  generated: string;
+  volcanoDays: number;
+  counts: Record<GdacsType, number>;
+  events: GdacsEvent[];
+}
+
+export function isEventManifest(v: unknown): v is EventManifest {
+  const m = v as Partial<EventManifest> | null;
+  return !!m && typeof m.generated === 'string' && Array.isArray(m.events) && !!m.counts;
+}
+
+export const EVENT_COLOR: Record<GdacsType, string> = { FL: '#4da3ff', WF: '#ff7a45', VO: '#ff4d6d' };
+export const ALERT_COLOR: Record<string, string> = { Green: '#6fdc8c', Orange: '#ff9f43', Red: '#ff4d4d' };
+const EVENT_WORD: Record<GdacsType, string> = { FL: 'FLOOD', WF: 'WILDFIRE', VO: 'ERUPTION' };
+
+/** Radius (km) of a circle with the burned area. 1 ha = 0.01 km². */
+export function burnedRadiusKm(areaHa: number): number {
+  return Math.sqrt((areaHa * 0.01) / Math.PI);
+}
+
+export function eventTitle(e: GdacsEvent): string {
+  return `${EVENT_WORD[e.type]} · ${e.name.toUpperCase()}`;
+}
+
+function daysAgo(iso: string | null, now: number): string {
+  if (!iso) return '';
+  const d = Math.floor((now - Date.parse(iso)) / 86_400_000);
+  return d <= 0 ? 'TODAY' : d === 1 ? 'YESTERDAY' : `${d} DAYS AGO`;
+}
+
+/** Second row: what GDACS knows, then the alert level (drawn in its colour). */
+export function eventDetail(e: GdacsEvent, now: number): string {
+  if (e.type === 'WF') return e.areaHa ? `${e.areaHa.toLocaleString('en-US')} HA BURNED` : 'ACTIVE';
+  if (e.type === 'VO') return `${e.country.toUpperCase()} · ${daysAgo(e.from, now)}`;
+  return e.from ? `SINCE ${shortDate(e.from).toUpperCase()}` : 'ONGOING';
+}
+
+/** Marker half-size in CSS px by alert level. */
+export function eventSize(alert: string): number {
+  return alert === 'Red' ? 9 : alert === 'Orange' ? 7.5 : 5.5;
+}
+
+/**
+ * Label every flood, eruption and Orange/Red alert, but only the few largest
+ * Green wildfires — GDACS lists dozens, and FIRMS already shows where they burn.
+ */
+export function labelledEvents(events: GdacsEvent[], maxGreenFires = 3): GdacsEvent[] {
+  const fires = events
+    .filter((e) => e.type === 'WF' && e.alert === 'Green')
+    .sort((a, b) => (b.areaHa ?? 0) - (a.areaHa ?? 0))
+    .slice(0, maxGreenFires);
+  return events.filter((e) => e.type !== 'WF' || e.alert !== 'Green' || fires.includes(e));
+}
+
+export function eventLine(m: EventManifest): string {
+  const c = m.counts;
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  return `GDACS ${n(c.FL, 'flood', 'floods')} · ${n(c.WF, 'wildfire', 'wildfires')} · ${n(c.VO, 'eruption', 'eruptions')} (${m.volcanoDays} d)`;
 }

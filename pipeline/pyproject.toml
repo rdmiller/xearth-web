@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xearth-clouds"
 version = "0.1.0"
-description = "Hourly global cloud-alpha map for xearth-web, from NOAA GMGSI longwave IR"
+description = "Hourly data for xearth-web: GMGSI clouds, satellites, launches, hazards, lightning, snow and ice"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "netCDF4>=1.6", "Pillow>=10"]
 

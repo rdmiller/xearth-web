@@ -34,6 +34,12 @@ global cloud layer refreshed every hour from geostationary satellites.
     red-orange.
   - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
     by age, with labels on the largest.
+  - **Lightning:** the last 30 minutes of flashes from the GOES-East and GOES-West Geostationary
+    Lightning Mappers, as blue-white sparks (the Americas, Atlantic and eastern Pacific).
+  - **Floods, wildfires, eruptions:** GDACS events with their alert levels; wildfires carry their
+    burned area, drawn to scale when zoomed in.
+  - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
+    NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
@@ -53,6 +59,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `B` | Sun and Moon on/off |
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
+| `Z` `Y` `I` | lightning, GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -101,6 +108,9 @@ pnpm satellites              # CelesTrak elements → public/satellites/ (at mos
 pnpm launches                # Launch Library 2 + SpaceX pre-launch orbits → public/launches/
 pnpm storms                  # GDACS + NHC tropical cyclones → public/storms/
 pnpm fires                   # NASA FIRMS VIIRS, last 24 h → public/fires/
+pnpm lightning               # GOES GLM, last 30 min (~70 MB download) → public/lightning/
+pnpm events                  # GDACS floods, wildfires, eruptions → public/events/
+pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
 pnpm dev
 ```
 
@@ -117,7 +127,9 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
+| `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
+| `lightningsrc`, `eventsrc`, `snowsrc` | folders holding the lightning / GDACS / snow-and-ice `latest.json` | `lightning/`, `events/`, `snowice/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
@@ -244,6 +256,9 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
 | Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 30 min |
+| Lightning | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 15 min |
+| Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
+| Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 
 - **Aurora** is drawn in the globe shader above the clouds, only where the Sun is at least ~6°
   below the horizon, using a 1 − exp(−2.5·p^1.4) response so the oval's core is bright and its
@@ -268,8 +283,40 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     southern dry-season burning), but they flagged at most ~0.05% of the continent.
 - **Earthquakes:** ring size ×1.5 per magnitude. Red within the hour, orange within 6 h, then
   yellow. The largest few, M6+, tsunami-flagged or PAGER-alerted quakes get labels.
-- Launch, storm and quake labels share one placement pass (launches first, then storms, then
-  quakes), and city labels avoid all of them.
+- **Lightning:** GLM files (one per 20 s per satellite, ~400 KB) are in NOAA's AWS buckets,
+  which don't send CORS headers, so the browser can't read them and the pipeline gathers the
+  last 30 minutes instead (~180 files, ~70 MB, about a minute). Flashes that fail quality
+  control are dropped; the rest go into 0.1° cells with a count and the minutes since the
+  latest. On 2026-10-21 at 21:57Z that was 39.7k flashes in 4,364 cells, 62 KB of JSON.
+  - *Overlap:* GOES-East and GOES-West both see the eastern Pacific and the western Americas,
+    so each cell takes the larger of the two satellites' counts, not their sum.
+  - *Coverage:* GLM sees the Americas, the Atlantic and the eastern Pacific to about ±55°;
+    Europe, Africa and Asia have no lightning shown.
+  - *Staleness:* the hourly run at :50 covers roughly :20–:50, so what's shown is up to
+    ~90 minutes old by the next run. The status line gives the window's end time.
+- **GDACS events:** floods (GloFAS) and wildfires (GWIS) come from GDACS's list of current
+  events. GDACS records an eruption as a single moment that is never "current", so eruptions
+  come from a search over the last 90 days, one marker per volcano at its latest eruption.
+  Every flood, eruption and Orange/Red alert is labelled; of the dozens of Green wildfires
+  only the three largest are, since FIRMS already shows where they burn. A wildfire's burned
+  area is drawn as a dashed circle of the same area once it outgrows the marker.
+- **Snow and ice:**
+  - *North:* the IMS 4 km chart is polar stereographic on WGS84 (true at 60°N, −80° down the
+    grid). The pipeline reprojects it with its own projection maths rather than NOAA's 300 MB
+    latitude/longitude files. A test pins known places (Greenland snow, mid-Atlantic and
+    Hudson Bay water, polar ice) to their cells, which a mirrored grid would get wrong.
+  - *South:* IMS stops at the equator, so Antarctic sea ice comes from the Sea Ice Index
+    concentration (25 km, EPSG:3412, a few days behind), smoothed before sampling so its cells
+    don't show as blocks.
+  - *Output:* both land in one 4096×2048 PNG (red = snow, green = ice concentration, ~270 KB),
+    loaded without colour management so the values stay exact. The shader whitens snow-covered
+    ground (less over dark forest, where snow reads grey from space) and paints sea ice a
+    bluer white with no sun glint.
+  - *Limitation:* the monthly Blue Marble has its own snow, which isn't removed where IMS says
+    there's none.
+- Launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
+  on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
+  marker stays) rather than overlap another. City labels avoid all of them.
 
 ## Frame rate
 
@@ -310,6 +357,13 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
   Earth Science Data and Information System (ESDIS)."
+- Lightning: NOAA GOES-R Series Geostationary Lightning Mapper (GLM) L2 data via the NOAA Open
+  Data Dissemination program on AWS.
+- Floods, wildfires, eruptions: GDACS, a cooperation framework of the United Nations and the
+  European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
+- Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
+  Ice Analysis at 4 km (NSIDC G02156); Fetterer et al., Sea Ice Index, Version 4 (NSIDC
+  G02135).
 - Launches: Launch Library 2 by The Space Devs; Starlink pre-launch orbits are SpaceX state
   vectors published by CelesTrak as supplemental GP.
 - Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP

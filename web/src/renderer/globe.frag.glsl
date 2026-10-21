@@ -27,6 +27,8 @@ uniform float uLights;
 uniform float uGrid;
 uniform sampler2D uAurora;  // OVATION probability of visible aurora, 0–100 as bytes
 uniform float uAuroraOn;
+uniform sampler2D uSnowIce;  // r = snow on land, g = ice concentration (NOAA IMS + Sea Ice Index)
+uniform float uSnowIceOn;
 
 out vec4 outColor;
 
@@ -77,6 +79,18 @@ void main() {
   vec3 albedoS = uHasDay > 0.5 ? textureLod(uDay, uv, lodFor(uDay, mu, coslat)).rgb : vec3(0.06, 0.16, 0.38);
   vec3 albedo = toLinear(albedoS);
 
+  // Today's snow and ice over the month's Blue Marble. Snow under forest reads
+  // grey from space, so it whitens dark ground less; sea ice is a bluer white.
+  float iceC = 0.0;
+  if (uSnowIceOn > 0.5) {
+    vec2 si = textureLod(uSnowIce, uv, lodFor(uSnowIce, mu, coslat)).rg;
+    float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+    float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum));
+    albedo = mix(albedo, vec3(0.80, 0.83, 0.87), snowCover);
+    iceC = si.g;
+    albedo = mix(albedo, vec3(0.70, 0.76, 0.82), iceC * 0.9);
+  }
+
   float k = dot(n, uSun);
   float dayW = smoothstep(-0.105, 0.06, k);       // fades out by the end of civil twilight
   float lambert = clamp(k, 0.0, 1.0);
@@ -110,7 +124,7 @@ void main() {
   // Sun glint on open water (ocean picked out by its blue cast).
   float ocean = uHasDay > 0.5 ? smoothstep(0.03, 0.12, albedoS.b - max(albedoS.r, albedoS.g)) : 1.0;
   vec3 hv = normalize(uSun + view);
-  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * dayW;
+  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * (1.0 - iceC) * dayW;
 
   // Atmosphere along the lit limb.
   col += vec3(0.30, 0.50, 1.0) * pow(1.0 - mu, 4.0) * 0.6 * smoothstep(-0.2, 0.4, k);

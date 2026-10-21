@@ -1,13 +1,13 @@
 // WebGL2 plumbing: a star point pass, then the globe as one full-screen
-// triangle (four textures) blended over it.
+// triangle (day, night and two cloud maps, plus aurora and snow/ice) blended over it.
 
 import type { StarCatalog } from '../stars';
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
 import { BodyLayer, type BodyDraw } from './bodies';
-import { FireLayer } from './fires';
-import type { AuroraGrid, FirePoints } from '../hazards';
+import { FIRE_STYLE, LIGHTNING_STYLE, SurfacePointLayer, type SurfacePoints } from './points';
+import type { AuroraGrid } from '../hazards';
 import { SatLayer } from './sats';
 import { StarLayer } from './stars';
 
@@ -27,8 +27,12 @@ export interface FrameState {
   /** Sun and Moon discs (drawn behind the globe). */
   bodies: BodyDraw[];
   aurora: boolean;
+  /** Snow on land and sea ice (NOAA IMS + Sea Ice Index). */
+  snowIce: boolean;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
   fires: { windowH: number; minIntensity: number } | null;
+  /** Lightning layer: flashes at most `windowMin` old. */
+  lightning: { windowMin: number } | null;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number } | null;
   dpr: number;
@@ -46,9 +50,12 @@ export class GlobeRenderer {
   private readonly stars: StarLayer;
   private readonly sats: SatLayer;
   private readonly bodies: BodyLayer;
-  private readonly fireLayer: FireLayer;
+  private readonly fireLayer: SurfacePointLayer;
+  private readonly lightningLayer: SurfacePointLayer;
   private readonly auroraTex: WebGLTexture;
   private hasAurora = false;
+  private readonly snowIceTex: WebGLTexture;
+  private hasSnowIce = false;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -66,8 +73,10 @@ export class GlobeRenderer {
     this.stars = new StarLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.sats = new SatLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.bodies = new BodyLayer(gl, (vs, fs) => link(gl, vs, fs));
-    this.fireLayer = new FireLayer(gl, (vs, fs) => link(gl, vs, fs));
+    this.fireLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), FIRE_STYLE);
+    this.lightningLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), LIGHTNING_STYLE);
     this.auroraTex = gl.createTexture()!;
+    this.snowIceTex = gl.createTexture()!;
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -158,8 +167,27 @@ export class GlobeRenderer {
     this.hasAurora = true;
   }
 
-  setFires(points: FirePoints) {
-    this.fireLayer.setFires(points);
+  /** Snow (red) and ice concentration (green) on the globe's grid. */
+  setSnowIce(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE7);
+    gl.bindTexture(gl.TEXTURE_2D, this.snowIceTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasSnowIce = true;
+  }
+
+  setFires(points: SurfacePoints) {
+    this.fireLayer.setPoints(points);
+  }
+
+  setLightning(points: SurfacePoints) {
+    this.lightningLayer.setPoints(points);
   }
 
   setSun(image: TexImageSource, limb: number) {
@@ -232,11 +260,19 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
     gl.uniform1i(this.u('uAurora'), 5);
     gl.uniform1f(this.u('uAuroraOn'), f.aurora && this.hasAurora ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE7);
+    gl.bindTexture(gl.TEXTURE_2D, this.snowIceTex);
+    gl.uniform1i(this.u('uSnowIce'), 7);
+    gl.uniform1f(this.u('uSnowIceOn'), f.snowIce && this.hasSnowIce ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 
+    const res: [number, number] = [this.canvas.width, this.canvas.height];
     if (f.fires) {
-      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, ...f.fires }, [this.canvas.width, this.canvas.height]);
+      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.fires.windowH, minIntensity: f.fires.minIntensity }, res);
+    }
+    if (f.lightning) {
+      this.lightningLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.lightning.windowMin, minIntensity: 0 }, res);
     }
 
     if (f.satellites) {

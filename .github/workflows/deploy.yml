@@ -56,13 +56,24 @@ jobs:
         run: python -m xearth_clouds.launches --out web/public/launches
 
       # Aurora and earthquakes are fetched by the browser straight from NOAA SWPC and
-      # USGS. Storms (GDACS + NHC need merging) and fires (FIRMS, ~20 MB raw) come from here.
+      # USGS. Storms (GDACS + NHC need merging), fires (FIRMS, ~20 MB raw), lightning (GLM
+      # buckets send no CORS headers), GDACS events and snow/ice (IMS needs reprojecting)
+      # come from here.
       - name: Tropical cyclones (GDACS + NHC)
         continue-on-error: true
         run: python -m xearth_clouds.storms --out web/public/storms
       - name: Active fires, last 24 h (NASA FIRMS VIIRS)
         continue-on-error: true
         run: python -m xearth_clouds.fires --out web/public/fires
+      - name: Lightning, last 30 min (GOES-19 + GOES-18 GLM on AWS)
+        continue-on-error: true
+        run: python -m xearth_clouds.lightning --out web/public/lightning
+      - name: Floods, wildfires, eruptions (GDACS)
+        continue-on-error: true
+        run: python -m xearth_clouds.events --out web/public/events
+      - name: Snow and ice (NOAA IMS + Sea Ice Index)
+        continue-on-error: true
+        run: python -m xearth_clouds.snowice --out web/public/snowice
 
       - name: Cache NASA textures
         uses: actions/cache@v4

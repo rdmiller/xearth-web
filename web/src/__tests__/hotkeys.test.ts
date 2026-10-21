@@ -42,7 +42,7 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: 'C' })?.description).toBe('Clouds');
     expect(matchHotkey({ key: 'c', ctrlKey: true })).toBeUndefined();
     expect(matchHotkey({ key: 'r', metaKey: true })).toBeUndefined(); // reload
-    expect(matchHotkey({ key: 'z' })).toBeUndefined(); // still unbound
+    expect(matchHotkey({ key: '`' })).toBeUndefined(); // still unbound
   });
 
   it('ignores auto-repeat for toggles but not for pan/zoom', () => {
@@ -106,6 +106,9 @@ describe('hazard keys', () => {
     ['w', 'storms'],
     ['x', 'fires'],
     ['q', 'quakes'],
+    ['z', 'lightning'],
+    ['y', 'events'],
+    ['i', 'snow'],
   ] as const)('%s toggles %s', (key, field) => {
     const h = harness();
     const before = h.s[field];

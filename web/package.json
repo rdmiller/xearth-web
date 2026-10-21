@@ -16,7 +16,10 @@
     "satellites": "cd ../pipeline && python -m xearth_clouds.satellites --out ../web/public/satellites",
     "launches": "cd ../pipeline && python -m xearth_clouds.launches --out ../web/public/launches",
     "storms": "cd ../pipeline && python -m xearth_clouds.storms --out ../web/public/storms",
-    "fires": "cd ../pipeline && python -m xearth_clouds.fires --out ../web/public/fires"
+    "fires": "cd ../pipeline && python -m xearth_clouds.fires --out ../web/public/fires",
+    "lightning": "cd ../pipeline && python -m xearth_clouds.lightning --out ../web/public/lightning",
+    "events": "cd ../pipeline && python -m xearth_clouds.events --out ../web/public/events",
+    "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",

@@ -34,6 +34,12 @@ export interface Settings extends ViewSettings {
   /** Show fires detected within this many hours (1–24). */
   firehours: number;
   quakes: boolean;
+  /** Lightning (GOES GLM, last 30 min). */
+  lightning: boolean;
+  /** GDACS floods, wildfires and eruptions. */
+  events: boolean;
+  /** Today's snow cover and sea ice. */
+  snow: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
   bodyscale: number;
   /** Fixed start time (ISO), or null for "now". */
@@ -46,9 +52,12 @@ export interface Settings extends ViewSettings {
   satsrc: string;
   /** Where the launches' latest.json lives. */
   launchsrc: string;
-  /** Where the pipeline's storm and fire files live. */
+  /** Where the pipeline's storm, fire, lightning, GDACS event and snow/ice files live. */
   stormsrc: string;
   firesrc: string;
+  lightningsrc: string;
+  eventsrc: string;
+  snowsrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -85,6 +94,9 @@ export function defaults(): Settings {
     fires: true,
     firehours: 12,
     quakes: true,
+    lightning: true,
+    events: true,
+    snow: true,
     bodyscale: 1,
     time: null,
     speed: 1,
@@ -93,6 +105,9 @@ export function defaults(): Settings {
     launchsrc: (import.meta.env?.VITE_LAUNCH_BASE as string | undefined) ?? 'launches/',
     stormsrc: (import.meta.env?.VITE_STORM_BASE as string | undefined) ?? 'storms/',
     firesrc: (import.meta.env?.VITE_FIRE_BASE as string | undefined) ?? 'fires/',
+    lightningsrc: (import.meta.env?.VITE_LIGHTNING_BASE as string | undefined) ?? 'lightning/',
+    eventsrc: (import.meta.env?.VITE_EVENT_BASE as string | undefined) ?? 'events/',
+    snowsrc: (import.meta.env?.VITE_SNOW_BASE as string | undefined) ?? 'snowice/',
   };
 }
 
@@ -156,6 +171,9 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     fires: bool(q, 'fires', base.fires),
     firehours: num(q, 'firehours', base.firehours, 1, 24),
     quakes: bool(q, 'quakes', base.quakes),
+    lightning: bool(q, 'lightning', base.lightning),
+    events: bool(q, 'events', base.events),
+    snow: bool(q, 'snow', base.snow),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
@@ -164,6 +182,9 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     launchsrc: q.get('launchsrc') ?? base.launchsrc,
     stormsrc: q.get('stormsrc') ?? base.stormsrc,
     firesrc: q.get('firesrc') ?? base.firesrc,
+    lightningsrc: q.get('lightningsrc') ?? base.lightningsrc,
+    eventsrc: q.get('eventsrc') ?? base.eventsrc,
+    snowsrc: q.get('snowsrc') ?? base.snowsrc,
   };
 }
 
