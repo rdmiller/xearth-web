@@ -80,7 +80,8 @@ export function leaves(node: SatNode = SAT_TREE): SatLeaf[] {
 export const ALL_LEAVES = leaves().map((l) => l.key);
 /** The bulk (point-cloud) categories, in the order of their index in the GL layer. */
 export const BULK_LEAVES = leaves().filter((l) => l.group);
-export const DEFAULT_LABELS = ['weather-geo'];
+/** Every far constellation (drawn as diamonds) is named; the dense low-orbit dots aren't. */
+export const DEFAULT_LABELS = ['weather-geo', 'weather-heo', 'gps', 'glonass'];
 
 export function findNode(key: string, node: SatNode = SAT_TREE): SatNode | undefined {
   if (node.key === key) return node;
@@ -159,14 +160,15 @@ export function bulkCatalog(m: SatelliteManifest): BulkCatalog {
 }
 
 /**
- * A label-sized name: "GOES 19", "METEOSAT-12", "NOAA 21", "GPS PRN 22", "GLONASS 730".
+ * A label-sized name: "GOES 19", "METEOSAT-12", "NOAA 21", "GPS PRN 22", "GLONASS 730" / "GLONASS 702K".
  * CelesTrak's names carry launch designations and slot numbers in brackets.
  */
 export function shortName(name: string): string {
   const n = name.replace(/\s+/g, ' ').trim();
   const prn = n.match(/^GPS .*\(PRN (\d+)\)$/);
   if (prn) return `GPS PRN ${prn[1]}`;
-  const glo = n.match(/^COSMOS \d+ \((\d+)\)$/);
+  // GLONASS slot/serial numbers; the newer GLONASS-K series carry a K ("702K").
+  const glo = n.match(/^COSMOS \d+ \((\d+K?)\)$/);
   if (glo) return `GLONASS ${glo[1]}`;
   // "METEOSAT-12 (MTG-I1)" → "METEOSAT-12"; "NOAA 20 (JPSS-1)" → "NOAA 20"; "EWS-G2 (GOES 15)" stays as named.
   return n.replace(/\s*\(.*\)$/, '');

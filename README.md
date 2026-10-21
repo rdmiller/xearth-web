@@ -59,7 +59,7 @@ global cloud layer refreshed every hour from geostationary satellites.
   elements, hidden behind the Earth, and dimmed in its shadow.
   - **Satellite panel** (bottom-left button, or Shift+O): a tree of every category with
     tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
-    small enough to label (geostationary weather is labelled by default).
+    small enough to label. Every far constellation (the diamonds) is named by default; the dense low-orbit dots are not. Satellites a few pixels apart share a label ("MTG-I2 · MTG-S1"), and each label tries right, left, below and above before it is left out.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), plus its visible band by day for the low cloud infrared misses, converted
   hourly to an equirectangular alpha map and cross-faded in.
@@ -157,7 +157,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (everything ticked), `featured` (named only), `0` | `all` |
 | `satshow` | categories ticked in the satellite panel: comma list of `iss`, `tiangong`, `satgus`, `starlink`, `weather-geo`, `weather-heo`, `weather-leo`, `gps`, `glonass`, or `none` | all |
-| `satlabels` | categories with name labels (same keys) | `weather-geo` |
+| `satlabels` | categories with name labels (same keys) | `weather-geo,weather-heo,gps,glonass` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |

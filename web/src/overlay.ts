@@ -702,35 +702,110 @@ export interface SatLabelOverlay {
   color: string;
 }
 
-/** A small name in the category's colour, offset right of the point. Cached per name. */
-function satLabelSprite(name: string, color: string, dpr: number): Sprite {
-  const w = name.length * 6.2 + 4;
-  return sprite(`satlabel|${name}|${color}`, dpr, { x: 5, y: -7, w, h: 14 }, (c) => {
+export type LabelSide = 'right' | 'left' | 'below' | 'above';
+const LABEL_SIDES: readonly LabelSide[] = ['right', 'left', 'below', 'above'];
+/** Points closer than this on screen share one label. */
+const LABEL_CLUSTER_PX = 9;
+
+/** The label's box for a side, relative to the point (text height 14 px, 7 px clear of the point). */
+function labelBox(side: LabelSide, textW: number): Rect {
+  const w = textW + 4;
+  switch (side) {
+    case 'right':
+      return { x: 5, y: -7, w, h: 14 };
+    case 'left':
+      return { x: -w - 5, y: -7, w, h: 14 };
+    case 'below':
+      return { x: -w / 2, y: 5, w, h: 14 };
+    case 'above':
+      return { x: -w / 2, y: -19, w, h: 14 };
+  }
+}
+
+export interface PlacedLabel {
+  /** The point (first of its cluster), screen px. */
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  side: LabelSide;
+}
+
+/**
+ * Lay out satellite names: points within a few pixels of each other share one
+ * label ("MTG-I2 · MTG-S1", or "A +2" for more), and each label takes the first
+ * side — right, left, below, above — that stays on screen and clear of the
+ * reserved boxes and the labels already placed. Only a label with no free side
+ * is left out.
+ */
+export function layoutSatLabels(
+  points: { x: number; y: number; name: string; color: string }[],
+  reserved: Rect[],
+  w: number,
+  h: number,
+  textWidth: (text: string) => number,
+): PlacedLabel[] {
+  const clusters: { x: number; y: number; names: string[]; color: string }[] = [];
+  for (const p of points) {
+    const near = clusters.find((c) => Math.hypot(c.x - p.x, c.y - p.y) < LABEL_CLUSTER_PX);
+    if (near) near.names.push(p.name);
+    else clusters.push({ x: p.x, y: p.y, names: [p.name], color: p.color });
+  }
+  const taken = [...reserved];
+  const out: PlacedLabel[] = [];
+  for (const c of clusters) {
+    const text = c.names.length <= 2 ? c.names.join(' · ') : `${c.names[0]} +${c.names.length - 1}`;
+    const tw = textWidth(text);
+    for (const side of LABEL_SIDES) {
+      const b = labelBox(side, tw);
+      const box = { x: c.x + b.x, y: c.y + b.y, w: b.w, h: b.h };
+      const onScreen = box.x >= 0 && box.y >= 0 && box.x + box.w <= w && box.y + box.h <= h;
+      if (!onScreen || taken.some((t) => overlaps(t, box))) continue;
+      taken.push(box);
+      out.push({ x: c.x, y: c.y, text, color: c.color, side });
+      break;
+    }
+  }
+  return out;
+}
+
+/** A small name in the category's colour, on one side of the point. Cached per text, colour and side. */
+function satLabelSprite(text: string, color: string, side: LabelSide, textW: number, dpr: number): Sprite {
+  return sprite(`satlabel|${text}|${color}|${side}`, dpr, labelBox(side, textW), (c) => {
     c.font = `500 10px ${UI_FONT}`;
     c.letterSpacing = '0.06em';
     c.textBaseline = 'middle';
     c.shadowColor = 'rgba(0, 0, 0, 0.9)';
     c.shadowBlur = 3;
     c.fillStyle = color;
-    c.fillText(name, 7, 0);
+    c.textAlign = side === 'right' ? 'left' : side === 'left' ? 'right' : 'center';
+    const [tx, ty] = side === 'right' ? [7, 0] : side === 'left' ? [-7, 0] : side === 'below' ? [0, 12] : [0, -12];
+    c.fillText(text, tx, ty);
   });
 }
 
-/** Greedy: a label that would overlap a callout or an earlier name is left out. */
+const labelWidths = new Map<string, number>();
+
 function drawSatLabels(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number, reserved: Rect[]) {
   if (!s.satLabels?.length) return;
-  const taken = [...reserved];
-  for (const l of s.satLabels) {
+  const points = s.satLabels.flatMap((l) => {
     const p = project(s.camera, l.pos);
-    if (!p.visible) continue;
     const x = w / 2 + p.x * s.radiusPx;
     const y = h / 2 - p.y * s.radiusPx;
-    if (x < 0 || y < 0 || x > w || y > h) continue;
-    const box = { x: x + 4, y: y - 7, w: l.name.length * 6.2 + 4, h: 14 };
-    if (taken.some((t) => overlaps(t, box))) continue;
-    taken.push(box);
-    stamp(ctx, satLabelSprite(l.name, l.color, dpr), x, y, dpr);
-  }
+    return p.visible && x >= 0 && y >= 0 && x <= w && y <= h ? [{ x, y, name: l.name, color: l.color }] : [];
+  });
+  ctx.save();
+  ctx.font = `500 10px ${UI_FONT}`;
+  ctx.letterSpacing = '0.06em';
+  const width = (text: string) => {
+    let tw = labelWidths.get(text);
+    if (tw === undefined) labelWidths.set(text, (tw = Math.ceil(ctx.measureText(text).width)));
+    return tw;
+  };
+  const placed = layoutSatLabels(points, reserved, w, h, width);
+  ctx.restore();
+  ctx.letterSpacing = '0px';
+  for (const l of placed) stamp(ctx, satLabelSprite(l.text, l.color, l.side, width(l.text), dpr), l.x, l.y, dpr);
 }
 
 // ---- ISS live telemetry -----------------------------------------------------------------

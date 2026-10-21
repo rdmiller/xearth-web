@@ -50,6 +50,7 @@ describe('satellite categories', () => {
   it('shortens names for labels', () => {
     expect(shortName('GPS BIIR-13 (PRN 02)')).toBe('GPS PRN 02');
     expect(shortName('COSMOS 2433 (720)')).toBe('GLONASS 720');
+    expect(shortName('COSMOS 2501 (702K)')).toBe('GLONASS 702K');
     expect(shortName('METEOSAT-12 (MTG-I1)')).toBe('METEOSAT-12');
     expect(shortName('NOAA 20 (JPSS-1)')).toBe('NOAA 20');
     expect(shortName('GOES 19')).toBe('GOES 19');
