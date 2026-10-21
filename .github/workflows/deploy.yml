@@ -29,10 +29,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install ./pipeline
-      - name: Build cloud map from the newest GMGSI file
-        # A NOAA outage shouldn't block a deploy; the page says "clouds unavailable".
-        continue-on-error: true
-        run: python -m xearth_clouds --out web/public/clouds
 
       # CelesTrak updates GP data every 2 h and refuses repeat downloads inside that
       # window, so carry the last satellites/latest.json between runs; the pipeline
@@ -73,6 +69,12 @@ jobs:
         with:
           path: web/public/textures
           key: nasa-textures-v1
+      - name: NASA textures (the cloud job uses Blue Marble as its clear-sky reference)
+        run: node web/scripts/fetch-textures.mjs
+      - name: Build cloud map from the newest GMGSI files (IR + visible by day)
+        # A NOAA outage shouldn't block a deploy; the page says "clouds unavailable".
+        continue-on-error: true
+        run: python -m xearth_clouds --out web/public/clouds
 
       - uses: pnpm/action-setup@v4
         with:
@@ -83,8 +85,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-        working-directory: web
-      - run: pnpm textures
         working-directory: web
       - run: pnpm build
         working-directory: web

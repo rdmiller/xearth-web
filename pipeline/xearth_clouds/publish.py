@@ -31,6 +31,7 @@ def publish(
     time: int,
     source_key: str,
     coverage: tuple[float, float],
+    source: str = "NOAA/NESDIS GMGSI longwave IR",
     keep: int = 3,
     quality: int = 82,
 ) -> dict:
@@ -44,7 +45,7 @@ def publish(
         "url": name,
         "width": int(alpha.shape[1]),
         "height": int(alpha.shape[0]),
-        "source": "NOAA/NESDIS GMGSI longwave IR",
+        "source": source,
         "sourceKey": source_key,
         "coverage": [round(coverage[0], 2), round(coverage[1], 2)],
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),

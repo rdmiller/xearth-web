@@ -51,6 +51,17 @@ def latest_key(now: dt.datetime | None = None, lookback_days: int = 2) -> str:
     raise RuntimeError(f"no {PRODUCT} files in the last {lookback_days} days")
 
 
+def matching_key(lw_key: str, product: str = "GMGSI_VIS") -> str | None:
+    """The same hour's file for another band (e.g. visible), if it's been published."""
+    folder = lw_key.rsplit("/", 1)[0].replace(PRODUCT, product, 1) + "/"
+    keys = [k for k in _list_keys(folder) if k.endswith(".nc")]
+    want = scan_start(lw_key)
+    for k in keys:
+        if scan_start(k) == want:
+            return k
+    return None
+
+
 def download(key: str, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / Path(key).name
