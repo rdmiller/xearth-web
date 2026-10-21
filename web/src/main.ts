@@ -3,29 +3,39 @@
 
 import { subsolarPoint } from './astronomy';
 import { CloudSync, type CloudStatus } from './cloudSync';
+import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import { drawOverlay } from './overlay';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
 import { fromLatLon } from './vec';
-import { cameraFor, viewerLatLon, type ViewMode } from './view';
+import { cameraFor, viewerLatLon } from './view';
 
 const BASE = import.meta.env.BASE_URL;
 const FADE_MS = 2500;
-const VIEW_ORDER: ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon'];
+const TOAST_MS = 1400;
 
 const globeCanvas = document.getElementById('globe') as HTMLCanvasElement;
 const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
 const help = document.getElementById('help') as HTMLElement;
+const helpKeys = document.getElementById('help-keys') as HTMLElement;
+const toastEl = document.getElementById('toast') as HTMLElement;
 
 let settings: Settings = parseSettings(location.search);
-const clockStart = Date.now();
+/** Wall-clock moment that `settings.time` corresponds to. */
+let clockStart = Date.now();
 let note: string | undefined;
 
 function simTime(): Date {
   if (!settings.time && settings.speed === 1) return new Date();
   const origin = settings.time ? settings.time.getTime() : clockStart;
   return new Date(origin + (Date.now() - clockStart) * settings.speed);
+}
+
+/** Label suffix for a clock that isn't simply "now". */
+function clockLabel(): string | undefined {
+  if (!settings.time && settings.speed === 1) return undefined;
+  return settings.speed === 1 ? 'fixed start time' : formatSpeed(settings.speed).toLowerCase();
 }
 
 let renderer: GlobeRenderer;
@@ -140,6 +150,7 @@ function frame() {
     label: settings.label,
     clouds: settings.clouds,
     cloudStatus,
+    clock: clockLabel(),
     note,
   });
   schedule();
@@ -148,7 +159,7 @@ function frame() {
 function schedule() {
   clearTimeout(timer);
   if (document.hidden) return;
-  const animating = renderer.cloudMix < 1 || dragging || settings.speed !== 1;
+  const animating = renderer.cloudMix < 1 || dragging || (settings.speed !== 1 && settings.speed !== 0);
   if (animating) {
     raf ||= requestAnimationFrame(frame);
   } else {
@@ -216,39 +227,68 @@ overlayCanvas.addEventListener(
   'wheel',
   (e) => {
     e.preventDefault();
-    update({ mag: Math.max(0.2, Math.min(8, settings.mag * Math.exp(-e.deltaY * 0.0015))) });
+    update({ mag: Math.max(MAG_MIN, Math.min(MAG_MAX, settings.mag * Math.exp(-e.deltaY * 0.0015))) });
   },
   { passive: false },
 );
 
-const TOGGLES: Record<string, keyof Settings> = {
-  c: 'clouds',
-  n: 'lights',
-  g: 'grid',
-  m: 'markers',
-  l: 'label',
-  s: 'stars',
+// ---- hotkeys ------------------------------------------------------------------
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function toast(message: string) {
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), TOAST_MS);
+}
+
+const hotkeyContext: HotkeyContext = {
+  get settings() {
+    return settings;
+  },
+  update,
+  viewer: () => viewerLatLon(settings, simTime()),
+  setSpeed(speed) {
+    // Re-anchor so the displayed moment carries on from where it is.
+    const now = simTime();
+    clockStart = Date.now();
+    update({ time: now, speed });
+  },
+  goLive() {
+    clockStart = Date.now();
+    update({ time: null, speed: 1 });
+  },
+  refreshClouds: () => {
+    if (!settings.clouds) update({ clouds: true });
+    else void clouds.check();
+  },
+  toggleFullscreen() {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen();
+  },
+  toggleHelp(open) {
+    help.hidden = open === undefined ? !help.hidden : !open;
+  },
+  toast,
 };
 
 window.addEventListener('keydown', (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const key = e.key.toLowerCase();
-  const toggle = TOGGLES[key];
-  if (toggle) {
-    update({ [toggle]: !settings[toggle] } as Partial<Settings>);
-  } else if (key === 'v') {
-    const here = viewerLatLon(settings, simTime());
-    const next = VIEW_ORDER[(VIEW_ORDER.indexOf(settings.view) + 1) % VIEW_ORDER.length];
-    update(next === 'fixed' ? { view: next, lat: here.lat, lon: here.lon } : { view: next, lat: 0, lon: 0 });
-  } else if (key === 'f') {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen();
-  } else if (key === 'h' || key === '?') {
-    help.hidden = !help.hidden;
-  } else if (key === 'escape') {
-    help.hidden = true;
-  }
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('input, textarea, select, [contenteditable]')) return;
+  const hk = matchHotkey(e);
+  if (!hk) return;
+  e.preventDefault(); // Space would scroll, arrows would pan the page
+  hk.run(hotkeyContext, e);
 });
+
+helpKeys.innerHTML = helpRows()
+  .map(
+    ({ group, rows }) =>
+      `<h3>${group}</h3><table>${rows
+        .map((r) => `<tr><td><kbd>${r.label}</kbd></td><td>${r.description}</td></tr>`)
+        .join('')}</table>`,
+  )
+  .join('');
 
 syncClouds();
 requestRedraw();

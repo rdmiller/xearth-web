@@ -11,7 +11,23 @@ global cloud layer refreshed every hour from geostationary satellites.
   default, perspective with `dist`. Drag to look around, scroll to zoom.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), converted hourly to an equirectangular alpha map and cross-faded in.
-- **Everything is a URL parameter**, like xearth's command-line flags. Press **H** in the app.
+- **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
+  hotkeys. Press **H** in the app for the full list.
+
+## Hotkeys
+
+| Keys | Action |
+|---|---|
+| `C` `S` `N` `G` `M` `L` | clouds, stars, city lights, grid, markers, label |
+| `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
+| `5` | dusk line down the middle · `V` cycles modes · `Home` back over your time zone |
+| arrows (`Shift` = faster) | look around; in the Sun-facing view they shift the offset from the Sun |
+| `+` `−` `[` `]` `0` | zoom, rotate, reset · `P` perspective/orthographic |
+| `Space` `.` `,` `T` | pause, faster, slower (into reverse), back to now |
+| `R` `F` `H` | check for new clouds, fullscreen, help |
+
+The table lives in `web/src/hotkeys.ts` and also generates the in-app help, so they can't
+drift apart.
 
 ## Layout
 

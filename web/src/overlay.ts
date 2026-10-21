@@ -15,6 +15,8 @@ export interface OverlayState {
   label: boolean;
   clouds: boolean;
   cloudStatus: CloudStatus;
+  /** Shown beside the time when the clock isn't live (e.g. "paused"). */
+  clock?: string;
   note?: string;
 }
 
@@ -79,7 +81,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   if (s.label) {
     const d = s.date;
     const lines = [
-      `${d.toUTCString().replace('GMT', 'UTC')}`,
+      `${d.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`,
       `view ${fmtLat(s.viewer.lat)} ${fmtLon(s.viewer.lon)}`,
       `sun  ${fmtLat(s.sun.lat)} ${fmtLon(s.sun.lon)}`,
       cloudLine(s.cloudStatus, s.clouds, new Date()),

@@ -23,22 +23,26 @@
       #help table { border-collapse: collapse; width: 100%; }
       #help td { padding: 1px 8px 1px 0; vertical-align: top; }
       #help code, #help kbd { font: 12px ui-monospace, Consolas, monospace; color: #fff; }
+      #help td:first-child { width: 4.5em; white-space: nowrap; }
+      #toast {
+        position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 8px);
+        padding: 6px 14px; border-radius: 6px; background: rgba(8, 12, 24, 0.85);
+        border: 1px solid rgba(140, 160, 220, 0.25); font-size: 13px; white-space: nowrap;
+        opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+      }
+      #toast.show { opacity: 1; transform: translate(-50%, 0); }
+      @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>
   <body>
     <canvas id="globe"></canvas>
     <canvas id="overlay"></canvas>
+    <div id="toast" role="status" aria-live="polite"></div>
     <aside id="help" hidden>
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
-      <h3>Keys</h3>
-      <table>
-        <tr><td><kbd>C</kbd></td><td>clouds</td><td><kbd>N</kbd></td><td>city lights</td></tr>
-        <tr><td><kbd>G</kbd></td><td>grid</td><td><kbd>M</kbd></td><td>markers</td></tr>
-        <tr><td><kbd>L</kbd></td><td>label</td><td><kbd>S</kbd></td><td>stars</td></tr>
-        <tr><td><kbd>V</kbd></td><td>next view mode</td><td><kbd>F</kbd></td><td>fullscreen</td></tr>
-      </table>
+      <div id="help-keys"></div>
       <h3>URL parameters</h3>
       <table>
         <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code></td></tr>

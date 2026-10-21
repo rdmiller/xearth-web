@@ -1,0 +1,192 @@
+import { describe, expect, it, vi } from 'vitest';
+import { HOTKEYS, MAG_MAX, formatSpeed, helpRows, matchHotkey, nextSpeed, type HotkeyContext, type KeyLike } from '../hotkeys';
+import { defaults, type Settings } from '../params';
+
+function harness(initial: Partial<Settings> = {}) {
+  let settings: Settings = { ...defaults(), lat: 20, lon: -75, ...initial };
+  const ctx: HotkeyContext & { toasts: string[] } = {
+    toasts: [],
+    get settings() {
+      return settings;
+    },
+    update: (patch) => {
+      settings = { ...settings, ...patch };
+    },
+    viewer: () => ({ lat: 12, lon: 34 }),
+    setSpeed: vi.fn((speed: number) => {
+      settings = { ...settings, speed };
+    }),
+    goLive: vi.fn(() => {
+      settings = { ...settings, speed: 1, time: null };
+    }),
+    refreshClouds: vi.fn(),
+    toggleFullscreen: vi.fn(),
+    toggleHelp: vi.fn(),
+    toast(m) {
+      this.toasts.push(m);
+    },
+  };
+  const press = (key: string, mods: Partial<KeyLike> = {}) => {
+    const hk = matchHotkey({ key, ...mods });
+    hk?.run(ctx, { key, ...mods });
+    return hk;
+  };
+  return { ctx, press, get s() {
+    return settings;
+  } };
+}
+
+describe('matchHotkey', () => {
+  it('is case-insensitive and leaves modifier chords to the browser', () => {
+    expect(matchHotkey({ key: 'C' })?.description).toBe('Clouds');
+    expect(matchHotkey({ key: 'c', ctrlKey: true })).toBeUndefined();
+    expect(matchHotkey({ key: 'r', metaKey: true })).toBeUndefined(); // reload
+    expect(matchHotkey({ key: 'x' })).toBeUndefined();
+  });
+
+  it('ignores auto-repeat for toggles but not for pan/zoom', () => {
+    expect(matchHotkey({ key: 'c', repeat: true })).toBeUndefined();
+    expect(matchHotkey({ key: 'ArrowLeft', repeat: true })).toBeDefined();
+    expect(matchHotkey({ key: '+', repeat: true })).toBeDefined();
+  });
+
+  it('never binds one key twice', () => {
+    const keys = HOTKEYS.flatMap((h) => h.keys);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('layer toggles', () => {
+  it.each([
+    ['c', 'clouds'],
+    ['s', 'stars'],
+    ['n', 'lights'],
+    ['g', 'grid'],
+    ['m', 'markers'],
+    ['l', 'label'],
+  ] as const)('%s toggles %s and says so', (key, field) => {
+    const h = harness();
+    const before = h.s[field];
+    h.press(key);
+    expect(h.s[field]).toBe(!before);
+    expect(h.ctx.toasts.at(-1)).toMatch(before ? / off$/ : / on$/);
+    h.press(key);
+    expect(h.s[field]).toBe(before);
+  });
+});
+
+describe('view keys', () => {
+  it('1 freezes the view where it is; 2 faces the Sun; 3/4 switch mode', () => {
+    const h = harness({ view: 'moon' });
+    h.press('1');
+    expect(h.s).toMatchObject({ view: 'fixed', lat: 12, lon: 34 });
+    h.press('2');
+    expect(h.s).toMatchObject({ view: 'sunrel', lat: 0, lon: 0 });
+    h.press('3');
+    expect(h.s.view).toBe('orbit');
+    h.press('4');
+    expect(h.s.view).toBe('moon');
+  });
+
+  it('5 puts the dusk line down the middle', () => {
+    const h = harness();
+    h.press('5');
+    expect(h.s).toMatchObject({ view: 'sunrel', lat: 0, lon: 90 });
+  });
+
+  it('V cycles through the four modes', () => {
+    const h = harness({ view: 'fixed' });
+    const seen = [1, 2, 3, 4].map(() => (h.press('v'), h.s.view));
+    expect(seen).toEqual(['sunrel', 'orbit', 'moon', 'fixed']);
+  });
+
+  it('arrows move a fixed view, shift an offset in sunrel, and freeze orbit/moon first', () => {
+    const fixed = harness({ view: 'fixed', lat: 0, lon: 178 });
+    fixed.press('ArrowRight');
+    expect(fixed.s.lon).toBe(-177); // wrapped
+    fixed.press('ArrowUp', { shiftKey: true });
+    expect(fixed.s.lat).toBe(15);
+
+    const sun = harness({ view: 'sunrel', lat: 0, lon: 0 });
+    sun.press('ArrowLeft');
+    expect(sun.s).toMatchObject({ view: 'sunrel', lon: -5 });
+
+    const moon = harness({ view: 'moon' });
+    moon.press('ArrowDown');
+    expect(moon.s).toMatchObject({ view: 'fixed', lat: 7, lon: 34 });
+  });
+
+  it('latitude stops at the poles', () => {
+    const h = harness({ view: 'fixed', lat: 88 });
+    h.press('ArrowUp', { shiftKey: true });
+    expect(h.s.lat).toBe(90);
+  });
+
+  it('zoom is clamped; 0 resets zoom and rotation', () => {
+    const h = harness();
+    for (let i = 0; i < 30; i++) h.press('+');
+    expect(h.s.mag).toBe(MAG_MAX);
+    h.press(']');
+    expect(h.s.rot).toBe(-15);
+    h.press('0');
+    expect(h.s).toMatchObject({ mag: 1, rot: 0 });
+  });
+
+  it('P toggles perspective', () => {
+    const h = harness();
+    h.press('p');
+    expect(h.s.dist).toBe(3);
+    h.press('p');
+    expect(h.s.dist).toBe(0);
+  });
+});
+
+describe('time keys', () => {
+  it('Space pauses and resumes at the previous speed', () => {
+    const h = harness({ speed: 60 });
+    h.press(' ');
+    expect(h.s.speed).toBe(0);
+    h.press(' ');
+    expect(h.s.speed).toBe(60);
+  });
+
+  it('. and , walk the speed ladder through pause into reverse', () => {
+    const h = harness();
+    h.press('.');
+    expect(h.s.speed).toBe(10);
+    h.press(',');
+    h.press(',');
+    expect(h.s.speed).toBe(0);
+    h.press(',');
+    expect(h.s.speed).toBe(-1);
+  });
+
+  it('T returns to now', () => {
+    const h = harness({ speed: 600 });
+    h.press('t');
+    expect(h.ctx.goLive).toHaveBeenCalled();
+    expect(h.s.speed).toBe(1);
+  });
+});
+
+describe('helpers', () => {
+  it('nextSpeed saturates at the ends', () => {
+    expect(nextSpeed(86400, 1)).toBe(86400);
+    expect(nextSpeed(-3600, -1)).toBe(-3600);
+    expect(nextSpeed(30, 1)).toBe(60); // off-ladder values snap to the next rung
+  });
+
+  it('formatSpeed reads naturally', () => {
+    expect(formatSpeed(0)).toBe('Paused');
+    expect(formatSpeed(1)).toBe('Real time');
+    expect(formatSpeed(60)).toBe('1 min per second');
+    expect(formatSpeed(-3600)).toBe('Backwards, 1 h per second');
+    expect(formatSpeed(86400)).toBe('1 day per second');
+  });
+
+  it('help lists every hotkey once, grouped', () => {
+    const rows = helpRows().flatMap((g) => g.rows);
+    expect(rows).toHaveLength(HOTKEYS.length);
+    expect(helpRows().map((g) => g.group)).toEqual(['Layers', 'View', 'Time', 'App']);
+  });
+});
