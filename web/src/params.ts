@@ -6,6 +6,9 @@ import type { ViewMode, ViewSettings } from './view';
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
 export type StarMode = 'on' | 'off' | 'photo';
 
+/** `featured` = only the named satellites (ISS, Tiangong, SAT GUS); `all` adds Starlink. */
+export type SatMode = 'all' | 'featured' | 'off';
+
 export interface Settings extends ViewSettings {
   /** Disc diameter as a fraction of 90% of the window's shorter side. */
   mag: number;
@@ -16,6 +19,7 @@ export interface Settings extends ViewSettings {
   grid: boolean;
   markers: boolean;
   stars: StarMode;
+  sats: SatMode;
   label: boolean;
   /** Fixed start time (ISO), or null for "now". */
   time: Date | null;
@@ -23,9 +27,11 @@ export interface Settings extends ViewSettings {
   speed: number;
   /** Where latest.json lives, relative to the page unless absolute. */
   cloudsrc: string;
+  /** Where the satellites' latest.json lives. */
+  satsrc: string;
 }
 
-const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon'];
+const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
 
 /** A sensible starting longitude: the middle of the viewer's own time zone. */
 export function timezoneLongitude(offsetMinutes = new Date().getTimezoneOffset()): number {
@@ -35,6 +41,7 @@ export function timezoneLongitude(offsetMinutes = new Date().getTimezoneOffset()
 export function defaults(): Settings {
   return {
     view: 'fixed',
+    track: 'iss',
     lat: 20,
     lon: timezoneLongitude(),
     period: 1.5,
@@ -48,10 +55,12 @@ export function defaults(): Settings {
     grid: false,
     markers: true,
     stars: 'on',
+    sats: 'all',
     label: true,
     time: null,
     speed: 1,
     cloudsrc: (import.meta.env?.VITE_CLOUD_BASE as string | undefined) ?? 'clouds/',
+    satsrc: (import.meta.env?.VITE_SAT_BASE as string | undefined) ?? 'satellites/',
   };
 }
 
@@ -77,6 +86,13 @@ function starMode(q: URLSearchParams, fallback: StarMode): StarMode {
   return FALSY.includes(raw) ? 'off' : 'on';
 }
 
+function satMode(q: URLSearchParams, fallback: SatMode): SatMode {
+  const raw = q.get('sats')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'featured' || raw === 'named') return 'featured';
+  return FALSY.includes(raw) ? 'off' : 'all';
+}
+
 export function parseSettings(search: string, base: Settings = defaults()): Settings {
   const q = new URLSearchParams(search);
   const view = q.get('view') as ViewMode | null;
@@ -84,6 +100,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
   const time = timeRaw ? new Date(timeRaw) : null;
   return {
     view: view && VIEWS.includes(view) ? view : base.view,
+    track: q.get('track')?.toLowerCase() || base.track,
     lat: num(q, 'lat', base.lat, -90, 90),
     lon: num(q, 'lon', base.lon, -360, 360),
     period: num(q, 'period', base.period, 0.01),
@@ -97,10 +114,12 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     grid: bool(q, 'grid', base.grid),
     markers: bool(q, 'markers', base.markers),
     stars: starMode(q, base.stars),
+    sats: satMode(q, base.sats),
     label: bool(q, 'label', base.label),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
     cloudsrc: q.get('cloudsrc') ?? base.cloudsrc,
+    satsrc: q.get('satsrc') ?? base.satsrc,
   };
 }
 

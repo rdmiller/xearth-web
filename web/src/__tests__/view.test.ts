@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { subsolarPoint } from '../astronomy';
 import { dot, fromLatLon, type Vec3 } from '../vec';
-import { cameraFor, project, viewerLatLon, type ViewSettings } from '../view';
+import { cameraFor, isOccluded, project, viewerLatLon, type ViewSettings } from '../view';
 
-const base: ViewSettings = { view: 'fixed', lat: 0, lon: 0, period: 1.5, inc: 51.6, rot: 0, dist: 0 };
+const base: ViewSettings = { view: 'fixed', track: 'iss', lat: 0, lon: 0, period: 1.5, inc: 51.6, rot: 0, dist: 0 };
 const date = new Date('2026-10-21T16:00:00Z');
 
 function expectOrthonormal(right: Vec3, up: Vec3, dir: Vec3) {
@@ -54,6 +54,38 @@ describe('viewerLatLon', () => {
       const v = viewerLatLon({ ...base, view: 'orbit' }, new Date(date.getTime() + i * 517_000));
       expect(Math.abs(v.lat)).toBeLessThanOrEqual(51.6 + 1e-9);
     }
+  });
+});
+
+describe('track view', () => {
+  it('sits over whatever the resolver reports, falling back to lat/lon until data arrives', () => {
+    const s = { ...base, view: 'track' as const, track: 'satgus', lat: 5, lon: 6 };
+    expect(viewerLatLon(s, date, (key) => (key === 'satgus' ? { lat: -40, lon: 120 } : null))).toEqual({ lat: -40, lon: 120 });
+    expect(viewerLatLon(s, date, () => null)).toEqual({ lat: 5, lon: 6 });
+    expect(viewerLatLon(s, date)).toEqual({ lat: 5, lon: 6 });
+  });
+});
+
+describe('isOccluded', () => {
+  const sat = (lat: number, lon: number, r = 1.086): Vec3 => {
+    const [x, y, z] = fromLatLon(lat, lon);
+    return [x * r, y * r, z * r];
+  };
+
+  it('orthographic: hides a satellite behind the disc but not one beside it', () => {
+    const cam = cameraFor(base, date); // looking at (0, 0)
+    expect(isOccluded(cam, sat(0, 0))).toBe(false);
+    expect(isOccluded(cam, sat(0, 180))).toBe(true);
+    // Just past the limb on the far side, but outside the silhouette (r > 1 in the image plane).
+    expect(isOccluded(cam, sat(0, 95))).toBe(false);
+  });
+
+  it('perspective: the Earth blocks the line of sight', () => {
+    const cam = cameraFor({ ...base, dist: 3 }, date);
+    expect(isOccluded(cam, sat(0, 0))).toBe(false);
+    expect(isOccluded(cam, sat(0, 180))).toBe(true);
+    expect(isOccluded(cam, fromLatLon(0, 30))).toBe(false); // near-side surface point
+    expect(isOccluded(cam, fromLatLon(0, 120))).toBe(true); // far-side surface point
   });
 });
 

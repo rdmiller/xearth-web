@@ -24,6 +24,12 @@ describe('parseSettings', () => {
     expect(parseSettings('?stars=1').stars).toBe('on');
   });
 
+  it('reads the satellite settings', () => {
+    expect(parseSettings('?sats=featured').sats).toBe('featured');
+    expect(parseSettings('?sats=0').sats).toBe('off');
+    expect(parseSettings('?view=track&track=SATGUS')).toMatchObject({ view: 'track', track: 'satgus' });
+  });
+
   it('ignores junk values', () => {
     const d = defaults();
     const s = parseSettings('?view=mars&mag=abc&time=yesterday', d);

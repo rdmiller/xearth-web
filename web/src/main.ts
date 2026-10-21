@@ -1,16 +1,30 @@
 // App wiring: settings → clock → camera/sun → renderer + overlay, redrawn on a
-// schedule (xearth's -wait), with hourly cloud maps faded in as they arrive.
+// schedule (xearth's -wait), with hourly cloud maps faded in as they arrive
+// and satellites propagated from CelesTrak elements.
 
+import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
-import { drawOverlay } from './overlay';
+import { drawOverlay, formatAge, type SatelliteOverlay } from './overlay';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
+import type { WorkerRequest, WorkerResponse } from './satWorker';
+import {
+  FEATURED,
+  isSatelliteManifest,
+  orbitTrack,
+  periodMinutes,
+  positionAt,
+  satrecFor,
+  stateAt,
+  type Elements,
+  type SatelliteManifest,
+} from './satellites';
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
-import { fromLatLon } from './vec';
-import { cameraFor, skyFocal, viewerLatLon } from './view';
+import { fromLatLon, toLatLon, type Vec3 } from './vec';
+import { cameraFor, skyFocal, viewerLatLon, type TrackResolver } from './view';
 
 const BASE = import.meta.env.BASE_URL;
 const FADE_MS = 2500;
@@ -122,6 +136,94 @@ function syncClouds() {
   else clouds.stop();
 }
 
+// ---- satellites ---------------------------------------------------------------
+const SAT_POLL_MS = 30 * 60_000;
+/** Simulated time between Starlink propagations (one SGP4 pass in the worker). */
+const SAT_STEP_MS = 1000;
+const ORBIT_STEPS = 160;
+
+let satManifest: SatelliteManifest | undefined;
+let satError: string | undefined;
+const featuredRecs = new Map<string, { rec: SatRec; elements: Elements }>();
+let bulkCount = 0;
+let workerBusy = false;
+let lastBulkTime = NaN;
+let satTimer: ReturnType<typeof setInterval> | undefined;
+
+const satWorker = new Worker(new URL('./satWorker.ts', import.meta.url), { type: 'module' });
+satWorker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+  const m = e.data;
+  workerBusy = false;
+  if (m.type === 'loaded') {
+    bulkCount = m.valid;
+    lastBulkTime = NaN;
+  } else {
+    renderer.setSatellites(m.positions as Float32Array<ArrayBuffer>);
+  }
+  requestRedraw();
+};
+
+const post = (msg: WorkerRequest) => satWorker.postMessage(msg);
+
+async function loadSatellites() {
+  try {
+    const url = new URL('latest.json', new URL(settings.satsrc, location.href)).href;
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`${r.status} ${url}`);
+    const m: unknown = await r.json();
+    if (!isSatelliteManifest(m)) throw new Error('satellites/latest.json is not a satellite manifest');
+    satError = undefined;
+    if (satManifest?.generated !== m.generated) {
+      satManifest = m;
+      featuredRecs.clear();
+      for (const f of FEATURED) {
+        const el = m.featured[String(f.norad)];
+        const rec = el ? satrecFor(el) : null;
+        if (rec && el) featuredRecs.set(f.key, { rec, elements: el });
+      }
+      workerBusy = true;
+      post({ type: 'load', elements: m.groups.starlink ?? [] });
+    }
+  } catch (err) {
+    satError = err instanceof Error ? err.message : String(err);
+    console.warn('satellites:', err);
+  }
+  requestRedraw();
+}
+
+function syncSatellites() {
+  clearInterval(satTimer);
+  satTimer = undefined;
+  if (settings.sats === 'off') return;
+  void loadSatellites();
+  satTimer = setInterval(loadSatellites, SAT_POLL_MS);
+}
+
+const resolveTrack: TrackResolver = (key, date) => {
+  const rec = featuredRecs.get(key)?.rec;
+  const p = rec ? positionAt(rec, date) : null;
+  return p ? toLatLon(p) : null;
+};
+
+function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
+  if (settings.sats === 'off') return undefined;
+  if (!satManifest) return { featured: [], summary: satError ? 'satellites unavailable' : 'satellites loading…' };
+  const featured = FEATURED.flatMap((sat) => {
+    const entry = featuredRecs.get(sat.key);
+    const state = entry ? stateAt(entry.rec, date, sun) : null;
+    if (!entry || !state) return [];
+    const half = periodMinutes(entry.elements) / 2;
+    return [{ sat, state, track: orbitTrack(entry.rec, date, half, half, ORBIT_STEPS) }];
+  });
+  const fetched = formatAge(new Date(satManifest.generated), new Date());
+  const bulk = settings.sats === 'all' && bulkCount ? `${bulkCount.toLocaleString()} Starlink · ` : '';
+  return {
+    featured,
+    tracking: settings.view === 'track' ? settings.track : undefined,
+    summary: `satellites ${bulk}elements fetched ${fetched}${satError ? ' (update failed)' : ''}`,
+  };
+}
+
 // ---- frame & schedule -------------------------------------------------------
 let timer: ReturnType<typeof setTimeout> | undefined;
 let raf = 0;
@@ -140,9 +242,16 @@ function frame() {
     renderer.cloudMix = Math.min(1, (performance.now() - fadeStart) / FADE_MS);
   }
 
-  const camera = cameraFor(settings, date);
+  const camera = cameraFor(settings, date, resolveTrack);
   const sun = subsolarPoint(date);
   const sunDir = fromLatLon(sun.lat, sun.lon);
+
+  const showBulk = settings.sats === 'all' && bulkCount > 0;
+  if (showBulk && !workerBusy && !(Math.abs(date.getTime() - lastBulkTime) < SAT_STEP_MS)) {
+    workerBusy = true;
+    lastBulkTime = date.getTime();
+    post({ type: 'propagate', time: lastBulkTime });
+  }
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
   const radiusPx = radiusCss() * scale;
   const magShift =
@@ -157,13 +266,15 @@ function frame() {
     lights: settings.lights,
     grid: settings.grid,
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
+    satellites: showBulk,
     dpr: scale,
   });
   drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
-    viewer: viewerLatLon(settings, date),
+    viewer: viewerLatLon(settings, date, resolveTrack),
+    satellites: satelliteOverlay(date, sunDir),
     sun,
     markers: settings.markers,
     label: settings.label,
@@ -182,7 +293,9 @@ function schedule() {
   if (animating) {
     raf ||= requestAnimationFrame(frame);
   } else {
-    timer = setTimeout(requestRedraw, settings.wait * 1000);
+    // Satellites cross ~4° of arc a minute, so keep them moving smoothly.
+    const wait = settings.sats === 'off' ? settings.wait : Math.min(settings.wait, 1);
+    timer = setTimeout(requestRedraw, wait * 1000);
   }
 }
 
@@ -204,8 +317,10 @@ let urlTimer: ReturnType<typeof setTimeout> | undefined;
 
 function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
+  const satsBefore = settings.sats;
   settings = { ...settings, ...patch };
   if (settings.clouds !== cloudsBefore) syncClouds();
+  if ((settings.sats === 'off') !== (satsBefore === 'off')) syncSatellites();
   clearTimeout(urlTimer);
   urlTimer = setTimeout(() => history.replaceState(null, '', `${location.pathname}${toQuery(settings)}`), 300);
   requestRedraw();
@@ -219,7 +334,7 @@ overlayCanvas.addEventListener('pointerdown', (e) => {
   dragging = true;
   last = { x: e.clientX, y: e.clientY };
   overlayCanvas.setPointerCapture(e.pointerId);
-  const here = viewerLatLon(settings, simTime());
+  const here = viewerLatLon(settings, simTime(), resolveTrack);
   if (settings.view !== 'fixed') update({ view: 'fixed', lat: here.lat, lon: here.lon, rot: 0 });
 });
 
@@ -266,7 +381,7 @@ const hotkeyContext: HotkeyContext = {
     return settings;
   },
   update,
-  viewer: () => viewerLatLon(settings, simTime()),
+  viewer: () => viewerLatLon(settings, simTime(), resolveTrack),
   setSpeed(speed) {
     // Re-anchor so the displayed moment carries on from where it is.
     const now = simTime();
@@ -310,4 +425,5 @@ helpKeys.innerHTML = helpRows()
   .join('');
 
 syncClouds();
+syncSatellites();
 requestRedraw();

@@ -5,6 +5,7 @@ import type { StarCatalog } from '../stars';
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
+import { SatLayer } from './sats';
 import { StarLayer } from './stars';
 
 const VERT = `#version 300 es
@@ -20,6 +21,8 @@ export interface FrameState {
   grid: boolean;
   /** Star layer, or null when stars are off. */
   stars: { frame: Float32Array; focal: number; magShift: number } | null;
+  /** Draw the bulk satellite layer (Starlink). */
+  satellites: boolean;
   dpr: number;
 }
 
@@ -33,6 +36,7 @@ export class GlobeRenderer {
   private readonly program: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
   private readonly stars: StarLayer;
+  private readonly sats: SatLayer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -48,6 +52,7 @@ export class GlobeRenderer {
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
     this.program = link(gl, VERT, fragSrc);
     this.stars = new StarLayer(gl, (vs, fs) => link(gl, vs, fs));
+    this.sats = new SatLayer(gl, (vs, fs) => link(gl, vs, fs));
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -127,6 +132,11 @@ export class GlobeRenderer {
     this.stars.setCatalog(catalog);
   }
 
+  /** Bulk satellite positions, xyz per satellite in Earth radii (origin = none). */
+  setSatellites(xyz: Float32Array<ArrayBuffer>) {
+    this.sats.setPositions(xyz);
+  }
+
   /** Match the drawing buffer to the canvas's CSS size × devicePixelRatio. */
   resize(): boolean {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -176,6 +186,10 @@ export class GlobeRenderer {
     gl.uniform1f(this.u('uGrid'), f.grid ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
+
+    if (f.satellites) {
+      this.sats.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr }, [this.canvas.width, this.canvas.height]);
+    }
   }
 }
 

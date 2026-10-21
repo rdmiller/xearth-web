@@ -1,7 +1,8 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type Settings, type StarMode } from './params';
+import { defaults, type SatMode, type Settings, type StarMode } from './params';
+import { FEATURED, featuredByKey } from './satellites';
 import { wrapLon } from './vec';
 import type { ViewMode } from './view';
 
@@ -61,8 +62,24 @@ export const VIEW_LABELS: Record<ViewMode, string> = {
   sunrel: 'Facing the Sun',
   orbit: 'Orbit',
   moon: 'From the Moon',
+  track: 'Tracking a satellite',
 };
-const VIEW_ORDER: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon'];
+const VIEW_ORDER: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
+
+const NEXT_SATS: Record<SatMode, SatMode> = { all: 'featured', featured: 'off', off: 'all' };
+export const SAT_LABELS: Record<SatMode, string> = {
+  all: 'Satellites: Starlink + named',
+  featured: `Satellites: ${FEATURED.map((f) => f.name).join(', ')}`,
+  off: 'Satellites off',
+};
+
+/** Follow a featured satellite, turning the satellite layer back on if it was off. */
+export function track(ctx: HotkeyContext, key: string) {
+  const sat = featuredByKey(key);
+  if (!sat) return;
+  ctx.update({ view: 'track', track: key, ...(ctx.settings.sats === 'off' ? { sats: 'featured' as const } : {}) });
+  ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
+}
 
 type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label';
 
@@ -94,6 +111,9 @@ export function setView(ctx: HotkeyContext, view: ViewMode, offset?: { lat: numb
     ctx.update({ view, lat: here.lat, lon: here.lon });
   } else if (view === 'sunrel') {
     ctx.update({ view, lat: offset?.lat ?? 0, lon: offset?.lon ?? 0 });
+  } else if (view === 'track') {
+    track(ctx, ctx.settings.track);
+    return;
   } else {
     ctx.update({ view });
   }
@@ -156,6 +176,17 @@ export const HOTKEYS: readonly Hotkey[] = [
       ctx.toast(STAR_LABELS[next]);
     },
   },
+  {
+    keys: ['o'],
+    label: 'O',
+    description: 'Satellites: Starlink + named → named only → off',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_SATS[ctx.settings.sats];
+      ctx.update({ sats: next });
+      ctx.toast(SAT_LABELS[next]);
+    },
+  },
   layer('n', 'lights', 'City lights'),
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
@@ -172,6 +203,15 @@ export const HOTKEYS: readonly Hotkey[] = [
     group: 'View',
     run: (ctx) => setView(ctx, 'sunrel', { lat: 0, lon: 90 }),
   },
+  ...FEATURED.map(
+    (sat, i): Hotkey => ({
+      keys: [String(6 + i)],
+      label: String(6 + i),
+      description: `Track ${sat.name}${sat.key === 'satgus' ? ' (Mark Rober)' : ''}`,
+      group: 'View',
+      run: (ctx) => track(ctx, sat.key),
+    }),
+  ),
   {
     keys: ['v'],
     label: 'V',

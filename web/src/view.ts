@@ -3,10 +3,15 @@
 import { gastDeg, sublunarPoint, subsolarPoint } from './astronomy';
 import { DEG, cross, dot, fromLatLon, normalize, sub, wrapLon, type Vec3 } from './vec';
 
-export type ViewMode = 'fixed' | 'sunrel' | 'orbit' | 'moon';
+export type ViewMode = 'fixed' | 'sunrel' | 'orbit' | 'moon' | 'track';
+
+/** Looks up where a tracked satellite is overhead (view=track). */
+export type TrackResolver = (key: string, date: Date) => { lat: number; lon: number } | null;
 
 export interface ViewSettings {
   view: ViewMode;
+  /** track: which featured satellite to follow (see satellites.ts FEATURED). */
+  track: string;
   /** fixed: viewer lat/lon. sunrel: offset from the subsolar point. */
   lat: number;
   lon: number;
@@ -31,10 +36,13 @@ export interface Camera {
   focal: number;
 }
 
-export function viewerLatLon(s: ViewSettings, date: Date): { lat: number; lon: number } {
+export function viewerLatLon(s: ViewSettings, date: Date, resolve?: TrackResolver): { lat: number; lon: number } {
   switch (s.view) {
     case 'fixed':
       return { lat: s.lat, lon: wrapLon(s.lon) };
+    case 'track':
+      // Until the satellite data arrives, hold the last fixed position.
+      return resolve?.(s.track, date) ?? { lat: s.lat, lon: wrapLon(s.lon) };
     case 'sunrel': {
       const sun = subsolarPoint(date);
       return { lat: Math.max(-90, Math.min(90, sun.lat + s.lat)), lon: wrapLon(sun.lon + s.lon) };
@@ -57,8 +65,8 @@ export function viewerLatLon(s: ViewSettings, date: Date): { lat: number; lon: n
   }
 }
 
-export function cameraFor(s: ViewSettings, date: Date): Camera {
-  const { lat, lon } = viewerLatLon(s, date);
+export function cameraFor(s: ViewSettings, date: Date, resolve?: TrackResolver): Camera {
+  const { lat, lon } = viewerLatLon(s, date, resolve);
   const dir = fromLatLon(lat, lon);
   // Screen-up is north projected onto the image plane. Directly over a pole
   // that's undefined, so use the limit approached along the viewer's meridian.
@@ -96,12 +104,33 @@ export function skyFocal(cam: Camera): number {
 }
 
 /**
- * Project a point on the unit sphere to screen units (Earth radii, y up, disc
- * centred at the origin). `visible` is false on the far side.
+ * Is the Earth between the viewer and point `p` (Earth radii, any altitude)?
+ * Points on the surface count as visible on the near side. The satellite
+ * shader (renderer/sats.ts) does the same test on the GPU.
+ */
+export function isOccluded(cam: Camera, p: Vec3): boolean {
+  if (!cam.dist) {
+    return dot(p, cam.dir) < 0 && Math.hypot(dot(p, cam.right), dot(p, cam.up)) < 1;
+  }
+  const eye: Vec3 = [cam.dir[0] * cam.dist, cam.dir[1] * cam.dist, cam.dir[2] * cam.dist];
+  const d = sub(p, eye);
+  const a = dot(d, d);
+  const b = dot(eye, d);
+  const c = dot(eye, eye) - 1;
+  const disc = b * b - a * c;
+  if (disc <= 0) return false;
+  const t1 = (-b - Math.sqrt(disc)) / a;
+  return t1 > 0 && t1 < 1 - 1e-6;
+}
+
+/**
+ * Project a point (Earth radii) to screen units (Earth radii, y up, disc
+ * centred at the origin). `visible` is false when the Earth hides it or, in
+ * perspective, when it's behind the viewer.
  */
 export function project(cam: Camera, p: Vec3): { x: number; y: number; visible: boolean } {
   if (!cam.dist) {
-    return { x: dot(p, cam.right), y: dot(p, cam.up), visible: dot(p, cam.dir) > 0 };
+    return { x: dot(p, cam.right), y: dot(p, cam.up), visible: !isOccluded(cam, p) };
   }
   const eye: Vec3 = [cam.dir[0] * cam.dist, cam.dir[1] * cam.dist, cam.dir[2] * cam.dist];
   const v = sub(p, eye);
@@ -109,6 +138,6 @@ export function project(cam: Camera, p: Vec3): { x: number; y: number; visible: 
   return {
     x: (cam.focal * dot(v, cam.right)) / depth,
     y: (cam.focal * dot(v, cam.up)) / depth,
-    visible: dot(p, eye) > 1, // the surface faces the eye
+    visible: depth > 0 && !isOccluded(cam, p),
   };
 }

@@ -3,6 +3,7 @@ web/dist/
 # Downloaded/generated at build time (NASA textures, hourly cloud maps)
 web/public/textures/
 web/public/clouds/
+web/public/satellites/
 *.part
 __pycache__/
 *.egg-info/

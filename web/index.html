@@ -45,7 +45,8 @@
       <div id="help-keys"></div>
       <h3>URL parameters</h3>
       <table>
-        <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code></td></tr>
+        <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code> · <code>track</code></td></tr>
+        <tr><td><code>track</code></td><td>satellite to follow: <code>iss</code>, <code>tiangong</code>, <code>satgus</code> (Mark Rober's Space Selfie satellite)</td></tr>
         <tr><td><code>lat</code>, <code>lon</code></td><td>viewer position (fixed) or offset from the subsolar point (sunrel)</td></tr>
         <tr><td><code>period</code>, <code>inc</code></td><td>orbit period (hours) and inclination (°)</td></tr>
         <tr><td><code>dist</code></td><td>viewer distance in Earth radii; 0 = orthographic</td></tr>
@@ -54,7 +55,8 @@
         <tr><td><code>time</code>, <code>speed</code></td><td>ISO start time; clock multiplier</td></tr>
         <tr><td><code>clouds</code>, <code>lights</code>, <code>grid</code>, <code>markers</code>, <code>label</code></td><td><code>0</code> or <code>1</code></td></tr>
         <tr><td><code>stars</code></td><td><code>1</code>, <code>0</code>, or <code>photo</code> (dimmed like a camera exposed for sunlit Earth)</td></tr>
-        <tr><td><code>cloudsrc</code></td><td>folder holding <code>latest.json</code></td></tr>
+        <tr><td><code>sats</code></td><td><code>all</code> (Starlink + named), <code>featured</code>, or <code>0</code></td></tr>
+        <tr><td><code>cloudsrc</code>, <code>satsrc</code></td><td>folders holding each <code>latest.json</code></td></tr>
       </table>
     </aside>
     <script type="module" src="/src/main.ts"></script>

@@ -74,6 +74,31 @@ describe('layer toggles', () => {
   });
 });
 
+describe('satellite keys', () => {
+  it('O cycles all → named only → off', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('o'), h.s.sats));
+    expect(seen).toEqual(['featured', 'off', 'all']);
+  });
+
+  it('6/7/8 track the ISS, Tiangong and Mark Rober’s SAT GUS, turning satellites back on', () => {
+    const h = harness({ sats: 'off' });
+    h.press('8');
+    expect(h.s).toMatchObject({ view: 'track', track: 'satgus', sats: 'featured' });
+    expect(h.ctx.toasts.at(-1)).toMatch(/SAT GUS.*Mark Rober/);
+    h.press('6');
+    expect(h.s.track).toBe('iss');
+    h.press('7');
+    expect(h.s.track).toBe('tiangong');
+  });
+
+  it('arrows leave the track view for a fixed one where the satellite was', () => {
+    const h = harness({ view: 'track', track: 'iss' });
+    h.press('ArrowUp');
+    expect(h.s).toMatchObject({ view: 'fixed', lat: 17, lon: 34 });
+  });
+});
+
 describe('S cycles the star modes', () => {
   it('on → camera exposure → off → on', () => {
     const h = harness();
@@ -102,10 +127,10 @@ describe('view keys', () => {
     expect(h.s).toMatchObject({ view: 'sunrel', lat: 0, lon: 90 });
   });
 
-  it('V cycles through the four modes', () => {
+  it('V cycles through the five modes', () => {
     const h = harness({ view: 'fixed' });
-    const seen = [1, 2, 3, 4].map(() => (h.press('v'), h.s.view));
-    expect(seen).toEqual(['sunrel', 'orbit', 'moon', 'fixed']);
+    const seen = [1, 2, 3, 4, 5].map(() => (h.press('v'), h.s.view));
+    expect(seen).toEqual(['sunrel', 'orbit', 'moon', 'track', 'fixed']);
   });
 
   it('arrows move a fixed view, shift an offset in sunrel, and freeze orbit/moon first', () => {

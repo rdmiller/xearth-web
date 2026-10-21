@@ -14,6 +14,10 @@ global cloud layer refreshed every hour from geostationary satellites.
   the globe are the right ones and move with the view. Magnitude sets both brightness and
   dot size, B−V sets a gentle blackbody tint, and `stars=photo` dims them the way a camera
   exposed for the sunlit Earth would.
+- **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
+  NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
+  The ~10,600 Starlinks are drawn as a point cloud. All are propagated live with SGP4 from
+  CelesTrak elements, hidden behind the Earth, and dimmed in its shadow.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), converted hourly to an equirectangular alpha map and cross-faded in.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
@@ -26,6 +30,8 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
+| `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
+| `O` | satellites: Starlink + named → named only → off |
 | `5` | dusk line down the middle · `V` cycles modes · `Home` back over your time zone |
 | arrows (`Shift` = faster) | look around; in the Sun-facing view they shift the offset from the Sun |
 | `+` `−` `[` `]` `0` | zoom, rotate, reset · `P` perspective/orthographic |
@@ -44,9 +50,12 @@ web/        Vite + TypeScript + WebGL2 app
   src/renderer/      full-screen ray-sphere shader
   src/cloudSync.ts   polls clouds/latest.json, hands new maps to the renderer
   src/stars.ts       star frame, magnitude → brightness/size, B−V → colour
+  src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
+  src/satWorker.ts   Starlink propagation off the main thread
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
-pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json
+pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
+            CelesTrak GP → satellites/latest.json (xearth_clouds.satellites)
 .github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages
 ```
 
@@ -58,6 +67,7 @@ pnpm install
 pnpm textures --current      # this month's Blue Marble + Black Marble (~3 MB); omit --current for all 12
 pip install -e ../pipeline   # numpy, netCDF4, Pillow
 pnpm clouds                  # newest GMGSI file → public/clouds/
+pnpm satellites              # CelesTrak elements → public/satellites/ (at most every 3 h)
 pnpm dev
 ```
 
@@ -70,7 +80,9 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 
 | Parameter | Meaning | Default |
 |---|---|---|
-| `view` | `fixed`, `sunrel`, `orbit`, `moon` | `fixed` |
+| `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
+| `track` | `iss`, `tiangong`, `satgus` | `iss` |
+| `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |
@@ -79,7 +91,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
 | `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
 | `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
-| `cloudsrc` | folder holding `latest.json` (e.g. an R2/S3 bucket) | `clouds/` |
+| `cloudsrc`, `satsrc` | folders holding each `latest.json` (e.g. an R2/S3 bucket) | `clouds/`, `satellites/` |
 
 ## How the cloud map is made
 
@@ -117,11 +129,35 @@ read as thin cloud. Both are limits of a single IR channel.
   screen covered by sunlit Earth. Faint stars go first, and the night side brings them all back.
 - No twinkling: that comes from Earth's atmosphere, so it doesn't happen in space.
 
+## How the satellites work
+
+- **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites and
+  the Starlink group. It keeps the 11 numbers SGP4 needs per satellite (1.1 MB, ~400 KB
+  gzipped) and publishes `satellites/latest.json`. CelesTrak updates every 2 hours and answers
+  a repeat download with HTTP 403 "has not updated", so the pipeline refetches only when its
+  file is over 3 hours old, and reuses the previous data on that 403. The deploy workflow
+  carries the file between runs in the Actions cache. `--seed starlink=file.tle` builds a group
+  from a local TLE file instead, for offline use.
+- **Propagation:** satellite.js SGP4 → TEME → Earth-fixed via GMST, in Earth radii, the same
+  frame as the globe. The 3 named satellites run on the main thread, with an orbit line over
+  ±½ period. Starlink (~20 ms a pass on a desktop) runs in a Web Worker, once per simulated
+  second.
+- **Drawing:** Starlink is a GL point layer after the globe. Each point is tested against the
+  Earth (disc silhouette in orthographic, ray-sphere in perspective) and against a
+  one-radius shadow cylinder, so it dims on the night side. Named satellites are drawn on the
+  overlay: a filled marker when sunlit, hollow in shadow, the past half-orbit as a fading
+  trail and the next half dashed. The top-left label shows the tracked satellite's altitude,
+  speed and sunlit state.
+- **Scale:** a Starlink is ~10 m across, so the dots are deliberately oversized, as on every
+  tracker.
+
 ## Data and credits
 
 - Earth imagery: NASA Visible Earth — Blue Marble Next Generation (Reto Stöckli, NASA Earth
   Observatory) and Black Marble 2016. Public domain.
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
+- Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP
+  data. SGP4: satellite.js (MIT). SAT GUS is operated by CrunchLabs.
 - Clouds: NOAA/NESDIS Global Mosaic of Geostationary Satellite Imagery (GMGSI) via the NOAA
   Open Data Dissemination program. Use does not imply NOAA endorsement.
