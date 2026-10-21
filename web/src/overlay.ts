@@ -293,6 +293,10 @@ export interface OverlayState {
   launches?: LaunchOverlay[];
   /** One-line summary of the focused launch for the status label. */
   launchLine?: string;
+  storms?: StormOverlay[];
+  quakes?: QuakeOverlay[];
+  /** One-line summary of the hazard layers for the status label. */
+  hazardLine?: string;
   perf?: PerfOverlay;
   note?: string;
 }
@@ -332,66 +336,249 @@ const LAUNCH_COLOR = '#ff9f43';
 const STATUS_COLOR: Record<string, string> = { go: '#7dffa8', hold: '#ff5c7a', success: HUD.accent };
 const LABEL_ROW = 15;
 
-interface LaunchLabel {
+type Row = { text: string; color: string }[];
+
+/** A stacked label to place beside a point on the globe. */
+interface CalloutRequest {
+  anchor: Vec3;
+  rows: Row[];
+  /** Distance from the anchor to the label, px. */
+  gap: number;
+}
+
+interface Callout {
   /** Text origin of the first row (left, vertical middle). */
   x: number;
   y: number;
-  rows: { text: string; color: string }[][];
+  rows: Row[];
   /** Screen box, including the dark backing — reserved before city labels are placed. */
   rect: Rect;
 }
 
 /**
- * Where each visible launch's label goes and what it says: on the pad before
- * liftoff, beside the vehicle after. Measured once, so city placement can avoid
- * exactly the boxes the launch drawing then fills.
+ * Place stacked labels for launches, storms and quakes, in priority order:
+ * right of the anchor, else left, below, above — whichever doesn't hit one
+ * already placed. Measured once, so city placement can avoid exactly these boxes.
  */
-function launchLabels(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number): LaunchLabel[] {
-  const out: LaunchLabel[] = [];
-  if (!s.launches?.length) return out;
+function placeCallouts(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, reqs: CalloutRequest[]): Callout[] {
+  const out: Callout[] = [];
   ctx.save();
   ctx.font = `600 11px ${UI_FONT}`;
   ctx.letterSpacing = '0.1em';
-  // Focused launch first, so it gets its preferred spot.
-  const ordered = [...s.launches].sort((a, b) => Number(b.focus) - Number(a.focus));
-  for (const l of ordered) {
-    const anchor = project(s.camera, l.vehicle ?? l.pad);
+  for (const r of reqs) {
+    const anchor = project(s.camera, r.anchor);
     if (!anchor.visible) continue;
     const ax = w / 2 + anchor.x * s.radiusPx;
     const ay = h / 2 - anchor.y * s.radiusPx;
-    // Stacked short lines rather than one long one: rocket, mission (focus only),
-    // then the clock with status (on the pad) or phase and numbers (in flight).
-    const rows: { text: string; color: string }[][] = [[{ text: l.rocket, color: LAUNCH_COLOR }]];
-    if (l.focus) rows.push([{ text: l.mission, color: HUD.text }]);
-    if (l.vehicle) {
-      rows.push([{ text: l.clock, color: LAUNCH_COLOR }]);
-      for (const d of l.detail ?? []) rows.push([{ text: d, color: HUD.dim }]);
-    } else {
-      rows.push([
-        { text: l.clock, color: HUD.text },
-        { text: ` · ${l.status.toUpperCase()}`, color: STATUS_COLOR[l.status.toLowerCase()] ?? '#ffc857' },
-      ]);
-    }
-    const width = Math.max(...rows.map((r) => r.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0)));
-    const blockH = (rows.length - 1) * LABEL_ROW;
-    const gap = l.vehicle && l.tracked ? 16 : 11;
-    // Right of the marker, else left, below, above — whichever doesn't hit a launch label already placed.
+    const width = Math.max(...r.rows.map((row) => row.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0)));
+    const blockH = (r.rows.length - 1) * LABEL_ROW;
     const candidates = [
-      { x: ax + gap, y: ay - blockH / 2 },
-      { x: ax - gap - width, y: ay - blockH / 2 },
-      { x: ax - width / 2, y: ay + gap + LABEL_ROW / 2 },
-      { x: ax - width / 2, y: ay - gap - LABEL_ROW / 2 - blockH },
+      { x: ax + r.gap, y: ay - blockH / 2 },
+      { x: ax - r.gap - width, y: ay - blockH / 2 },
+      { x: ax - width / 2, y: ay + r.gap + LABEL_ROW / 2 },
+      { x: ax - width / 2, y: ay - r.gap - LABEL_ROW / 2 - blockH },
     ];
-    const boxAt = (c: { x: number; y: number }): Rect => ({ x: c.x - 4, y: c.y - LABEL_ROW / 2 - 1, w: width + 8, h: rows.length * LABEL_ROW + 2 });
+    const boxAt = (c: { x: number; y: number }): Rect => ({
+      x: c.x - 4,
+      y: c.y - LABEL_ROW / 2 - 1,
+      w: width + 8,
+      h: r.rows.length * LABEL_ROW + 2,
+    });
     const pick = candidates.find((c) => !out.some((o) => overlaps(o.rect, boxAt(c)))) ?? candidates[0];
-    out.push({ x: pick.x, y: pick.y, rows, rect: boxAt(pick) });
+    out.push({ x: pick.x, y: pick.y, rows: r.rows, rect: boxAt(pick) });
   }
   ctx.restore();
   return out;
 }
 
+/** Labels on a dark backing: readable over bright cloud without a (costly) glow. */
+function drawCallouts(ctx: CanvasRenderingContext2D, callouts: Callout[]) {
+  ctx.save();
+  ctx.font = `600 11px ${UI_FONT}`;
+  ctx.letterSpacing = '0.1em';
+  ctx.textBaseline = 'middle';
+  for (const c of callouts) {
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
+    ctx.beginPath();
+    ctx.roundRect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, 3);
+    ctx.fill();
+    c.rows.forEach((row, i) => {
+      let x = c.x;
+      for (const part of row) {
+        ctx.fillStyle = part.color;
+        ctx.fillText(part.text, x, c.y + i * LABEL_ROW);
+        x += ctx.measureText(part.text).width;
+      }
+    });
+  }
+  ctx.restore();
+  ctx.letterSpacing = '0px';
+}
+
+/**
+ * Launch labels: on the pad before liftoff, beside the vehicle after. Stacked
+ * short lines: rocket, mission (focus only), then the clock with status (on
+ * the pad) or phase and numbers (in flight). Focused launch first.
+ */
+function launchRequests(s: OverlayState): CalloutRequest[] {
+  return [...(s.launches ?? [])]
+    .sort((a, b) => Number(b.focus) - Number(a.focus))
+    .map((l) => {
+      const rows: Row[] = [[{ text: l.rocket, color: LAUNCH_COLOR }]];
+      if (l.focus) rows.push([{ text: l.mission, color: HUD.text }]);
+      if (l.vehicle) {
+        rows.push([{ text: l.clock, color: LAUNCH_COLOR }]);
+        for (const d of l.detail ?? []) rows.push([{ text: d, color: HUD.dim }]);
+      } else {
+        rows.push([
+          { text: l.clock, color: HUD.text },
+          { text: ` · ${l.status.toUpperCase()}`, color: STATUS_COLOR[l.status.toLowerCase()] ?? '#ffc857' },
+        ]);
+      }
+      return { anchor: l.vehicle ?? l.pad, rows, gap: l.vehicle && l.tracked ? 16 : 11 };
+    });
+}
+
+// ---- tropical cyclones ---------------------------------------------------------------
+
+export interface StormOverlay {
+  title: string;
+  detail: string;
+  color: string;
+  pos: Vec3;
+  southern: boolean;
+  /** Track segments; forecast ones are dashed. */
+  segments: { a: Vec3; b: Vec3; color: string; forecast: boolean }[];
+}
+
+/** The cyclone symbol: a filled eye with two curved arms (mirrored south of the equator). */
+function stormSprite(color: string, southern: boolean, dpr: number): Sprite {
+  return sprite(`storm|${color}|${southern}`, dpr, { x: -11, y: -11, w: 22, h: 22 }, (c) => {
+    if (southern) c.scale(-1, 1);
+    c.shadowColor = color;
+    c.shadowBlur = 6;
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = 2.4;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.arc(0, 0, 3.6, 0, Math.PI * 2);
+    c.fill();
+    for (const start of [0, Math.PI]) {
+      c.beginPath();
+      c.arc(0, 0, 8, start - Math.PI * 0.15, start + Math.PI * 0.45);
+      c.stroke();
+    }
+  });
+}
+
+function drawStorms(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  if (!s.storms?.length) return;
+  const toScreen = (p: Vec3) => {
+    const q = project(s.camera, p);
+    return { x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, visible: q.visible };
+  };
+  ctx.save();
+  ctx.lineCap = 'round';
+  // One path per (colour, observed/forecast): a handful of strokes, not one per segment.
+  const paths = new Map<string, Path2D>();
+  for (const st of s.storms) {
+    for (const seg of st.segments) {
+      const a = toScreen(seg.a);
+      const b = toScreen(seg.b);
+      if (!a.visible || !b.visible) continue;
+      const key = `${seg.color}|${seg.forecast ? 1 : 0}`;
+      let path = paths.get(key);
+      if (!path) paths.set(key, (path = new Path2D()));
+      path.moveTo(a.x, a.y);
+      path.lineTo(b.x, b.y);
+    }
+  }
+  for (const [key, path] of paths) {
+    const [color, forecast] = key.split('|');
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = forecast === '1' ? 0.6 : 0.85;
+    ctx.lineWidth = forecast === '1' ? 1.4 : 2;
+    ctx.setLineDash(forecast === '1' ? [4, 4] : []);
+    ctx.stroke(path);
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  for (const st of s.storms) {
+    const here = toScreen(st.pos);
+    if (here.visible) stamp(ctx, stormSprite(st.color, st.southern, dpr), here.x, here.y, dpr);
+  }
+  ctx.restore();
+}
+
+function stormRequests(s: OverlayState): CalloutRequest[] {
+  return (s.storms ?? []).map((st) => ({
+    anchor: st.pos,
+    rows: [[{ text: st.title, color: st.color }], ...(st.detail ? [[{ text: st.detail, color: HUD.dim }]] : [])],
+    gap: 14,
+  }));
+}
+
+// ---- earthquakes ---------------------------------------------------------------------
+
+export interface QuakeOverlay {
+  pos: Vec3;
+  radius: number;
+  color: string;
+  alpha: number;
+  /** Within the last hour: drawn with a second ring. */
+  fresh: boolean;
+  /** Only the biggest / notable ones carry a label. */
+  rows?: string[];
+}
+
+/** A quake ring (tinted disc + outline, plus an outer ring when fresh), cached per look. */
+function quakeSprite(color: string, radius: number, fresh: boolean, dpr: number): Sprite {
+  const r = Math.round(radius * 2) / 2;
+  const outer = r + (fresh ? 5 : 1);
+  return sprite(`quake|${color}|${r}|${fresh}`, dpr, { x: -outer, y: -outer, w: 2 * outer, h: 2 * outer }, (c) => {
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = 1.4;
+    c.globalAlpha = 0.25;
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha = 1;
+    c.stroke();
+    if (fresh) {
+      c.globalAlpha = 0.5;
+      c.beginPath();
+      c.arc(0, 0, r + 4, 0, Math.PI * 2);
+      c.stroke();
+    }
+  });
+}
+
+function drawQuakes(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  if (!s.quakes?.length) return;
+  ctx.save();
+  for (const q of s.quakes) {
+    const p = project(s.camera, q.pos);
+    if (!p.visible) continue;
+    ctx.globalAlpha = q.alpha;
+    stamp(ctx, quakeSprite(q.color, q.radius, q.fresh, dpr), w / 2 + p.x * s.radiusPx, h / 2 - p.y * s.radiusPx, dpr);
+  }
+  ctx.restore();
+}
+
+function quakeRequests(s: OverlayState): CalloutRequest[] {
+  return (s.quakes ?? [])
+    .filter((q) => q.rows)
+    .map((q) => ({
+      anchor: q.pos,
+      rows: q.rows!.map((text, i) => [{ text, color: i === 0 ? q.color : HUD.dim }]),
+      gap: q.radius + 7,
+    }));
+}
+
 /** Pads, flight paths and vehicles. Countdown text changes every second, so it's drawn plain (no glow). */
-function drawLaunches(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number, labels: LaunchLabel[]) {
+function drawLaunches(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
   const list = s.launches;
   if (!list?.length) return;
   const toScreen = (p: Vec3) => {
@@ -459,21 +646,6 @@ function drawLaunches(ctx: CanvasRenderingContext2D, s: OverlayState, w: number,
       if (l.tracked) stamp(ctx, reticleSprite(LAUNCH_COLOR, dpr), v.x, v.y, dpr);
       stamp(ctx, satSprite('', LAUNCH_COLOR, true, 9, dpr), v.x, v.y, dpr);
     }
-  }
-  // Labels on a dark backing: readable over bright cloud without a (costly) glow.
-  for (const lab of labels) {
-    ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
-    ctx.beginPath();
-    ctx.roundRect(lab.rect.x, lab.rect.y, lab.rect.w, lab.rect.h, 3);
-    ctx.fill();
-    lab.rows.forEach((row, i) => {
-      let x = lab.x;
-      for (const part of row) {
-        ctx.fillStyle = part.color;
-        ctx.fillText(part.text, x, lab.y + i * LABEL_ROW);
-        x += ctx.measureText(part.text).width;
-      }
-    });
   }
   ctx.restore();
   ctx.letterSpacing = '0px';
@@ -711,10 +883,14 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const lLabels = launchLabels(ctx, s, w, h);
-  if (s.markers) drawCities(ctx, s, w, h, dpr, lLabels.map((l) => l.rect));
+  // Priority for label space: launches, then storms, then quakes, then cities.
+  const callouts = placeCallouts(ctx, s, w, h, [...launchRequests(s), ...stormRequests(s), ...quakeRequests(s)]);
+  drawQuakes(ctx, s, w, h, dpr);
+  drawStorms(ctx, s, w, h, dpr);
+  if (s.markers) drawCities(ctx, s, w, h, dpr, callouts.map((c) => c.rect));
   drawSatellites(ctx, s, w, h, dpr);
-  drawLaunches(ctx, s, w, h, dpr, lLabels);
+  drawLaunches(ctx, s, w, h, dpr);
+  drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);
   if (s.perf) drawPerf(ctx, s.perf, w);
 
@@ -735,6 +911,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
       if (tracked) lines.push(`tracking ${describeSat(tracked)}`);
     }
     if (s.launchLine) lines.push(s.launchLine);
+    if (s.hazardLine) lines.push(s.hazardLine);
     if (s.note) lines.push(s.note);
     // A thin accent rule down the left, like an instrument readout.
     ctx.fillStyle = HUD.line;
@@ -752,7 +929,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora: NOAA SWPC · Storms: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · press H',
     w - 10,
     h - 8,
   );

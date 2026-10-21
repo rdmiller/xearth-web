@@ -25,6 +25,8 @@ uniform float uCloudMix;   // 0 → prev, 1 → cur
 uniform float uCloudOn;
 uniform float uLights;
 uniform float uGrid;
+uniform sampler2D uAurora;  // OVATION probability of visible aurora, 0–100 as bytes
+uniform float uAuroraOn;
 
 out vec4 outColor;
 
@@ -92,6 +94,18 @@ void main() {
   }
   vec3 cloudCol = vec3(0.95) * dayW * (0.25 + 0.75 * lambert) * tint + vec3(0.012, 0.015, 0.022) * nightW;
   vec3 col = mix(dayCol + nightCol, cloudCol, ca * 0.92);
+
+  // Aurora: emission ~100–300 km up, above the clouds, seen only where it's dark
+  // (Sun at least ~6° below the horizon). The response 1 − exp(−2.5·p^1.4) keeps
+  // the likely core of the oval bright and its low-probability fringe faint, so it
+  // reads as a band rather than a slab. Green oxygen line, a red tint where strong.
+  if (uAuroraOn > 0.5) {
+    float ap = textureLod(uAurora, uv, 0.0).r * 2.55; // byte v/255 → v/100
+    float dark = 1.0 - smoothstep(-0.16, -0.02, k);
+    float glow = (1.0 - exp(-2.5 * pow(ap, 1.4))) * dark;
+    vec3 aurora = mix(vec3(0.08, 0.95, 0.32), vec3(0.9, 0.2, 0.45), 0.3 * smoothstep(0.5, 1.0, ap));
+    col += aurora * glow * 0.6;
+  }
 
   // Sun glint on open water (ocean picked out by its blue cast).
   float ocean = uHasDay > 0.5 ? smoothstep(0.03, 0.12, albedoS.b - max(albedoS.r, albedoS.g)) : 1.0;

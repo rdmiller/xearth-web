@@ -9,6 +9,28 @@ import { subsolarPoint } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
 import {
+  decodeFires,
+  decodeOvation,
+  decodeQuakes,
+  isFireManifest,
+  isOvation,
+  isQuakeFeed,
+  isStormManifest,
+  labelledQuakes,
+  OVATION_URL,
+  quakeAge,
+  quakeRadius,
+  quakeStyle,
+  stormClass,
+  stormColor,
+  stormDetail,
+  stormTitle,
+  USGS_QUAKES_URL,
+  type AuroraGrid,
+  type Quake,
+  type StormManifest,
+} from './hazards';
+import {
   flightPath,
   focusLaunch,
   formatClock,
@@ -28,7 +50,9 @@ import {
   UI_FONT,
   type BodyMarker,
   type LaunchOverlay,
+  type QuakeOverlay,
   type SatelliteOverlay,
+  type StormOverlay,
 } from './overlay';
 import { FrameStats, GpuTimer } from './perf';
 import { parseSettings, toQuery, type Settings } from './params';
@@ -374,6 +398,136 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
   return { overlays, line };
 }
 
+// ---- hazards: aurora, tropical cyclones, fires, earthquakes ------------------------
+// Aurora and earthquakes come straight from NOAA SWPC and USGS (both CORS-enabled,
+// small, updated every few minutes). Storms and fires come from the pipeline
+// (GDACS/NHC need merging; FIRMS is ~20 MB raw). Each polls only while shown.
+
+let aurora: AuroraGrid | undefined;
+let stormManifest: StormManifest | undefined;
+let fireSummary: { detections: number; count: number } | undefined;
+let quakes: Quake[] = [];
+
+async function fetchJson(url: string): Promise<unknown> {
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+}
+
+const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
+
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes';
+
+const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }> = {
+  aurora: {
+    everyMs: 10 * 60_000,
+    load: async () => {
+      const o = await fetchJson(OVATION_URL);
+      if (!isOvation(o)) throw new Error('not an OVATION aurora forecast');
+      aurora = decodeOvation(o);
+      renderer.setAurora(aurora);
+    },
+  },
+  storms: {
+    everyMs: 15 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.stormsrc));
+      if (!isStormManifest(m)) throw new Error('storms/latest.json is not a storm manifest');
+      stormManifest = m;
+      stormCache = undefined;
+    },
+  },
+  fires: {
+    everyMs: 30 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.firesrc));
+      if (!isFireManifest(m)) throw new Error('fires/latest.json is not a fire manifest');
+      renderer.setFires(decodeFires(m));
+      fireSummary = { detections: m.detections, count: m.count };
+    },
+  },
+  quakes: {
+    everyMs: 5 * 60_000,
+    load: async () => {
+      const f = await fetchJson(USGS_QUAKES_URL);
+      if (!isQuakeFeed(f)) throw new Error('not a USGS earthquake feed');
+      quakes = decodeQuakes(f);
+    },
+  },
+};
+
+const hazardTimers: Partial<Record<HazardKey, ReturnType<typeof setInterval>>> = {};
+
+function syncHazard(key: HazardKey) {
+  clearInterval(hazardTimers[key]);
+  delete hazardTimers[key];
+  if (!settings[key]) return;
+  const run = () =>
+    HAZARDS[key]
+      .load()
+      .catch((err) => console.warn(`${key}:`, err))
+      .finally(requestRedraw);
+  void run();
+  hazardTimers[key] = setInterval(run, HAZARDS[key].everyMs);
+}
+
+/** Storm drawing is fixed per manifest, so it's built once per load. */
+let stormCache: StormOverlay[] | undefined;
+function stormOverlays(): StormOverlay[] {
+  if (!settings.storms || !stormManifest) return [];
+  stormCache ??= stormManifest.storms.map((st) => ({
+    title: stormTitle(st),
+    detail: stormDetail(st),
+    color: stormColor(stormClass(st)),
+    pos: fromLatLon(st.pos[1], st.pos[0]),
+    southern: st.pos[1] < 0,
+    segments: st.segments.map(([lon1, lat1, lon2, lat2, cls, forecast]) => ({
+      a: fromLatLon(lat1, lon1),
+      b: fromLatLon(lat2, lon2),
+      color: stormColor(cls),
+      forecast: !!forecast,
+    })),
+  }));
+  return stormCache;
+}
+
+/** Earthquake ages are against the real clock: the feed is live, not simulated. */
+function quakeOverlays(): QuakeOverlay[] {
+  if (!settings.quakes) return [];
+  const now = Date.now();
+  const labelled = new Set(labelledQuakes(quakes).map((q) => q.id));
+  return quakes.map((q) => {
+    const age = now - q.time;
+    const style = quakeStyle(age);
+    return {
+      pos: fromLatLon(q.lat, q.lon),
+      radius: quakeRadius(q.mag),
+      color: style.color,
+      alpha: style.alpha,
+      fresh: age < 3_600_000,
+      rows: labelled.has(q.id)
+        ? [
+            `M${q.mag.toFixed(1)} · ${quakeAge(age)}`,
+            `${Math.round(q.depthKm)} KM DEEP${q.tsunami ? ' · TSUNAMI FLAG' : ''}`,
+            q.place.toUpperCase().slice(0, 40),
+          ]
+        : undefined,
+    };
+  });
+}
+
+function hazardLine(): string | undefined {
+  const parts: string[] = [];
+  if (settings.aurora && aurora) parts.push(`aurora ${aurora.forecast.slice(11, 16)}Z (peak ${aurora.peak}%)`);
+  if (settings.storms && stormManifest) {
+    const n = stormManifest.storms.length;
+    parts.push(`${n} tropical cyclone${n === 1 ? '' : 's'}`);
+  }
+  if (settings.fires && fireSummary) parts.push(`fires ${Math.round(fireSummary.detections / 1000)}k (24 h)`);
+  if (settings.quakes && quakes.length) parts.push(`${quakes.length} quakes M2.5+ (24 h)`);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 /**
  * Framing views (E): put the body just past the limb. In the sky projection the
  * disc spans atan(1 / focal) of sky, so aim ~1.35 disc radii off the line of sight.
@@ -536,6 +690,8 @@ function frame(now: number) {
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
     satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt } : null,
     bodies: bodies.draws,
+    aurora: settings.aurora,
+    fires: settings.fires,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);
@@ -550,6 +706,9 @@ function frame(now: number) {
     bodies: settings.bodies ? bodies.markers : undefined,
     launches: launch.overlays,
     launchLine: launch.line,
+    storms: stormOverlays(),
+    quakes: quakeOverlays(),
+    hazardLine: hazardLine(),
     perf: settings.fps
       ? {
           summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
@@ -617,8 +776,12 @@ function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
+  const hazardsBefore = { aurora: settings.aurora, storms: settings.storms, fires: settings.fires, quakes: settings.quakes };
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
+  for (const key of Object.keys(hazardsBefore) as HazardKey[]) {
+    if (settings[key] !== hazardsBefore[key]) syncHazard(key);
+  }
   if (settings.clouds !== cloudsBefore) syncClouds();
   if ((settings.sats === 'off') !== (satsBefore === 'off')) syncSatellites();
   clearTimeout(urlTimer);
@@ -747,4 +910,5 @@ Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.f
 syncClouds();
 syncSatellites();
 syncLaunches();
+for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 requestRedraw();

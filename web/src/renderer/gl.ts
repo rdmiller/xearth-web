@@ -6,6 +6,8 @@ import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
 import { BodyLayer, type BodyDraw } from './bodies';
+import { FireLayer } from './fires';
+import type { AuroraGrid, FirePoints } from '../hazards';
 import { SatLayer } from './sats';
 import { StarLayer } from './stars';
 
@@ -24,6 +26,8 @@ export interface FrameState {
   stars: { frame: Float32Array; focal: number; magShift: number } | null;
   /** Sun and Moon discs (drawn behind the globe). */
   bodies: BodyDraw[];
+  aurora: boolean;
+  fires: boolean;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number } | null;
   dpr: number;
@@ -41,6 +45,9 @@ export class GlobeRenderer {
   private readonly stars: StarLayer;
   private readonly sats: SatLayer;
   private readonly bodies: BodyLayer;
+  private readonly fireLayer: FireLayer;
+  private readonly auroraTex: WebGLTexture;
+  private hasAurora = false;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -58,6 +65,8 @@ export class GlobeRenderer {
     this.stars = new StarLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.sats = new SatLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.bodies = new BodyLayer(gl, (vs, fs) => link(gl, vs, fs));
+    this.fireLayer = new FireLayer(gl, (vs, fs) => link(gl, vs, fs));
+    this.auroraTex = gl.createTexture()!;
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -133,6 +142,25 @@ export class GlobeRenderer {
     return this.loaded.cloudCur;
   }
 
+  /** Aurora probability grid (row 0 = north pole, column 0 = −180°), one byte per cell. */
+  setAurora(grid: AuroraGrid) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, grid.width, grid.height, 0, gl.RED, gl.UNSIGNED_BYTE, grid.data);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasAurora = true;
+  }
+
+  setFires(points: FirePoints) {
+    this.fireLayer.setFires(points);
+  }
+
   setMoon(image: TexImageSource) {
     this.bodies.setMoonTexture(image);
   }
@@ -195,8 +223,16 @@ export class GlobeRenderer {
     gl.uniform1f(this.u('uCloudOn'), f.clouds && this.loaded.cloudCur ? 1 : 0);
     gl.uniform1f(this.u('uLights'), f.lights ? 1 : 0);
     gl.uniform1f(this.u('uGrid'), f.grid ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
+    gl.uniform1i(this.u('uAurora'), 5);
+    gl.uniform1f(this.u('uAuroraOn'), f.aurora && this.hasAurora ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
+
+    if (f.fires) {
+      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr }, [this.canvas.width, this.canvas.height]);
+    }
 
     if (f.satellites) {
       this.sats.draw(

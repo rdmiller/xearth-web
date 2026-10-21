@@ -27,6 +27,11 @@ export interface Settings extends ViewSettings {
   bodies: boolean;
   /** Launch mode: pads, countdowns, ascents. */
   launches: boolean;
+  /** Live hazard layers. */
+  aurora: boolean;
+  storms: boolean;
+  fires: boolean;
+  quakes: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
   bodyscale: number;
   /** Fixed start time (ISO), or null for "now". */
@@ -39,6 +44,9 @@ export interface Settings extends ViewSettings {
   satsrc: string;
   /** Where the launches' latest.json lives. */
   launchsrc: string;
+  /** Where the pipeline's storm and fire files live. */
+  stormsrc: string;
+  firesrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -70,12 +78,18 @@ export function defaults(): Settings {
     fps: false,
     bodies: true,
     launches: true,
+    aurora: true,
+    storms: true,
+    fires: true,
+    quakes: true,
     bodyscale: 1,
     time: null,
     speed: 1,
     cloudsrc: (import.meta.env?.VITE_CLOUD_BASE as string | undefined) ?? 'clouds/',
     satsrc: (import.meta.env?.VITE_SAT_BASE as string | undefined) ?? 'satellites/',
     launchsrc: (import.meta.env?.VITE_LAUNCH_BASE as string | undefined) ?? 'launches/',
+    stormsrc: (import.meta.env?.VITE_STORM_BASE as string | undefined) ?? 'storms/',
+    firesrc: (import.meta.env?.VITE_FIRE_BASE as string | undefined) ?? 'fires/',
   };
 }
 
@@ -134,12 +148,18 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     fps: bool(q, 'fps', base.fps),
     bodies: bool(q, 'bodies', base.bodies),
     launches: bool(q, 'launches', base.launches),
+    aurora: bool(q, 'aurora', base.aurora),
+    storms: bool(q, 'storms', base.storms),
+    fires: bool(q, 'fires', base.fires),
+    quakes: bool(q, 'quakes', base.quakes),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
     cloudsrc: q.get('cloudsrc') ?? base.cloudsrc,
     satsrc: q.get('satsrc') ?? base.satsrc,
     launchsrc: q.get('launchsrc') ?? base.launchsrc,
+    stormsrc: q.get('stormsrc') ?? base.stormsrc,
+    firesrc: q.get('firesrc') ?? base.firesrc,
   };
 }
 

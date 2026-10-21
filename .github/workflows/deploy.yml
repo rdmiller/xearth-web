@@ -59,6 +59,15 @@ jobs:
         continue-on-error: true
         run: python -m xearth_clouds.launches --out web/public/launches
 
+      # Aurora and earthquakes are fetched by the browser straight from NOAA SWPC and
+      # USGS. Storms (GDACS + NHC need merging) and fires (FIRMS, ~20 MB raw) come from here.
+      - name: Tropical cyclones (GDACS + NHC)
+        continue-on-error: true
+        run: python -m xearth_clouds.storms --out web/public/storms
+      - name: Active fires, last 24 h (NASA FIRMS VIIRS)
+        continue-on-error: true
+        run: python -m xearth_clouds.fires --out web/public/fires
+
       - name: Cache NASA textures
         uses: actions/cache@v4
         with:

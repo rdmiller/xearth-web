@@ -24,6 +24,13 @@ global cloud layer refreshed every hour from geostationary satellites.
   countdowns and status. For Starlink missions, SpaceX's own pre-launch orbit prediction (via
   CelesTrak) drives a flight you can watch: an approximate ascent, the coast on the predicted
   orbit, and deployment at the exact predicted time. **J** follows it; **K** previews it from T−1 min.
+- **Hazards, live:**
+  - **Aurora:** NOAA SWPC's OVATION forecast as a green glow on the night side.
+  - **Tropical cyclones:** GDACS for every basin, with NHC detail for its storms. Each gets a
+    symbol, name and intensity, the observed track solid and the forecast dashed.
+  - **Fires:** NASA FIRMS VIIRS detections from the last 24 h, glowing red-orange at night.
+  - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
+    by age, with labels on the largest.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~10,600 Starlinks are drawn as a point cloud. All are propagated live with SGP4 from
@@ -40,6 +47,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
 | `B` | Sun and Moon on/off |
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
+| `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -66,6 +74,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/stars.ts       star frame, magnitude → brightness/size, B−V → colour
   src/bodies.ts      Sun/Moon positions, sizes, Moon phase and orientation, framing views
   src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
+  src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   Starlink propagation off the main thread
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
@@ -85,6 +94,8 @@ pip install -e ../pipeline   # numpy, netCDF4, Pillow
 pnpm clouds                  # newest GMGSI file → public/clouds/
 pnpm satellites              # CelesTrak elements → public/satellites/ (at most every 3 h)
 pnpm launches                # Launch Library 2 + SpaceX pre-launch orbits → public/launches/
+pnpm storms                  # GDACS + NHC tropical cyclones → public/storms/
+pnpm fires                   # NASA FIRMS VIIRS, last 24 h → public/fires/
 pnpm dev
 ```
 
@@ -99,6 +110,8 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
+| `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
+| `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
@@ -192,6 +205,32 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   - Launches without a prediction get a countdown and an "in flight, no trajectory data" marker
     on the pad, never an invented path.
 
+## Hazard layers
+
+| Layer | Source | Fetched by | Every |
+|---|---|---|---|
+| Aurora | NOAA SWPC OVATION (1° grid, ~156 KB gzipped) | browser | 10 min |
+| Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
+| Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
+| Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 30 min |
+
+- **Aurora** is drawn in the globe shader above the clouds, only where the Sun is at least ~6°
+  below the horizon, using a 1 − exp(−2.5·p^1.4) response so the oval's core is bright and its
+  fringe faint. The feed carries a spurious ring of values at latitudes −3…0°, an edge
+  artefact of the model grid, so cells within 20° of the equator are dropped.
+- **Storms:** GDACS lists track segments grouped by class, not by time. The current class comes
+  from the observed segment that ends at the current position. GDACS's "severity" is the peak
+  over the forecast, so NHC's current wind, pressure and motion are used where NHC has the
+  storm. NHC's JSON mixes units (intensity in knots, motion in mph), which a test pins against
+  the public advisory. Mature storms are named by basin: hurricane, typhoon or cyclone.
+- **Fires:** low-confidence detections are dropped and the rest merged into 0.05° cells (fire
+  power summed, age from the latest detection): 238k detections became 52.7k points and
+  300 KB gzipped. They're drawn red-orange so they never read as city lights.
+- **Earthquakes:** ring size ×1.5 per magnitude. Red within the hour, orange within 6 h, then
+  yellow. The largest few, M6+, tsunami-flagged or PAGER-alerted quakes get labels.
+- Launch, storm and quake labels share one placement pass (launches first, then storms, then
+  quakes), and city labels avoid all of them.
+
 ## Frame rate
 
 Press **D** (or add `?fps=1`) for a panel showing frames per second, a sparkline of frame
@@ -227,6 +266,10 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
+- Aurora: NOAA Space Weather Prediction Center (OVATION). Earthquakes: USGS. Tropical cyclones:
+  GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
+  of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
+  Earth Science Data and Information System (ESDIS)."
 - Launches: Launch Library 2 by The Space Devs; Starlink pre-launch orbits are SpaceX state
   vectors published by CelesTrak as supplemental GP.
 - Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP

@@ -83,7 +83,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 export const STAR_LABELS: Record<StarMode, string> = {
@@ -192,6 +192,10 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('n', 'lights', 'City lights'),
   layer('b', 'bodies', 'Sun and Moon'),
   layer('u', 'launches', 'Upcoming launches'),
+  layer('a', 'aurora', 'Aurora'),
+  layer('w', 'storms', 'Tropical cyclones'),
+  layer('x', 'fires', 'Fires (24 h)'),
+  layer('q', 'quakes', 'Earthquakes (24 h)'),
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
   layer('l', 'label', 'Label'),

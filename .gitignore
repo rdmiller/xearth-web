@@ -5,6 +5,8 @@ web/public/textures/
 web/public/clouds/
 web/public/satellites/
 web/public/launches/
+web/public/storms/
+web/public/fires/
 *.part
 __pycache__/
 *.egg-info/

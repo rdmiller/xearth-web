@@ -180,32 +180,52 @@ export function launchState(l: Launch, date: Date): LaunchState {
   };
 }
 
+/** Route samples per prediction: they only change when the prediction does. */
+const routeCache = new WeakMap<PrelaunchVariant, { key: string; samples: { t: number; p: Vec3 }[]; deploy?: Vec3 }>();
+
+/**
+ * The predicted route, sampled once per prediction: dense through the ascent
+ * (where the curve bends), sparser along the coast, then 25 min past deployment.
+ */
+function route(v: PrelaunchVariant, t0: number, pad: Vec3, deployT: number, steps: number) {
+  const key = `${t0}|${pad.join(',')}|${steps}`;
+  const hit = routeCache.get(v);
+  if (hit?.key === key) return hit;
+  const end = deployT + 25 * 60;
+  const times: number[] = [];
+  for (let i = 0; i <= 30; i++) times.push((ASCENT_S * i) / 30);
+  for (let i = 1; i <= steps; i++) times.push(ASCENT_S + ((end - ASCENT_S) * i) / steps);
+  const samples = times.flatMap((t) => {
+    const p = vehicleAt(v, t0, t, pad);
+    return p ? [{ t, p }] : [];
+  });
+  const entry = { key, samples, deploy: vehicleAt(v, t0, deployT, pad) ?? undefined };
+  routeCache.set(v, entry);
+  return entry;
+}
+
 /**
  * The flight path for drawing: the ascent arc and coast up to deployment (or,
  * once deployed, the next ~quarter orbit), split at "now" into flown and ahead.
+ * Built from cached samples, so a frame only does the split.
  */
 export function flightPath(s: LaunchState, steps = 90): { flown: Vec3[]; ahead: Vec3[]; deploy?: Vec3 } {
   const v = pickVariant(s.launch);
   if (!v || s.deployT === undefined) return { flown: [], ahead: [] };
-  const end = Math.max(s.deployT, s.t) + (s.phase === 'deployed' ? 25 * 60 : 0);
+  const r = route(v, s.t0, s.pad, s.deployT, steps);
+  // Before deployment, stop the drawn route at deployment; after, run 25 min past it.
+  const end = s.phase === 'deployed' ? Infinity : Math.max(s.deployT, s.t);
   const flown: Vec3[] = [];
   const ahead: Vec3[] = [];
-  const sample = (tSec: number) => vehicleAt(v, s.t0, tSec, s.pad);
-  // Dense through the ascent, where the curve bends; sparser along the orbit.
-  const times: number[] = [];
-  for (let i = 0; i <= 30; i++) times.push((ASCENT_S * i) / 30);
-  for (let i = 1; i <= steps; i++) times.push(ASCENT_S + ((end - ASCENT_S) * i) / steps);
-  for (const tSec of times) {
-    const p = sample(tSec);
-    if (!p) continue;
-    (tSec <= s.t ? flown : ahead).push(p);
+  for (const { t, p } of r.samples) {
+    if (t > end) break;
+    (t <= s.t ? flown : ahead).push(p);
   }
   if (s.t >= 0 && s.phase !== 'countdown') {
     flown.push(s.pos);
     ahead.unshift(s.pos);
   }
-  const deploy = sample(s.deployT) ?? undefined;
-  return { flown, ahead, deploy };
+  return { flown, ahead, deploy: r.deploy };
 }
 
 /** "T−04:21:07" / "T+00:03:12". */
