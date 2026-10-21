@@ -1,0 +1,57 @@
+# xearth web, self-hosted: the static site plus the hourly data pipeline.
+#
+#   docker compose up -d --build          then open http://localhost:8080
+#   docker compose logs -f pipeline       watch the hourly runs
+#   docker compose run --rm pipeline python -m xearth_clouds.run --data /data   run all jobs now
+#
+# Three services share one volume of data:
+#   textures  (once)    NASA Blue Marble / Black Marble / Moon images, ~40 MB
+#   pipeline  (always)  every layer's job, then again each hour at :50 (as the GitHub deploy does)
+#   web       (always)  nginx: the built app, plus the pipeline's folders from the volume
+#
+# The site works before the first run finishes: layers without data yet say so in the readout.
+# Radar, aurora, quakes, space weather, US tsunami alerts and ISS telemetry come from their
+# sources straight to the browser, not through here.
+
+name: xearth
+
+services:
+  textures:
+    image: node:24-alpine
+    # Already-downloaded images are skipped, so this is quick after the first time. The pipeline
+    # runs as an unprivileged user, so it's handed the volume afterwards.
+    command:
+      - sh
+      - -c
+      - node /app/fetch-textures.mjs --out /data/textures && chown -R 10001:10001 /data
+    volumes:
+      - ./web/scripts/fetch-textures.mjs:/app/fetch-textures.mjs:ro
+      - data:/data
+    restart: "no"
+
+  pipeline:
+    build: ./pipeline
+    environment:
+      # Minute past the hour to run (GMGSI cloud files land ~35–45 min after the hour).
+      XEARTH_MINUTE: "${XEARTH_MINUTE:-50}"
+      # Comma list of jobs to leave out, e.g. "lightning" (it downloads ~70 MB an hour).
+      XEARTH_SKIP: "${XEARTH_SKIP:-}"
+    volumes:
+      - data:/data
+    depends_on:
+      textures:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    ports:
+      - "${XEARTH_PORT:-8080}:80"
+    volumes:
+      - data:/data:ro
+    depends_on:
+      - pipeline
+    restart: unless-stopped
+
+volumes:
+  data:

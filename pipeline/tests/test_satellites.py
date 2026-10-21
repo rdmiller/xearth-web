@@ -64,7 +64,7 @@ def test_featured_list_includes_mark_rober_satellite():
 def test_freshness_gate(tmp_path):
     now = dt.datetime(2026, 10, 21, 17, tzinfo=dt.timezone.utc)
     assert not satellites.is_fresh(tmp_path, dt.timedelta(hours=3), now)
-    satellites.write({"generated": "2026-10-21T15:30:00Z"}, tmp_path)
+    satellites.write({"generated": "2026-10-21T15:30:00Z", "groups": {g: [] for g in satellites.GROUPS}}, tmp_path)
     assert satellites.is_fresh(tmp_path, dt.timedelta(hours=3), now)
     assert not satellites.is_fresh(tmp_path, dt.timedelta(hours=1), now)
 
@@ -156,3 +156,10 @@ def test_a_new_group_not_updated_is_skipped_not_fatal():
 def test_default_groups_include_weather_and_navigation():
     assert set(satellites.GROUPS) >= {"starlink", "weather", "gps-ops", "glo-ops"}
     assert "starlink" not in satellites.NAMED_GROUPS
+
+
+def test_a_missing_group_makes_the_file_stale(tmp_path):
+    now = dt.datetime(2026, 10, 21, 17, tzinfo=dt.timezone.utc)
+    satellites.write({"generated": "2026-10-21T16:30:00Z", "groups": {"starlink": []}}, tmp_path)
+    assert satellites.is_fresh(tmp_path, dt.timedelta(hours=3), now, groups=["starlink"])
+    assert not satellites.is_fresh(tmp_path, dt.timedelta(hours=3), now, groups=["starlink", "gps-ops"])

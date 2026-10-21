@@ -6,6 +6,7 @@
 //
 //   node scripts/fetch-textures.mjs            all 12 months + night
 //   node scripts/fetch-textures.mjs --current  just this month + night (fast start)
+//   node scripts/fetch-textures.mjs --out DIR  somewhere else (the Docker setup's data volume)
 
 import { createWriteStream, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -13,7 +14,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
-const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'textures');
+const outArg = process.argv.indexOf('--out');
+const OUT = outArg > 0 && process.argv[outArg + 1] ? process.argv[outArg + 1] : join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'textures');
 const BASE = 'https://eoimages.gsfc.nasa.gov/images/imagerecords';
 const MONTH_RECORDS = ['73580', '73605', '73630', '73655', '73701', '73726', '73751', '73776', '73801', '73826', '73884', '73909'];
 

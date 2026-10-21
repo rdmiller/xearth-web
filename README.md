@@ -160,6 +160,41 @@ which is missing in the label.
 
 Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 
+## Self-hosting with Docker
+
+`docker-compose.yml` runs the whole thing on one machine, with no GitHub Actions:
+
+```sh
+docker compose up -d --build        # then open http://localhost:8080
+docker compose logs -f pipeline     # the hourly runs
+docker compose down                 # stop (the data volume is kept)
+```
+
+| Service | Image | Does |
+|---|---|---|
+| `textures` | `node:24-alpine` | once: NASA Blue/Black Marble and Moon images (~40 MB) into the data volume, then hands the volume to the pipeline's user |
+| `pipeline` | `pipeline/Dockerfile` (`python:3.12-slim`, unprivileged) | `python -m xearth_clouds.run --loop`: every job in the deploy workflow's order, each in its own process, now and then every hour at :50 |
+| `web` | `web/Dockerfile` (pnpm build → `nginx:1.29-alpine`) | serves the built app, and each layer's folder from the volume |
+
+- **Settings** (environment or a `.env` beside the compose file): `XEARTH_PORT` (default 8080),
+  `XEARTH_MINUTE` (minute past the hour, default 50: GMGSI clouds land ~35–45 minutes after
+  the hour), `XEARTH_SKIP` (jobs to leave out, e.g. `lightning`, which downloads ~70 MB an
+  hour).
+- **Health:** after each run the pipeline writes `status.json` in the volume (per job: ok,
+  seconds, error), and its healthcheck passes while a run has finished within two hours. A
+  failed job doesn't fail it: a feed being down isn't something a restart would fix.
+  `docker compose run --rm pipeline python -m xearth_clouds.run --data /data` runs every
+  job now.
+- **Caching (nginx):** the app shell and every `latest.json` (and the snow/ice and smoke
+  PNGs, rewritten in place) are `no-cache`, so a browser revalidates and gets a 304 until the
+  pipeline writes a new one; hashed build assets are immutable for a year, time-stamped cloud
+  maps for a week, textures for 30 days. JSON goes out gzipped (the satellite file, ~1.1 MB
+  with Starlink, as ~400 KB). `status.json` isn't served.
+- The site works before the first run finishes: layers without data say so in the readout.
+  Radar, aurora, quakes, space weather, US tsunami alerts and ISS telemetry go from their
+  sources straight to the browser either way.
+- On 2026-10-21 a first run took ~3 minutes (clouds ~85 s, fires ~40 s, lightning ~60 s).
+
 ## URL parameters
 
 | Parameter | Meaning | Default |

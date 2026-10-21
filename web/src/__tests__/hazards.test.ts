@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import stormJson from '../../public/storms/latest.json';
+// The pipeline's storms/latest.json from 2026-10-21, pinned (the live file is generated and gitignored).
+import stormJson from './fixtures/storms-2026-10-21.json';
 import {
   basinWord,
   decodeFires,

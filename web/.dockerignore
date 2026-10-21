@@ -1,0 +1,15 @@
+node_modules
+dist
+# Data the pipeline produces (and the textures) live in the shared volume, not the image.
+public/clouds
+public/satellites
+public/launches
+public/storms
+public/fires
+public/lightning
+public/events
+public/snowice
+public/smoke
+public/tsunami
+public/textures
+*.tmp.*

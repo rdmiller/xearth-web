@@ -12,7 +12,8 @@ import {
 } from '../launches';
 import { EARTH_RADIUS_KM } from '../satellites';
 import { dot, fromLatLon, normalize, toLatLon } from '../vec';
-import manifest from '../../public/launches/latest.json';
+// The pipeline's launches/latest.json from 2026-10-21, pinned (the live file is generated and gitignored).
+import manifest from './fixtures/launches-2026-10-21.json';
 
 // Real pipeline output (2026-10-21): Starlink G15-15, Vandenberg, T0 23:02:41Z, deploy 00:04:56.560Z.
 const g1515 = (manifest.launches as unknown as Launch[]).find((l) => l.mission === 'Starlink Group 15-15')!;

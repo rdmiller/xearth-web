@@ -163,11 +163,15 @@ def read_manifest(out_dir: Path) -> dict | None:
         return None
 
 
-def is_fresh(out_dir: Path, max_age: dt.timedelta, now: dt.datetime) -> bool:
+def is_fresh(out_dir: Path, max_age: dt.timedelta, now: dt.datetime, groups: Iterable[str] = GROUPS) -> bool:
+    """Recent enough to skip a run — unless a group is missing (skipped last time because
+    CelesTrak said "not updated" with nothing to reuse), which is worth retrying straight away."""
     manifest = read_manifest(out_dir)
     try:
         generated = dt.datetime.fromisoformat(manifest["generated"].replace("Z", "+00:00"))  # type: ignore[index]
     except (TypeError, KeyError, ValueError):
+        return False
+    if any(g not in manifest.get("groups", {}) for g in groups):  # type: ignore[union-attr]
         return False
     return now - generated < max_age
 

@@ -135,17 +135,28 @@ def build(get: Callable[[str], bytes], now: dt.datetime | None = None, window_mi
             print(f"lightning: {name} has no files in the last {window_min} min", file=sys.stderr)
             continue
 
-        def load(kt: tuple[str, dt.datetime]):
-            key, t = kt
+        def download(kt: tuple[str, dt.datetime]) -> bytes | None:
             try:
-                lat, lon = read_flashes(get(f"https://{bucket}.s3.amazonaws.com/{key}"))
+                return get(f"https://{bucket}.s3.amazonaws.com/{kt[0]}")
+            except Exception as err:
+                print(f"lightning: skipped {kt[0]} ({err})", file=sys.stderr)
+                return None
+
+        # Downloads in parallel; parsing one file at a time. The netCDF/HDF5 C library
+        # isn't thread-safe: reading files from several threads at once crashes the
+        # process (SIGBUS in the Linux container).
+        with ThreadPoolExecutor(WORKERS) as pool:
+            raws = list(pool.map(download, keys))
+        batches = []
+        for (key, t), raw in zip(keys, raws):
+            if raw is None:
+                continue
+            try:
+                lat, lon = read_flashes(raw)
             except Exception as err:
                 print(f"lightning: skipped {key} ({err})", file=sys.stderr)
-                return None
-            return lat, lon, max(0.0, (now - t).total_seconds() / 60)
-
-        with ThreadPoolExecutor(WORKERS) as pool:
-            batches = [b for b in pool.map(load, keys) if b is not None]
+                continue
+            batches.append((lat, lon, max(0.0, (now - t).total_seconds() / 60)))
         per_sat.append(bin_flashes(batches))
         used.append(name)
         files += len(batches)
