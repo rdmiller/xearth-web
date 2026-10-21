@@ -1,7 +1,7 @@
 // Live hazard layers: aurora (NOAA SWPC OVATION), tropical cyclones
 // (GDACS + NHC, via the pipeline), active fires (NASA FIRMS VIIRS, via the
-// pipeline), earthquakes (USGS), lightning (GOES GLM), snow and ice (NOAA IMS)
-// and GDACS floods, wildfires and eruptions. Decoding and naming only; drawing
+// pipeline), earthquakes (USGS), lightning (GOES GLM), snow and ice (NOAA IMS),
+// smoke (NOAA HMS) and GDACS floods, wildfires and eruptions. Radar is in radar.ts. Decoding and naming only; drawing
 // is in renderer/ and overlay.ts.
 
 import type { SurfacePoints } from './renderer/points';
@@ -380,6 +380,31 @@ const shortDate = (iso: string) =>
 
 export function snowIceLine(m: SnowIceManifest): string {
   return `snow & ice ${shortDate(m.ims)} (IMS)${m.seaIceSouth ? ` · Antarctic sea ice ${shortDate(m.seaIceSouth)}` : ''}`;
+}
+
+// ---- smoke (NOAA HMS, via the pipeline) --------------------------------------------------
+
+export interface SmokeManifest {
+  generated: string;
+  /** Analysis day (UTC). */
+  date: string;
+  /** PNG beside latest.json: density 0 / 85 / 170 / 255. */
+  image: string;
+  plumes: { Light: number; Medium: number; Heavy: number };
+  /** End of the latest analysis period in the file. */
+  latest: string | null;
+}
+
+export function isSmokeManifest(v: unknown): v is SmokeManifest {
+  const m = v as Partial<SmokeManifest> | null;
+  return !!m && typeof m.generated === 'string' && typeof m.image === 'string' && !!m.plumes;
+}
+
+export function smokeLine(m: SmokeManifest): string {
+  const p = m.plumes;
+  const n = p.Light + p.Medium + p.Heavy;
+  const end = m.latest ? ` to ${m.latest.slice(11, 16)}Z` : '';
+  return `smoke ${shortDate(m.date)}${end} (HMS): ${n} plume${n === 1 ? '' : 's'}${p.Heavy ? `, ${p.Heavy} heavy` : ''}`;
 }
 
 // ---- GDACS floods, wildfires, volcanoes (via the pipeline) -----------------------------

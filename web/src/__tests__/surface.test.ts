@@ -11,6 +11,7 @@ import {
   isSnowIceManifest,
   labelledEvents,
   lightningIntensity,
+  smokeLine,
   snowIceLine,
   type GdacsEvent,
 } from '../hazards';
@@ -98,5 +99,13 @@ describe('GDACS events', () => {
     const m = { generated: 'x', volcanoDays: 90, counts: { FL: 3, WF: 78, VO: 1 }, events: [] };
     expect(isEventManifest(m)).toBe(true);
     expect(eventLine(m)).toBe('GDACS 3 floods · 78 wildfires · 1 eruption (90 d)');
+  });
+});
+
+describe('smoke', () => {
+  it('summarises the analysis day, its end and the heavy plumes', () => {
+    const m = { generated: 'x', date: '2026-10-21', image: 'smoke.png', plumes: { Light: 166, Medium: 60, Heavy: 8 }, latest: '2026-10-21T20:00:00.000Z' };
+    expect(smokeLine(m)).toBe('smoke 21 Oct to 20:00Z (HMS): 234 plumes, 8 heavy');
+    expect(smokeLine({ ...m, plumes: { Light: 1, Medium: 0, Heavy: 0 }, latest: null })).toBe('smoke 21 Oct (HMS): 1 plume');
   });
 });

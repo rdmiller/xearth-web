@@ -45,6 +45,14 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: '`' })).toBeUndefined(); // still unbound
   });
 
+  it('uses a Shift binding when there is one, else the plain key', () => {
+    expect(matchHotkey({ key: 'R', shiftKey: true })?.description).toBe('Weather radar (RainViewer)');
+    expect(matchHotkey({ key: 'S', shiftKey: true })?.description).toBe('Smoke plumes (NOAA HMS)');
+    expect(matchHotkey({ key: 'r' })?.description).toBe('Check for new clouds now');
+    expect(matchHotkey({ key: 'C', shiftKey: true })?.description).toBe('Clouds');
+    expect(matchHotkey({ key: '?', shiftKey: true })?.description).toBe('This help');
+  });
+
   it('ignores auto-repeat for toggles but not for pan/zoom', () => {
     expect(matchHotkey({ key: 'c', repeat: true })).toBeUndefined();
     expect(matchHotkey({ key: 'ArrowLeft', repeat: true })).toBeDefined();

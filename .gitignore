@@ -10,6 +10,7 @@ web/public/fires/
 web/public/snowice/
 web/public/lightning/
 web/public/events/
+web/public/smoke/
 *.part
 __pycache__/
 *.egg-info/

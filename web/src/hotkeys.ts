@@ -83,7 +83,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 export const STAR_LABELS: Record<StarMode, string> = {
@@ -95,7 +95,7 @@ export const STAR_LABELS: Record<StarMode, string> = {
 function layer(key: string, field: Layer, name: string): Hotkey {
   return {
     keys: [key],
-    label: key.toUpperCase(),
+    label: key.startsWith('shift+') ? `Shift+${key.slice(6).toUpperCase()}` : key.toUpperCase(),
     description: name,
     group: 'Layers',
     run(ctx) {
@@ -199,6 +199,8 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('z', 'lightning', 'Lightning (GOES, 30 min)'),
   layer('y', 'events', 'Floods, wildfires, eruptions (GDACS)'),
   layer('i', 'snow', 'Snow and ice (today)'),
+  layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
+  layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
   layer('l', 'label', 'Label'),
@@ -402,10 +404,14 @@ export const HOTKEYS: readonly Hotkey[] = [
 const BY_KEY = new Map<string, Hotkey>();
 for (const hk of HOTKEYS) for (const k of hk.keys) BY_KEY.set(k, hk);
 
-/** The hotkey for a key event, or undefined (modifier chords are left to the browser). */
+/**
+ * The hotkey for a key event, or undefined (Ctrl/Cmd/Alt chords are left to the
+ * browser). Shift picks a "shift+" binding when there is one, else the plain key.
+ */
 export function matchHotkey(e: KeyLike): Hotkey | undefined {
   if (e.ctrlKey || e.metaKey || e.altKey) return undefined;
-  const hk = BY_KEY.get(e.key.toLowerCase());
+  const key = e.key.toLowerCase();
+  const hk = (e.shiftKey ? BY_KEY.get(`shift+${key}`) : undefined) ?? BY_KEY.get(key);
   if (!hk || (e.repeat && !hk.repeat)) return undefined;
   return hk;
 }

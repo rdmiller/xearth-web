@@ -19,7 +19,8 @@
     "fires": "cd ../pipeline && python -m xearth_clouds.fires --out ../web/public/fires",
     "lightning": "cd ../pipeline && python -m xearth_clouds.lightning --out ../web/public/lightning",
     "events": "cd ../pipeline && python -m xearth_clouds.events --out ../web/public/events",
-    "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice"
+    "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice",
+    "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",

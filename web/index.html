@@ -34,6 +34,11 @@
       }
       #toast.show { opacity: 1; transform: translate(-50%, 0); }
       @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+      #radar-credit {
+        position: fixed; right: 10px; bottom: 24px; z-index: 1; font-size: 10px; letter-spacing: 0.06em;
+        color: rgba(170, 205, 235, 0.7); text-decoration: none;
+      }
+      #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>
@@ -41,6 +46,7 @@
     <canvas id="globe"></canvas>
     <canvas id="overlay"></canvas>
     <div id="toast" role="status" aria-live="polite"></div>
+    <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <aside id="help" hidden>
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
@@ -59,6 +65,8 @@
         <tr><td><code>stars</code></td><td><code>1</code>, <code>0</code>, or <code>photo</code> (dimmed like a camera exposed for sunlit Earth)</td></tr>
         <tr><td><code>sats</code></td><td><code>all</code> (Starlink + named), <code>featured</code>, or <code>0</code></td></tr>
         <tr><td><code>aurora</code>, <code>storms</code>, <code>fires</code>, <code>quakes</code></td><td><code>0</code> hides that layer (keys <kbd>A</kbd> <kbd>W</kbd> <kbd>X</kbd> <kbd>Q</kbd>)</td></tr>
+        <tr><td><code>lightning</code>, <code>events</code>, <code>snow</code></td><td>lightning, GDACS floods/wildfires/eruptions, snow and ice (keys <kbd>Z</kbd> <kbd>Y</kbd> <kbd>I</kbd>)</td></tr>
+        <tr><td><code>radar</code>, <code>smoke</code></td><td>RainViewer radar, NOAA HMS smoke (keys <kbd>Shift+R</kbd> <kbd>Shift+S</kbd>)</td></tr>
         <tr><td><code>firehours</code></td><td>show fires detected within this many hours, 1–24 (default 12)</td></tr>
         <tr><td><code>launches</code></td><td><code>0</code> hides launch mode (key <kbd>U</kbd>)</td></tr>
         <tr><td><code>bodies</code>, <code>bodyscale</code></td><td>Sun and Moon on/off; enlarge their discs (1 = true size)</td></tr>

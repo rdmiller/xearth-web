@@ -8,6 +8,7 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
+import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
 import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
   ALERT_COLOR,
@@ -20,8 +21,10 @@ import {
   eventTitle,
   isEventManifest,
   isLightningManifest,
+  isSmokeManifest,
   isSnowIceManifest,
   labelledEvents,
+  smokeLine,
   snowIceLine,
   decodeFires,
   fireMinIntensity,
@@ -47,6 +50,7 @@ import {
   type FirePoints,
   type LightningManifest,
   type Quake,
+  type SmokeManifest,
   type SnowIceManifest,
   type StormManifest,
 } from './hazards';
@@ -432,6 +436,10 @@ let quakes: Quake[] = [];
 let lightningManifest: LightningManifest | undefined;
 let eventManifest: EventManifest | undefined;
 let snowIce: SnowIceManifest | undefined;
+let smoke: SmokeManifest | undefined;
+let radarFrame: RadarFrame | undefined;
+let radarZoomShown = 0;
+const radarCredit = document.getElementById('radar-credit') as HTMLElement;
 let spaceWeather: SpaceWeather | undefined;
 
 // The SUVI Sun image (~1 MB) is fetched only while the Sun is actually in frame.
@@ -467,7 +475,7 @@ async function fetchJson(url: string): Promise<unknown> {
 
 const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke';
 
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }> = {
   aurora: {
@@ -537,6 +545,41 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       // A data image: no colour management, or the ice concentrations shift.
       renderer.setSnowIce(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
       snowIce = m;
+    },
+  },
+  smoke: {
+    everyMs: 30 * 60_000,
+    load: async () => {
+      const url = pipelineFile(settings.smokesrc);
+      const m = await fetchJson(url);
+      if (!isSmokeManifest(m)) throw new Error('smoke/latest.json is not an HMS smoke manifest');
+      if (smoke?.generated === m.generated) return;
+      const r = await fetch(new URL(m.image, url).href, { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${m.image}`);
+      renderer.setSmoke(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
+      smoke = m;
+    },
+  },
+  // RainViewer publishes a frame every 10 min. Its tiles are fetched only for a new
+  // frame (or a finer zoom), never while the tab is hidden: the free API asks for caching.
+  radar: {
+    everyMs: 5 * 60_000,
+    load: async () => {
+      if (document.hidden) return;
+      const frame = latestFrame(await fetchJson(RAINVIEWER_API));
+      if (!frame) throw new Error('RainViewer lists no radar frames');
+      const zoom = radarZoom(settings.mag);
+      if (frame.time === radarFrame?.time && zoom === radarZoomShown) return;
+      const { canvas, failed } = await composeRadar(frame, zoom, async (u) => {
+        const r = await fetch(u);
+        if (!r.ok) throw new Error(`${r.status} ${u}`);
+        return r.blob();
+      });
+      if (failed === 4 ** zoom) throw new Error('every radar tile failed');
+      if (failed) console.warn(`radar: ${failed} of ${4 ** zoom} tiles failed`);
+      renderer.setRadar(canvas);
+      radarFrame = frame;
+      radarZoomShown = zoom;
     },
   },
 };
@@ -630,6 +673,13 @@ function surfaceLine(): string | undefined {
     parts.push(`lightning ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} flashes (${lightningManifest.windowMin} min${end ? ` to ${end}Z` : ''}, GOES)`);
   }
   if (settings.events && eventManifest) parts.push(eventLine(eventManifest));
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
+function weatherLine(): string | undefined {
+  const parts: string[] = [];
+  if (settings.radar && radarFrame) parts.push(`radar ${new Date(radarFrame.time * 1000).toISOString().slice(11, 16)}Z (RainViewer)`);
+  if (settings.smoke && smoke) parts.push(smokeLine(smoke));
   if (settings.snow && snowIce) parts.push(snowIceLine(snowIce));
   return parts.length ? parts.join(' · ') : undefined;
 }
@@ -823,6 +873,8 @@ function frame(now: number) {
       : null,
     lightning: settings.lightning && lightningManifest ? { windowMin: lightningManifest.windowMin } : null,
     snowIce: settings.snow,
+    radar: settings.radar,
+    smoke: settings.smoke,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);
@@ -842,6 +894,7 @@ function frame(now: number) {
     events: eventOverlays(),
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
+    weatherLine: weatherLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps
       ? {
@@ -905,9 +958,11 @@ window.addEventListener('resize', requestRedraw);
 
 // ---- settings changes ---------------------------------------------------------
 let urlTimer: ReturnType<typeof setTimeout> | undefined;
+let radarZoomTimer: ReturnType<typeof setTimeout> | undefined;
 
 function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
+  const magBefore = settings.mag;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
@@ -917,6 +972,13 @@ function update(patch: Partial<Settings>) {
     if (settings[key] !== hazardsBefore[key]) syncHazard(key);
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
+  // RainViewer's credit link shows whenever radar does.
+  radarCredit.hidden = !settings.radar;
+  // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
+  if (settings.radar && radarZoom(settings.mag) !== radarZoom(magBefore)) {
+    clearTimeout(radarZoomTimer);
+    radarZoomTimer = setTimeout(() => void HAZARDS.radar.load().catch((err) => console.warn('radar:', err)).finally(requestRedraw), 800);
+  }
   if ((settings.sats === 'off') !== (satsBefore === 'off')) syncSatellites();
   clearTimeout(urlTimer);
   urlTimer = setTimeout(() => history.replaceState(null, '', `${location.pathname}${toQuery(settings)}`), 300);
@@ -1045,4 +1107,5 @@ syncClouds();
 syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
+radarCredit.hidden = !settings.radar;
 requestRedraw();

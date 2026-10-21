@@ -40,6 +40,10 @@ global cloud layer refreshed every hour from geostationary satellites.
     burned area, drawn to scale when zoomed in.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
+  - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,
+    drawn over the clouds the way a weather map shows rain.
+  - **Smoke:** NOAA's Hazard Mapping System smoke plumes (light, medium, heavy) over North
+    America, as a grey-brown haze on the sunlit ground.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
@@ -60,6 +64,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Z` `Y` `I` | lightning, GDACS floods/wildfires/eruptions, snow and ice on/off |
+| `Shift+R` `Shift+S` | weather radar, smoke on/off |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -111,6 +116,7 @@ pnpm fires                   # NASA FIRMS VIIRS, last 24 h → public/fires/
 pnpm lightning               # GOES GLM, last 30 min (~70 MB download) → public/lightning/
 pnpm events                  # GDACS floods, wildfires, eruptions → public/events/
 pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
+pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm dev
 ```
 
@@ -128,8 +134,9 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
+| `radar`, `smoke` | RainViewer radar, NOAA HMS smoke on/off | 1 |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
-| `lightningsrc`, `eventsrc`, `snowsrc` | folders holding the lightning / GDACS / snow-and-ice `latest.json` | `lightning/`, `events/`, `snowice/` |
+| `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc` | folders holding the lightning / GDACS / snow-and-ice / smoke `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
@@ -259,6 +266,8 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Lightning | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 15 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
+| Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
+| Smoke | NOAA/NESDIS HMS smoke polygons (KML) | pipeline | through the day, hourly; browser re-reads every 30 min |
 
 - **Aurora** is drawn in the globe shader above the clouds, only where the Sun is at least ~6°
   below the horizon, using a 1 − exp(−2.5·p^1.4) response so the oval's core is bright and its
@@ -314,6 +323,27 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     bluer white with no sun glint.
   - *Limitation:* the monthly Blue Marble has its own snow, which isn't removed where IMS says
     there's none.
+- **Weather radar:** RainViewer's API sends CORS headers, so the browser reads it directly:
+  the frame list every 5 minutes, then (only when there's a new frame) that frame's tiles,
+  stitched into one Web Mercator texture. That's 4×4 tiles at globe zoom (2048 px, ~20 km/px
+  at the equator) and 8×8 once magnified 2× or more. The shader maps latitude through
+  ln tan(π/4 + φ/2) to sample it, and draws radar over the clouds, dimmer on the night side.
+  - *Weak echoes:* RainViewer's colour table makes −10…14 dBZ translucent grey-beige and
+    15 dBZ and up opaque. That translucent band is mostly not rain: clear-air returns, and at
+    dusk the rings of birds and insects around every radar site. Only opaque pixels are kept,
+    so the cut is exactly 15 dBZ. Strong biological returns can still pass it.
+  - *Terms:* free for personal and educational use, with a visible, linked credit ("Weather
+    data by RainViewer", bottom right while radar is on), and the API asks clients to cache.
+    Tiles are only fetched for a new frame or a finer zoom, never while the tab is hidden.
+    The free tier gives the past two hours of frames in one fixed colour scheme, with no
+    nowcast.
+- **Smoke:** HMS analysts outline plumes on GOES imagery through the day, classed light,
+  medium or heavy. The pipeline reads the day's KML (yesterday's early in the UTC day, before
+  today's has any plumes) and rasterises it onto a 4096×2048 single-channel PNG: 85 / 170 /
+  255 for the three classes, densest wins where plumes overlap, edges softened by 1.5 px
+  (~23 KB on 2026-10-21, 234 plumes). The shader mixes a grey-brown haze into the sunlit
+  ground under the clouds, up to ~55% for heavy smoke, and suppresses sun glint under it.
+  Small plumes are drawn to scale, so a 10 km plume is one faint pixel at globe zoom.
 - Launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
@@ -361,6 +391,9 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Data Dissemination program on AWS.
 - Floods, wildfires, eruptions: GDACS, a cooperation framework of the United Nations and the
   European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
+- Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
+  and educational use).
+- Smoke: NOAA/NESDIS Hazard Mapping System (HMS) fire and smoke analysis.
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
   Ice Analysis at 4 km (NSIDC G02156); Fetterer et al., Sea Ice Index, Version 4 (NSIDC
   G02135).

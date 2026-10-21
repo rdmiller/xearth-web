@@ -299,8 +299,10 @@ export interface OverlayState {
   events?: EventOverlay[];
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
-  /** Lightning, GDACS and snow-and-ice summary. */
+  /** Lightning and GDACS summary. */
   surfaceLine?: string;
+  /** Radar, smoke, snow and ice. */
+  weatherLine?: string;
   /** Kp, X-ray class, solar wind. */
   spaceLine?: string;
   perf?: PerfOverlay;
@@ -1016,6 +1018,7 @@ function readoutLines(s: OverlayState): string[] {
   if (s.launchLine) lines.push(s.launchLine);
   if (s.hazardLine) lines.push(s.hazardLine);
   if (s.surfaceLine) lines.push(s.surfaceLine);
+  if (s.weatherLine) lines.push(s.weatherLine);
   if (s.spaceLine) lines.push(s.spaceLine);
   if (s.note) lines.push(s.note);
   return lines;
@@ -1084,7 +1087,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · press H',
     w - 10,
     h - 8,
   );

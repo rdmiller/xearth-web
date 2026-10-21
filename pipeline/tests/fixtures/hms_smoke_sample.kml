@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+<name>HMS Smoke Mapping-20261021 (4 of 234 placemarks)</name>
+<Placemark><description><![CDATA[<div style="width:170px;">Start Time: 2026294 1200UTC<br>End Time: 2026294 1500UTC<br>Density: Light<br>Satellite: GOES-WEST</div>]]></description>
+<styleUrl>#Smoke_Light_style</styleUrl>
+<Polygon>
+  <tessellate>1</tessellate>
+  <gx:drawOrder>0</gx:drawOrder>
+  <outerBoundaryIs>
+    <LinearRing>
+      <coordinates>
+        -87.197219,31.868766,0
+        -87.202730,31.829881,0
+        -87.210691,31.824063,0
+        -87.262130,31.822838,0
+        -87.317244,31.825288,0
+        -87.349087,31.826513,0
+        -87.380931,31.825288,0
+        -87.423797,31.822838,0
+        -87.461764,31.827737,0
+        -87.474012,31.831412,0
+        -87.481360,31.843659,0
+        -87.488709,31.871828,0
+        -87.477686,31.887750,0
+        -87.449517,31.896323,0
+        -87.420123,31.902447,0
+        -87.372358,31.902447,0
+        -87.325817,31.902447,0
+        -87.302547,31.904896,0
+        -87.278052,31.904896,0
+        -87.265805,31.902447,0
+        -87.230287,31.893874,0
+        -87.211916,31.891424,0
+        -87.205792,31.890199,0
+        -87.199668,31.881626,0
+        -87.197219,31.868766,0
+      </coordinates>
+    </LinearRing>
+  </outerBoundaryIs>
+</Polygon>
+</Placemark>
+<Placemark><description><![CDATA[<div style="width:170px;">Start Time: 2026294 1200UTC<br>End Time: 2026294 1500UTC<br>Density: Light<br>Satellite: GOES-WEST</div>]]></description>
+<styleUrl>#Smoke_Light_style</styleUrl>
+<Polygon>
+  <tessellate>1</tessellate>
+  <gx:drawOrder>0</gx:drawOrder>
+  <outerBoundaryIs>
+    <LinearRing>
+      <coordinates>
+        -87.796324,31.646984,0
+        -87.806122,31.634738,0
+        -87.825718,31.630655,0
+        -87.847763,31.632288,0
+        -87.860827,31.625756,0
+        -87.889405,31.611876,0
+        -87.904918,31.604527,0
+        -87.920432,31.595546,0
+        -87.951459,31.580849,0
+        -87.989834,31.571051,0
+        -88.011063,31.574317,0
+        -88.020861,31.598812,0
+        -88.010246,31.623307,0
+        -87.980036,31.646985,0
+        -87.932679,31.664132,0
+        -87.897570,31.670664,0
+        -87.854295,31.672297,0
+        -87.837149,31.673930,0
+        -87.813471,31.673930,0
+        -87.802040,31.668214,0
+        -87.795508,31.655150,0
+        -87.796324,31.646984,0
+      </coordinates>
+    </LinearRing>
+  </outerBoundaryIs>
+</Polygon>
+</Placemark>
+<Placemark><description><![CDATA[<div style="width:170px;">Start Time: 2026294 1500UTC<br>End Time: 2026294 1700UTC<br>Density: Medium<br>Satellite: GOES-EAST</div>]]></description>
+<styleUrl>#Smoke_Medium_style</styleUrl>
+<Polygon>
+  <tessellate>1</tessellate>
+  <gx:drawOrder>1</gx:drawOrder>
+  <outerBoundaryIs>
+    <LinearRing>
+      <coordinates>
+        -82.304280,28.129033,0
+        -82.320814,28.118011,0
+        -82.326326,28.104232,0
+        -82.326326,28.093209,0
+        -82.307036,28.104232,0
+        -82.296013,28.118011,0
+        -82.293257,28.129033,0
+        -82.293257,28.134545,0
+        -82.304280,28.129033,0
+      </coordinates>
+    </LinearRing>
+  </outerBoundaryIs>
+</Polygon>
+</Placemark>
+<Placemark><description><![CDATA[<div style="width:170px;">Start Time: 2026294 1500UTC<br>End Time: 2026294 1700UTC<br>Density: Heavy<br>Satellite: GOES-EAST</div>]]></description>
+<styleUrl>#Smoke_Heavy_style</styleUrl>
+<Polygon>
+  <tessellate>1</tessellate>
+  <gx:drawOrder>2</gx:drawOrder>
+  <outerBoundaryIs>
+    <LinearRing>
+      <coordinates>
+        -87.237859,31.862057,0
+        -87.298484,31.840010,0
+        -87.322366,31.828988,0
+        -87.324203,31.823476,0
+        -87.292972,31.828988,0
+        -87.276438,31.834499,0
+        -87.256230,31.840010,0
+        -87.247044,31.843685,0
+        -87.228673,31.851033,0
+        -87.224999,31.852870,0
+        -87.237859,31.862057,0
+      </coordinates>
+    </LinearRing>
+  </outerBoundaryIs>
+</Polygon>
+</Placemark>
+</Document>
+</kml>

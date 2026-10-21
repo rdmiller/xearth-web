@@ -1,5 +1,5 @@
 // WebGL2 plumbing: a star point pass, then the globe as one full-screen
-// triangle (day, night and two cloud maps, plus aurora and snow/ice) blended over it.
+// triangle (day, night and two cloud maps, plus aurora, snow/ice, radar and smoke) blended over it.
 
 import type { StarCatalog } from '../stars';
 import type { Camera } from '../view';
@@ -29,6 +29,10 @@ export interface FrameState {
   aurora: boolean;
   /** Snow on land and sea ice (NOAA IMS + Sea Ice Index). */
   snowIce: boolean;
+  /** RainViewer radar composite. */
+  radar: boolean;
+  /** NOAA HMS smoke plumes. */
+  smoke: boolean;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
   fires: { windowH: number; minIntensity: number } | null;
   /** Lightning layer: flashes at most `windowMin` old. */
@@ -56,6 +60,10 @@ export class GlobeRenderer {
   private hasAurora = false;
   private readonly snowIceTex: WebGLTexture;
   private hasSnowIce = false;
+  private readonly radarTex: WebGLTexture;
+  private hasRadar = false;
+  private readonly smokeTex: WebGLTexture;
+  private hasSmoke = false;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -77,6 +85,8 @@ export class GlobeRenderer {
     this.lightningLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), LIGHTNING_STYLE);
     this.auroraTex = gl.createTexture()!;
     this.snowIceTex = gl.createTexture()!;
+    this.radarTex = gl.createTexture()!;
+    this.smokeTex = gl.createTexture()!;
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -182,6 +192,41 @@ export class GlobeRenderer {
     this.hasSnowIce = true;
   }
 
+  /**
+   * Radar composite in Web Mercator (square, ±85.05°), straight alpha. Premultiplied
+   * on upload so filtering doesn't darken the edges of the echoes.
+   */
+  setRadar(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE8);
+    gl.bindTexture(gl.TEXTURE_2D, this.radarTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasRadar = true;
+  }
+
+  /** Smoke density on the globe's grid (red: 0, ⅓, ⅔, 1 = none, light, medium, heavy). */
+  setSmoke(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE9);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasSmoke = true;
+  }
+
   setFires(points: SurfacePoints) {
     this.fireLayer.setPoints(points);
   }
@@ -264,6 +309,14 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.snowIceTex);
     gl.uniform1i(this.u('uSnowIce'), 7);
     gl.uniform1f(this.u('uSnowIceOn'), f.snowIce && this.hasSnowIce ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE8);
+    gl.bindTexture(gl.TEXTURE_2D, this.radarTex);
+    gl.uniform1i(this.u('uRadar'), 8);
+    gl.uniform1f(this.u('uRadarOn'), f.radar && this.hasRadar ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE9);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.uniform1i(this.u('uSmoke'), 9);
+    gl.uniform1f(this.u('uSmokeOn'), f.smoke && this.hasSmoke ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 

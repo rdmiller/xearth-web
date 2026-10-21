@@ -40,6 +40,10 @@ export interface Settings extends ViewSettings {
   events: boolean;
   /** Today's snow cover and sea ice. */
   snow: boolean;
+  /** RainViewer weather radar. */
+  radar: boolean;
+  /** NOAA HMS smoke plumes. */
+  smoke: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
   bodyscale: number;
   /** Fixed start time (ISO), or null for "now". */
@@ -52,12 +56,13 @@ export interface Settings extends ViewSettings {
   satsrc: string;
   /** Where the launches' latest.json lives. */
   launchsrc: string;
-  /** Where the pipeline's storm, fire, lightning, GDACS event and snow/ice files live. */
+  /** Where the pipeline's storm, fire, lightning, GDACS event, snow/ice and smoke files live. */
   stormsrc: string;
   firesrc: string;
   lightningsrc: string;
   eventsrc: string;
   snowsrc: string;
+  smokesrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -97,6 +102,8 @@ export function defaults(): Settings {
     lightning: true,
     events: true,
     snow: true,
+    radar: true,
+    smoke: true,
     bodyscale: 1,
     time: null,
     speed: 1,
@@ -108,6 +115,7 @@ export function defaults(): Settings {
     lightningsrc: (import.meta.env?.VITE_LIGHTNING_BASE as string | undefined) ?? 'lightning/',
     eventsrc: (import.meta.env?.VITE_EVENT_BASE as string | undefined) ?? 'events/',
     snowsrc: (import.meta.env?.VITE_SNOW_BASE as string | undefined) ?? 'snowice/',
+    smokesrc: (import.meta.env?.VITE_SMOKE_BASE as string | undefined) ?? 'smoke/',
   };
 }
 
@@ -174,6 +182,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     lightning: bool(q, 'lightning', base.lightning),
     events: bool(q, 'events', base.events),
     snow: bool(q, 'snow', base.snow),
+    radar: bool(q, 'radar', base.radar),
+    smoke: bool(q, 'smoke', base.smoke),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
@@ -185,6 +195,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     lightningsrc: q.get('lightningsrc') ?? base.lightningsrc,
     eventsrc: q.get('eventsrc') ?? base.eventsrc,
     snowsrc: q.get('snowsrc') ?? base.snowsrc,
+    smokesrc: q.get('smokesrc') ?? base.smokesrc,
   };
 }
 

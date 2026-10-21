@@ -29,6 +29,10 @@ uniform sampler2D uAurora;  // OVATION probability of visible aurora, 0–100 as
 uniform float uAuroraOn;
 uniform sampler2D uSnowIce;  // r = snow on land, g = ice concentration (NOAA IMS + Sea Ice Index)
 uniform float uSnowIceOn;
+uniform sampler2D uRadar;    // RainViewer composite, Web Mercator ±85.05°, premultiplied
+uniform float uRadarOn;
+uniform sampler2D uSmoke;    // HMS smoke density: 0, ⅓, ⅔, 1 = none, light, medium, heavy
+uniform float uSmokeOn;
 
 out vec4 outColor;
 
@@ -97,6 +101,15 @@ void main() {
   vec3 tint = mix(vec3(1.0, 0.62, 0.38), vec3(1.0), smoothstep(0.0, 0.25, k));
   vec3 dayCol = albedo * dayW * (0.35 + 0.65 * lambert) * tint * 1.1;
 
+  // Smoke: a grey-brown haze over the sunlit ground (HMS maps it by day only),
+  // under the clouds. Heavy smoke hides about half of what's below.
+  float smokeA = 0.0;
+  if (uSmokeOn > 0.5) {
+    smokeA = textureLod(uSmoke, uv, lodFor(uSmoke, mu, coslat)).r * 0.55;
+    vec3 smoke = vec3(0.50, 0.45, 0.38) * dayW * (0.35 + 0.65 * lambert) * tint;
+    dayCol = mix(dayCol, smoke, smokeA);
+  }
+
   float nightW = 1.0 - smoothstep(-0.12, 0.02, k);
   vec3 nightTex = uHasNight > 0.5 ? toLinear(textureLod(uNight, uv, lodFor(uNight, mu, coslat)).rgb) : albedo * 0.05;
   vec3 nightCol = nightTex * nightW * mix(0.15, 1.4, uLights);
@@ -108,6 +121,19 @@ void main() {
   }
   vec3 cloudCol = vec3(0.95) * dayW * (0.25 + 0.75 * lambert) * tint + vec3(0.012, 0.015, 0.022) * nightW;
   vec3 col = mix(dayCol + nightCol, cloudCol, ca * 0.92);
+
+  // Radar on top of the clouds, as on a weather map (it shows the rain beneath
+  // them). The texture is Web Mercator, so latitude maps through ln tan; its
+  // texel size on the ground shrinks with cos(latitude), which sets the mip level.
+  if (uRadarOn > 0.5 && abs(lat) < 1.4844) {
+    vec2 ruv = vec2(uv.x, 0.5 - log(tan(PI / 4.0 + lat / 2.0)) / (2.0 * PI));
+    float texPerRad = float(textureSize(uRadar, 0).x) / (2.0 * PI) / max(coslat, 0.05);
+    vec4 r = textureLod(uRadar, ruv, log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)), 1.0)));
+    if (r.a > 0.004) {
+      vec3 echo = toLinear(r.rgb / r.a) * mix(0.55, 1.0, dayW);
+      col = mix(col, echo, r.a * 0.85);
+    }
+  }
 
   // Aurora: emission ~100–300 km up, above the clouds, seen only where it's dark
   // (Sun at least ~6° below the horizon). The response 1 − exp(−2.5·p^1.4) keeps
@@ -124,7 +150,7 @@ void main() {
   // Sun glint on open water (ocean picked out by its blue cast).
   float ocean = uHasDay > 0.5 ? smoothstep(0.03, 0.12, albedoS.b - max(albedoS.r, albedoS.g)) : 1.0;
   vec3 hv = normalize(uSun + view);
-  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * (1.0 - iceC) * dayW;
+  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * (1.0 - iceC) * (1.0 - smokeA) * dayW;
 
   // Atmosphere along the lit limb.
   col += vec3(0.30, 0.50, 1.0) * pow(1.0 - mu, 4.0) * 0.6 * smoothstep(-0.2, 0.4, k);
