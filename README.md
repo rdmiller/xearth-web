@@ -14,6 +14,12 @@ global cloud layer refreshed every hour from geostationary satellites.
   the globe are the right ones and move with the view. Magnitude sets both brightness and
   dot size, B−V sets a gentle blackbody tint, and `stars=photo` dims them the way a camera
   exposed for the sunlit Earth would.
+- **Sun and Moon:** both are drawn at their true positions and angular size (~0.5°), behind
+  the globe like the stars. The Sun is a limb-darkened disc with a glow. The Moon uses NASA's
+  LRO colour map, near side to Earth, lit by the real Sun (so it shows its phase) with faint
+  earthshine. When either is out of frame, a marker at the screen edge points to it, and **E**
+  frames the Sun, then the Moon, just beside the Earth. `bodyscale` enlarges them; at true size
+  the Moon is ~1/50 of the Earth's disc.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~10,600 Starlinks are drawn as a point cloud. All are propagated live with SGP4 from
@@ -28,11 +34,13 @@ global cloud layer refreshed every hour from geostationary satellites.
 | Keys | Action |
 |---|---|
 | `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
+| `B` | Sun and Moon on/off |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
 | `O` | satellites: Starlink + named → named only → off |
 | `5` | dusk line down the middle · `V` cycles modes · `Home` back over your time zone |
+| `E` | frame the Sun just past the Earth, then the Moon beside it |
 | arrows (`Shift` = faster) | look around; in the Sun-facing view they shift the offset from the Sun |
 | `+` `−` `[` `]` `0` | zoom, rotate, reset · `P` perspective/orthographic |
 | `Space` `.` `,` `T` | pause, faster, slower (into reverse), back to now |
@@ -51,6 +59,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/renderer/      full-screen ray-sphere shader
   src/cloudSync.ts   polls clouds/latest.json, hands new maps to the renderer
   src/stars.ts       star frame, magnitude → brightness/size, B−V → colour
+  src/bodies.ts      Sun/Moon positions, sizes, Moon phase and orientation, framing views
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   Starlink propagation off the main thread
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
@@ -82,7 +91,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | Parameter | Meaning | Default |
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
-| `track` | `iss`, `tiangong`, `satgus` | `iss` |
+| `track` | `iss`, `tiangong`, `satgus`, or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
@@ -93,6 +102,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
 | `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
 | `fps` | `1` shows the frame-rate display | 0 |
+| `bodies`, `bodyscale` | Sun and Moon on/off; disc enlargement (1 = true size, up to 30) | 1, 1 |
 | `cloudsrc`, `satsrc` | folders holding each `latest.json` (e.g. an R2/S3 bucket) | `clouds/`, `satellites/` |
 
 ## How the cloud map is made
@@ -185,6 +195,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Observatory) and Black Marble 2016. Public domain.
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
+- Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
 - Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP

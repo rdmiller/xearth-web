@@ -99,6 +99,20 @@ describe('satellite keys', () => {
   });
 });
 
+describe('Sun and Moon keys', () => {
+  it('B toggles them; E frames the Sun, then the Moon, turning them back on', () => {
+    const h = harness();
+    h.press('b');
+    expect(h.s.bodies).toBe(false);
+    h.press('e');
+    expect(h.s).toMatchObject({ view: 'track', track: 'sunrise', bodies: true });
+    h.press('e');
+    expect(h.s.track).toBe('moonrise');
+    h.press('e');
+    expect(h.s.track).toBe('sunrise');
+  });
+});
+
 describe('S cycles the star modes', () => {
   it('on → camera exposure → off → on', () => {
     const h = harness();

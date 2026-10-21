@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Download NASA's Blue Marble Next Generation (one per month, 5400×2700, topography +
-// bathymetry) and Black Marble 2016 (night lights) into public/textures/.
-// Both are NASA public-domain imagery. Existing files are skipped.
+// bathymetry), Black Marble 2016 (night lights) and the CGI Moon Kit LROC colour map
+// (2048×1024, centred on 0° longitude; credit NASA's Scientific Visualization Studio)
+// into public/textures/. All NASA imagery. Existing files are skipped.
 //
 //   node scripts/fetch-textures.mjs            all 12 months + night
 //   node scripts/fetch-textures.mjs --current  just this month + night (fast start)
@@ -21,6 +22,7 @@ const files = MONTH_RECORDS.map((id, i) => {
   return { name: `day-${mm}.jpg`, url: `${BASE}/73000/${id}/world.topo.bathy.2004${mm}.3x5400x2700.jpg`, month: i };
 });
 files.push({ name: 'night.jpg', url: `${BASE}/144000/144898/BlackMarble_2016_01deg.jpg`, month: -1 });
+files.push({ name: 'moon.jpg', url: 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg', month: -1 });
 
 const currentOnly = process.argv.includes('--current');
 const month = new Date().getUTCMonth();

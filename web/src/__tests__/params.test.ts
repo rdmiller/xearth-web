@@ -30,6 +30,13 @@ describe('parseSettings', () => {
     expect(parseSettings('?view=track&track=SATGUS')).toMatchObject({ view: 'track', track: 'satgus' });
   });
 
+  it('reads the Sun/Moon settings and clamps bodyscale to 1–30', () => {
+    expect(parseSettings('?bodies=0').bodies).toBe(false);
+    expect(parseSettings('?bodyscale=12').bodyscale).toBe(12);
+    expect(parseSettings('?bodyscale=0.2').bodyscale).toBe(1);
+    expect(parseSettings('?bodyscale=99').bodyscale).toBe(30);
+  });
+
   it('ignores junk values', () => {
     const d = defaults();
     const s = parseSettings('?view=mars&mag=abc&time=yesterday', d);

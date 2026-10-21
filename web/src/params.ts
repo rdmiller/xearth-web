@@ -23,6 +23,10 @@ export interface Settings extends ViewSettings {
   label: boolean;
   /** Frame-rate display. */
   fps: boolean;
+  /** Sun and Moon in the sky. */
+  bodies: boolean;
+  /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
+  bodyscale: number;
   /** Fixed start time (ISO), or null for "now". */
   time: Date | null;
   /** Clock multiplier; 1 = real time. */
@@ -60,6 +64,8 @@ export function defaults(): Settings {
     sats: 'all',
     label: true,
     fps: false,
+    bodies: true,
+    bodyscale: 1,
     time: null,
     speed: 1,
     cloudsrc: (import.meta.env?.VITE_CLOUD_BASE as string | undefined) ?? 'clouds/',
@@ -120,6 +126,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     sats: satMode(q, base.sats),
     label: bool(q, 'label', base.label),
     fps: bool(q, 'fps', base.fps),
+    bodies: bool(q, 'bodies', base.bodies),
+    bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
     cloudsrc: q.get('cloudsrc') ?? base.cloudsrc,

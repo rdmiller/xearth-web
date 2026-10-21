@@ -5,6 +5,7 @@ import type { StarCatalog } from '../stars';
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
+import { BodyLayer, type BodyDraw } from './bodies';
 import { SatLayer } from './sats';
 import { StarLayer } from './stars';
 
@@ -21,6 +22,8 @@ export interface FrameState {
   grid: boolean;
   /** Star layer, or null when stars are off. */
   stars: { frame: Float32Array; focal: number; magShift: number } | null;
+  /** Sun and Moon discs (drawn behind the globe). */
+  bodies: BodyDraw[];
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number } | null;
   dpr: number;
@@ -37,6 +40,7 @@ export class GlobeRenderer {
   private readonly vao: WebGLVertexArrayObject;
   private readonly stars: StarLayer;
   private readonly sats: SatLayer;
+  private readonly bodies: BodyLayer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -53,6 +57,7 @@ export class GlobeRenderer {
     this.program = link(gl, VERT, fragSrc);
     this.stars = new StarLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.sats = new SatLayer(gl, (vs, fs) => link(gl, vs, fs));
+    this.bodies = new BodyLayer(gl, (vs, fs) => link(gl, vs, fs));
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -128,6 +133,10 @@ export class GlobeRenderer {
     return this.loaded.cloudCur;
   }
 
+  setMoon(image: TexImageSource) {
+    this.bodies.setMoonTexture(image);
+  }
+
   setStars(catalog: StarCatalog) {
     this.stars.setCatalog(catalog);
   }
@@ -161,6 +170,8 @@ export class GlobeRenderer {
         [this.canvas.width, this.canvas.height],
       );
     }
+
+    this.bodies.draw(f.bodies, [this.canvas.width, this.canvas.height]);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

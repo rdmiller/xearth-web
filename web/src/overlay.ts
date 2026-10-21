@@ -6,6 +6,7 @@ import { CITIES } from './cities';
 import type { CloudStatus } from './cloudSync';
 import type { PerfSummary } from './perf';
 import type { FeaturedSat, SatState } from './satellites';
+import { edgePoint } from './bodies';
 import { project, type Camera } from './view';
 import { dot, fromLatLon, normalize, sub, type Vec3 } from './vec';
 
@@ -287,8 +288,70 @@ export interface OverlayState {
   /** Shown beside the time when the clock isn't live (e.g. "paused"). */
   clock?: string;
   satellites?: SatelliteOverlay;
+  bodies?: BodyMarker[];
   perf?: PerfOverlay;
   note?: string;
+}
+
+export interface BodyMarker {
+  kind: 'sun' | 'moon';
+  label: string;
+  /** Sky-projection position (Earth radii from the disc centre, y up) and disc radius. */
+  x: number;
+  y: number;
+  radius: number;
+  ahead: boolean;
+  occluded: boolean;
+}
+
+const BODY_COLOR = { sun: '#ffd27a', moon: '#d8dde6' };
+const EDGE_INSET = 26;
+
+/**
+ * A label beside each body on screen; for one out of frame (or behind the
+ * camera), a chevron at the screen edge pointing the way to it.
+ */
+function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number) {
+  ctx.save();
+  ctx.font = `600 11px ${UI_FONT}`;
+  ctx.letterSpacing = '0.12em';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = HUD.halo;
+  ctx.shadowBlur = 4;
+  for (const b of s.bodies ?? []) {
+    const color = BODY_COLOR[b.kind];
+    const px = w / 2 + b.x * s.radiusPx;
+    const py = h / 2 - b.y * s.radiusPx;
+    const r = b.radius * s.radiusPx;
+    const onScreen = b.ahead && px > -r && px < w + r && py > -r && py < h + r;
+    if (onScreen) {
+      ctx.globalAlpha = b.occluded ? 0.45 : 0.95;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'left';
+      const text = b.occluded ? `${b.label} · BEHIND EARTH` : b.label;
+      ctx.fillText(text, px + Math.max(r, 4) + (b.kind === 'sun' ? 14 : 8), py);
+      continue;
+    }
+    // Off screen: chevron on the edge, label on the inward side.
+    const e = edgePoint(b.x, b.y, w, h, EDGE_INSET);
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    const c = Math.cos(-e.angle);
+    const sn = Math.sin(-e.angle);
+    const tip = (dx: number, dy: number) => [e.x + dx * c - dy * sn, e.y + dx * sn + dy * c] as const;
+    ctx.moveTo(...tip(9, 0));
+    ctx.lineTo(...tip(-3, -6));
+    ctx.lineTo(...tip(0, 0));
+    ctx.lineTo(...tip(-3, 6));
+    ctx.closePath();
+    ctx.fill();
+    const inward = Math.cos(e.angle) > 0;
+    ctx.textAlign = inward ? 'right' : 'left';
+    ctx.fillText(b.label, e.x + (inward ? -10 : 10), e.y + (Math.abs(Math.sin(e.angle)) > 0.7 ? (Math.sin(e.angle) > 0 ? 14 : -14) : 0));
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
 }
 
 export interface PerfOverlay {
@@ -475,6 +538,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.clearRect(0, 0, w, h);
   if (s.markers) drawCities(ctx, s, w, h, dpr);
   drawSatellites(ctx, s, w, h, dpr);
+  drawBodies(ctx, s, w, h);
   if (s.perf) drawPerf(ctx, s.perf, w);
 
   ctx.font = `500 12px ${UI_FONT}`;
@@ -510,7 +574,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · press H',
     w - 10,
     h - 8,
   );

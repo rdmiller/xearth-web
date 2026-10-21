@@ -6,10 +6,11 @@ import '@fontsource/chakra-petch/500.css';
 import '@fontsource/chakra-petch/600.css';
 import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
+import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
-import { clearOverlaySprites, drawOverlay, formatAge, UI_FONT, type SatelliteOverlay } from './overlay';
+import { clearOverlaySprites, drawOverlay, formatAge, UI_FONT, type BodyMarker, type SatelliteOverlay } from './overlay';
 import { FrameStats, GpuTimer } from './perf';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
@@ -27,8 +28,9 @@ import {
 } from './satellites';
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
-import { fromLatLon, toLatLon, type Vec3 } from './vec';
-import { cameraFor, skyFocal, viewerLatLon, type TrackResolver } from './view';
+import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
+import { cameraFor, ORTHO_SKY_FOCAL, skyFocal, viewerLatLon, type Camera, type TrackResolver } from './view';
+import type { BodyDraw } from './renderer/bodies';
 
 const BASE = import.meta.env.BASE_URL;
 const FADE_MS = 2500;
@@ -112,6 +114,13 @@ loadImage(nightTextureUrl(BASE), renderer.maxTextureSize)
     updateNote();
     requestRedraw();
   });
+
+loadImage(`${BASE}textures/moon.jpg`, renderer.maxTextureSize)
+  .then((img) => {
+    renderer.setMoon(img);
+    requestRedraw();
+  })
+  .catch((err) => console.warn('moon texture:', err));
 
 fetch(`${BASE}stars.json`)
   .then((r) => {
@@ -229,7 +238,22 @@ function syncSatellites() {
   satTimer = setInterval(loadSatellites, SAT_POLL_MS);
 }
 
+/**
+ * Framing views (E): put the body just past the limb. In the sky projection the
+ * disc spans atan(1 / focal) of sky, so aim ~1.35 disc radii off the line of sight.
+ */
+function framingOffsetDeg(): number {
+  const focal = settings.dist > 1.0001 ? 1 / Math.tan(Math.asin(1 / settings.dist)) : ORTHO_SKY_FOCAL;
+  return (Math.atan(1.35 / focal) * 180) / Math.PI;
+}
+
 const resolveTrack: TrackResolver = (key, date) => {
+  if (key === 'sunrise' || key === 'moonrise') {
+    const b = skyBodies(date);
+    // Put the body on the screen's longer axis, where there's room beside the globe.
+    const toward = globeCanvas.clientWidth >= globeCanvas.clientHeight ? 'east' : 'north';
+    return framingViewpoint(key === 'sunrise' ? b.sunDir : b.moonPos, framingOffsetDeg(), toward);
+  }
   const rec = featuredRecs.get(key)?.rec;
   const p = rec ? positionAt(rec, date) : null;
   return p ? toLatLon(p) : null;
@@ -258,6 +282,51 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
 // ---- frame & schedule -------------------------------------------------------
 let timer: ReturnType<typeof setTimeout> | undefined;
 let raf = 0;
+
+/** The Sun and Moon for this frame: GPU draws plus overlay markers, and whether the Sun is in shot. */
+function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, h: number) {
+  const focal = skyFocal(camera);
+  const draws: BodyDraw[] = [];
+  const markers: BodyMarker[] = [];
+  let sunInShot = false;
+  const entries = [
+    // The Sun is effectively at infinity: any far point along its direction will do.
+    { kind: 'sun' as const, pos: scale(sky.sunDir, 1e6), ang: sky.sunRadius },
+    { kind: 'moon' as const, pos: sky.moonPos, ang: Math.asin(MOON_RADIUS_KM / Math.max(sky.moonDistKm, 1)) },
+  ];
+  for (const e of entries) {
+    const p = placeBody(camera, focal, e.pos, e.ang * settings.bodyscale);
+    markers.push({
+      kind: e.kind,
+      label: e.kind === 'sun' ? 'SUN' : `MOON · ${Math.round(sky.moonLit * 100)}% LIT`,
+      x: p.x,
+      y: p.y,
+      radius: p.radius,
+      ahead: p.ahead,
+      occluded: p.occluded,
+    });
+    if (!p.ahead) continue;
+    const cx = (p.x * radiusPx) / (0.5 * w);
+    const cy = (p.y * radiusPx) / (0.5 * h);
+    if (Math.abs(cx) > 1.5 || Math.abs(cy) > 1.5) continue;
+    if (e.kind === 'sun' && !p.occluded && Math.abs(cx) < 1 && Math.abs(cy) < 1) sunInShot = true;
+    // View basis at the body: screen right/up made perpendicular to the sight line.
+    const back = scale(p.dir, -1);
+    const right = normalize(sub(camera.right, scale(back, dot(camera.right, back))));
+    const up = cross(back, right);
+    draws.push({
+      kind: e.kind,
+      center: [cx, cy],
+      radiusPx: p.radius * radiusPx,
+      right,
+      up,
+      back,
+      sun: sky.sunDir,
+      moonFrame: e.kind === 'moon' ? sky.moonFrame : undefined,
+    });
+  }
+  return { draws, markers, sunInShot };
+}
 
 function radiusCss() {
   return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * 0.9 * settings.mag;
@@ -296,9 +365,14 @@ function frame(now: number) {
   const bulkDt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (tMs - bulkTime) / 1000));
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
   const radiusPx = radiusCss() * scale;
+  const bodies = settings.bodies
+    ? bodiesFor(skyBodies(date), camera, radiusPx, globeCanvas.width, globeCanvas.height)
+    : { draws: [], markers: [], sunInShot: false };
+  // A camera exposed for the Sun itself shows no stars at all.
   const magShift =
     settings.stars === 'photo'
-      ? photoMagShift(litScreenFraction(radiusPx, globeCanvas.width, globeCanvas.height, camera.dir, sunDir))
+      ? photoMagShift(litScreenFraction(radiusPx, globeCanvas.width, globeCanvas.height, camera.dir, sunDir)) +
+        (bodies.sunInShot ? 10 : 0)
       : 0;
   const satOverlay = satelliteOverlay(date, sunDir);
   const t1 = performance.now();
@@ -314,6 +388,7 @@ function frame(now: number) {
     grid: settings.grid,
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
     satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt } : null,
+    bodies: bodies.draws,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);
@@ -325,6 +400,7 @@ function frame(now: number) {
     date,
     viewer: viewerLatLon(settings, date, resolveTrack),
     satellites: satOverlay,
+    bodies: settings.bodies ? bodies.markers : undefined,
     perf: settings.fps
       ? {
           summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
