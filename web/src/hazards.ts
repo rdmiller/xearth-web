@@ -172,26 +172,75 @@ export interface FirePoints {
   count: number;
   /** Unit-sphere position per cell, Earth-fixed. */
   pos: Float32Array;
-  /** Brightness 0…1 from fire radiative power (log scale), and recency 0…1. */
+  /** Per cell: brightness 0…1 (log fire power), hours since the latest detection, footprint diameter km. */
   look: Float32Array;
+  /** Per cell: hours since the latest detection, and detections merged into it (for counting). */
+  ageH: Uint8Array;
+  detections: Uint16Array;
 }
+
+/** A VIIRS I-band pixel is ~375 m across at nadir: a detection means fire somewhere inside one. */
+export const VIIRS_PIXEL_KM2 = 0.375 * 0.375;
+export const EARTH_RADIUS_KM_MEAN = 6371;
 
 /** 1 MW (a small fire) → ~0.1; ~3,000 MW (a large complex) → 1. */
 export function fireIntensity(frpMw: number): number {
   return Math.max(0, Math.min(1, Math.log10(1 + frpMw) / 3.5));
 }
 
+/**
+ * Diameter (km) of a circle with the area of a cell's detected pixels — the
+ * most ground those detections can stand for. Drawn at this size (never under
+ * a device pixel), fires stop looking hundreds of times bigger than they are.
+ */
+export function fireFootprintKm(detections: number): number {
+  return Math.sqrt((Math.max(1, detections) * VIIRS_PIXEL_KM2 * 4) / Math.PI);
+}
+
+/** Point size in device pixels for a footprint, given device pixels per Earth radius. */
+export function fireSizePx(footprintKm: number, radiusPx: number): number {
+  return Math.max(1, (footprintKm * radiusPx) / EARTH_RADIUS_KM_MEAN);
+}
+
+/**
+ * At whole-globe zoom (several km per pixel) small burns crowd every pixel, so
+ * hide fires below a fire-power threshold that grows with km per pixel: ~4 MW
+ * at ~9 km/px, none once a pixel is about a kilometre.
+ */
+export function fireMinIntensity(kmPerPx: number): number {
+  const thresholdMw = Math.max(0, Math.min(4, (kmPerPx - 1) * 0.5));
+  return thresholdMw ? fireIntensity(thresholdMw) : 0;
+}
+
 export function decodeFires(m: FireManifest): FirePoints {
   const n = Math.floor(m.data.length / 5);
   const pos = new Float32Array(n * 3);
-  const look = new Float32Array(n * 2);
+  const look = new Float32Array(n * 3);
+  const ageH = new Uint8Array(n);
+  const detections = new Uint16Array(n);
   for (let i = 0; i < n; i++) {
-    const [latI, lonI, frp10, age] = m.data.slice(i * 5, i * 5 + 4);
+    const [latI, lonI, frp10, age, count] = m.data.slice(i * 5, i * 5 + 5);
     pos.set(fromLatLon(latI * m.cellDeg, lonI * m.cellDeg), i * 3);
-    look[i * 2] = fireIntensity(frp10 / 10);
-    look[i * 2 + 1] = Math.max(0, 1 - age / 30);
+    look[i * 3] = fireIntensity(frp10 / 10);
+    look[i * 3 + 1] = age;
+    look[i * 3 + 2] = fireFootprintKm(count);
+    ageH[i] = age;
+    detections[i] = count;
   }
-  return { count: n, pos, look };
+  return { count: n, pos, look, ageH, detections };
+}
+
+/** Detections and cells within the last `hours`. */
+export function firesWithin(f: FirePoints, hours: number): { cells: number; detections: number } {
+  let cells = 0;
+  let det = 0;
+  for (let i = 0; i < f.count; i++) {
+    if (f.ageH[i] <= hours) {
+      cells++;
+      det += f.detections[i];
+    }
+  }
+  return { cells, detections: det };
 }
 
 // ---- earthquakes ---------------------------------------------------------------------

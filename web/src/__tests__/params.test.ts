@@ -37,6 +37,13 @@ describe('parseSettings', () => {
     expect(parseSettings('?bodyscale=99').bodyscale).toBe(30);
   });
 
+  it('clamps the fire window to 1–24 hours (default 12)', () => {
+    expect(parseSettings('').firehours).toBe(12);
+    expect(parseSettings('?firehours=6').firehours).toBe(6);
+    expect(parseSettings('?firehours=48').firehours).toBe(24);
+    expect(parseSettings('?firehours=0').firehours).toBe(1);
+  });
+
   it('reads the launch settings', () => {
     expect(parseSettings('?launches=0').launches).toBe(false);
     expect(parseSettings('?view=track&track=launch')).toMatchObject({ view: 'track', track: 'launch' });

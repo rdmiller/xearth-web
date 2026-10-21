@@ -27,7 +27,8 @@ export interface FrameState {
   /** Sun and Moon discs (drawn behind the globe). */
   bodies: BodyDraw[];
   aurora: boolean;
-  fires: boolean;
+  /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
+  fires: { windowH: number; minIntensity: number } | null;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number } | null;
   dpr: number;
@@ -231,7 +232,7 @@ export class GlobeRenderer {
     gl.bindVertexArray(null);
 
     if (f.fires) {
-      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr }, [this.canvas.width, this.canvas.height]);
+      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, ...f.fires }, [this.canvas.width, this.canvas.height]);
     }
 
     if (f.satellites) {

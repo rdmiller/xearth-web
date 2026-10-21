@@ -4,6 +4,10 @@ import {
   basinWord,
   decodeFires,
   decodeOvation,
+  fireFootprintKm,
+  fireMinIntensity,
+  fireSizePx,
+  firesWithin,
   fireIntensity,
   stormClass,
   stormColor,
@@ -95,8 +99,33 @@ describe('fires', () => {
     const b = toLatLon([f.pos[3], f.pos[4], f.pos[5]]);
     expect(b.lat).toBeCloseTo(-20, 4);
     expect(b.lon).toBeCloseTo(135, 4);
-    expect(f.look[0]).toBeLessThan(f.look[2]); // 1.5 MW vs 2,500 MW
-    expect(f.look[1]).toBeGreaterThan(f.look[3]); // 2 h old vs 20 h old
+    expect(f.look[0]).toBeLessThan(f.look[3]); // intensity: 1.5 MW vs 2,500 MW
+    expect([f.look[1], f.look[4]]).toEqual([2, 20]); // hours since the latest detection
+    expect(f.look[2]).toBeCloseTo(fireFootprintKm(1), 6); // one detection
+    expect(f.look[5]).toBeCloseTo(fireFootprintKm(2), 6); // two
+  });
+
+  it('sizes a fire by the ground its detections can cover, never below a device pixel', () => {
+    // One 375 m VIIRS pixel ≈ a 0.42 km circle; 100 merged detections ≈ 4.2 km.
+    expect(fireFootprintKm(1)).toBeCloseTo(0.423, 2);
+    expect(fireFootprintKm(100)).toBeCloseTo(4.23, 1);
+    // Whole-globe zoom (~730 device px per Earth radius ≈ 8.7 km/px): a pixel at most.
+    expect(fireSizePx(fireFootprintKm(100), 730)).toBe(1);
+    // Zoomed so a pixel is ~0.5 km: the same cell is drawn ~8 px across.
+    expect(fireSizePx(fireFootprintKm(100), 6371 / 0.5)).toBeCloseTo(8.5, 0);
+  });
+
+  it('hides weak fires when zoomed out, none when zoomed in', () => {
+    expect(fireMinIntensity(8.7)).toBeCloseTo(fireIntensity(3.85), 6);
+    expect(fireMinIntensity(20)).toBeCloseTo(fireIntensity(4), 6); // capped at 4 MW
+    expect(fireMinIntensity(1)).toBe(0);
+    expect(fireMinIntensity(0.3)).toBe(0);
+  });
+
+  it('counts detections within the window', () => {
+    const f = decodeFires({ generated: '', source: '', cellDeg: 0.05, detections: 9, count: 3, data: [0, 0, 10, 1, 4, 1, 1, 10, 11, 3, 2, 2, 10, 20, 2] });
+    expect(firesWithin(f, 12)).toEqual({ cells: 2, detections: 7 });
+    expect(firesWithin(f, 24)).toEqual({ cells: 3, detections: 9 });
   });
 
   it('maps fire radiative power onto 0…1 on a log scale', () => {

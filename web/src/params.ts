@@ -31,6 +31,8 @@ export interface Settings extends ViewSettings {
   aurora: boolean;
   storms: boolean;
   fires: boolean;
+  /** Show fires detected within this many hours (1–24). */
+  firehours: number;
   quakes: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
   bodyscale: number;
@@ -81,6 +83,7 @@ export function defaults(): Settings {
     aurora: true,
     storms: true,
     fires: true,
+    firehours: 12,
     quakes: true,
     bodyscale: 1,
     time: null,
@@ -151,6 +154,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     aurora: bool(q, 'aurora', base.aurora),
     storms: bool(q, 'storms', base.storms),
     fires: bool(q, 'fires', base.fires),
+    firehours: num(q, 'firehours', base.firehours, 1, 24),
     quakes: bool(q, 'quakes', base.quakes),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,

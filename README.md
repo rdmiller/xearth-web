@@ -28,7 +28,8 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Aurora:** NOAA SWPC's OVATION forecast as a green glow on the night side.
   - **Tropical cyclones:** GDACS for every basin, with NHC detail for its storms. Each gets a
     symbol, name and intensity, the observed track solid and the forecast dashed.
-  - **Fires:** NASA FIRMS VIIRS detections from the last 24 h, glowing red-orange at night.
+  - **Fires:** NASA FIRMS VIIRS detections from the last 12 h (`firehours`), drawn to scale in
+    red-orange.
   - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
     by age, with labels on the largest.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
@@ -111,6 +112,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
+| `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
@@ -226,6 +228,15 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 - **Fires:** low-confidence detections are dropped and the rest merged into 0.05° cells (fire
   power summed, age from the latest detection): 238k detections became 52.7k points and
   300 KB gzipped. They're drawn red-orange so they never read as city lights.
+  - *To scale:* each cell is drawn at the footprint of its detected 375 m VIIRS pixels, but
+    never smaller than one device pixel, so at globe zoom a fire is one pixel. They blend "over",
+    not additively, so dense clusters don't bloom into sheets. Only the last 12 h show by
+    default. Fires below a zoom-dependent power threshold (~3–4 MW at globe zoom, none when a
+    pixel is ~1 km) are hidden.
+  - On 2026-10-21 these changes cut the area painted over Africa at a 7 km/px view from ~550×
+    the area actually flagged to ~57×. The remainder is the one-pixel floor: a screen pixel there
+    is ~52 km², a VIIRS pixel 0.14 km². Africa really did have half the world's detections (the
+    southern dry-season burning), but they flagged at most ~0.05% of the continent.
 - **Earthquakes:** ring size ×1.5 per magnitude. Red within the hour, orange within 6 h, then
   yellow. The largest few, M6+, tsunami-flagged or PAGER-alerted quakes get labels.
 - Launch, storm and quake labels share one placement pass (launches first, then storms, then

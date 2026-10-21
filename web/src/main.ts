@@ -10,6 +10,8 @@ import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies 
 import { describeCadence, redrawInterval } from './cadence';
 import {
   decodeFires,
+  fireMinIntensity,
+  firesWithin,
   decodeOvation,
   decodeQuakes,
   isFireManifest,
@@ -27,6 +29,7 @@ import {
   stormTitle,
   USGS_QUAKES_URL,
   type AuroraGrid,
+  type FirePoints,
   type Quake,
   type StormManifest,
 } from './hazards';
@@ -405,7 +408,7 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
 
 let aurora: AuroraGrid | undefined;
 let stormManifest: StormManifest | undefined;
-let fireSummary: { detections: number; count: number } | undefined;
+let firePoints: FirePoints | undefined;
 let quakes: Quake[] = [];
 
 async function fetchJson(url: string): Promise<unknown> {
@@ -442,8 +445,8 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
     load: async () => {
       const m = await fetchJson(pipelineFile(settings.firesrc));
       if (!isFireManifest(m)) throw new Error('fires/latest.json is not a fire manifest');
-      renderer.setFires(decodeFires(m));
-      fireSummary = { detections: m.detections, count: m.count };
+      firePoints = decodeFires(m);
+      renderer.setFires(firePoints);
     },
   },
   quakes: {
@@ -523,7 +526,10 @@ function hazardLine(): string | undefined {
     const n = stormManifest.storms.length;
     parts.push(`${n} tropical cyclone${n === 1 ? '' : 's'}`);
   }
-  if (settings.fires && fireSummary) parts.push(`fires ${Math.round(fireSummary.detections / 1000)}k (24 h)`);
+  if (settings.fires && firePoints) {
+    const n = firesWithin(firePoints, settings.firehours).detections;
+    parts.push(`fires ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} (last ${settings.firehours} h)`);
+  }
   if (settings.quakes && quakes.length) parts.push(`${quakes.length} quakes M2.5+ (24 h)`);
   return parts.length ? parts.join(' · ') : undefined;
 }
@@ -691,7 +697,9 @@ function frame(now: number) {
     satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt } : null,
     bodies: bodies.draws,
     aurora: settings.aurora,
-    fires: settings.fires,
+    fires: settings.fires
+      ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)) }
+      : null,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);
