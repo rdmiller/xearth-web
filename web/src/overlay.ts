@@ -307,6 +307,8 @@ export interface OverlayState {
   issPanel?: IssPanel;
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
   satLabels?: SatLabelOverlay[];
+  /** CSS px covered by the layer drawer at the bottom: the attribution sits above it. */
+  bottomInset?: number;
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
   /** Lightning and GDACS summary. */
@@ -416,7 +418,9 @@ function placeCallouts(
     const clear = (b: Rect) => !reserved.some((t) => overlaps(t, b)) && !out.some((o) => overlaps(o.rect, b));
     const free = candidates.find((c) => onScreen(boxAt(c)) && clear(boxAt(c)));
     if (!free && r.optional) continue;
-    const pick = free ?? candidates.find((c) => onScreen(boxAt(c))) ?? candidates[0];
+    // No free side: overlapping another label beats covering the readout or the drawer.
+    const clearOfReserved = (b: Rect) => onScreen(b) && !reserved.some((t) => overlaps(t, b));
+    const pick = free ?? candidates.find((c) => clearOfReserved(boxAt(c))) ?? candidates.find((c) => onScreen(boxAt(c))) ?? candidates[0];
     out.push({ x: pick.x, y: pick.y, rows: r.rows, rect: boxAt(pick) });
   }
   ctx.restore();
@@ -1289,6 +1293,9 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     ? { x: 8, y: 8, w: Math.max(...lines.map((line) => ctx.measureText(line).width)) + 26, h: lines.length * 17 + 6 }
     : null;
   ctx.letterSpacing = '0px';
+  // Labels keep clear of the status readout and of the layer drawer along the bottom.
+  const inset = s.bottomInset ?? 0;
+  const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : [])];
   // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
   const callouts = placeCallouts(
     ctx,
@@ -1296,15 +1303,15 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     w,
     h,
     [...tsunamiRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
-    readout ? [readout] : [],
+    reserved,
   );
   drawEvents(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawTsunami(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
-  if (s.markers) drawCities(ctx, s, w, h, dpr, callouts.map((c) => c.rect));
+  if (s.markers) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawSatellites(ctx, s, w, h, dpr);
-  drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...(readout ? [readout] : [])]);
+  drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawLaunches(ctx, s, w, h, dpr);
   drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);
@@ -1338,7 +1345,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.fillText(
     'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · press H',
     w - 10,
-    h - 8,
+    h - 8 - (s.bottomInset ?? 0),
   );
   ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';

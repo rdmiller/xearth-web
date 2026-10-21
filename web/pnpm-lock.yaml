@@ -175,6 +175,9 @@ importers:
       lightstreamer-client-web:
         specifier: ^9.2.3
         version: 9.2.3
+      lucide:
+        specifier: ^1.60.0
+        version: 1.60.0
       satellite.js:
         specifier: ^7.1.0
         version: 7.1.0
@@ -450,6 +453,9 @@ packages:
 
   lightstreamer-client-web@9.2.3:
     resolution: {integrity: sha512-Sir2zhENt0w6UHcULtvwl0qmrSZwSxh+0oNGRK6a75HN7bzmEdcy+yjSbLwKvKCY3P+xORBYKNFJ/FsRqzAQbA==}
+
+  lucide@1.60.0:
+    resolution: {integrity: sha512-nS9qchK+W+c58GZk8LRR/9X2t+AuC/qs4CeXQauA3l/sqkrl0wzZDjcwLPHSdvoE1HYwnqDZUIs/lYAdWx1a8Q==}
 
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
@@ -757,6 +763,8 @@ snapshots:
       lightningcss-win32-x64-msvc: 1.33.0
 
   lightstreamer-client-web@9.2.3: {}
+
+  lucide@1.60.0: {}
 
   magic-string@1.4.3:
     dependencies:

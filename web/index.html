@@ -26,7 +26,7 @@
       #help kbd { font: 600 12px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; letter-spacing: 0.06em; }
       #help td:first-child { width: 4.5em; white-space: nowrap; }
       #toast {
-        position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 8px);
+        position: fixed; left: 50%; bottom: calc(var(--drawer-h, 0px) + 18px); transform: translate(-50%, 8px); z-index: 3;
         padding: 6px 14px; border-radius: 6px; background: rgba(8, 12, 24, 0.85);
         border: 1px solid rgba(98, 230, 255, 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
         font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
@@ -35,23 +35,15 @@
       #toast.show { opacity: 1; transform: translate(-50%, 0); }
       @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
       #radar-credit {
-        position: fixed; right: 10px; bottom: 24px; z-index: 1; font-size: 10px; letter-spacing: 0.06em;
+        position: fixed; right: 10px; bottom: calc(var(--drawer-h, 0px) + 24px); z-index: 1; font-size: 10px; letter-spacing: 0.06em;
         color: rgba(170, 205, 235, 0.7); text-decoration: none;
       }
       #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
       /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
-      #sat-tree-btn {
-        position: fixed; left: 12px; bottom: 12px; z-index: 2; padding: 6px 12px 6px 10px;
-        font: 600 11px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.14em; text-transform: uppercase;
-        color: #62e6ff; background: rgba(8, 12, 24, 0.78); border: 1px solid rgba(98, 230, 255, 0.35);
-        border-radius: 6px; box-shadow: 0 0 14px rgba(0, 200, 255, 0.08); cursor: pointer;
-      }
-      #sat-tree-btn::before { content: '◎'; margin-right: 7px; }
-      #sat-tree-btn:hover, #sat-tree-btn[aria-expanded="true"] { background: rgba(14, 30, 48, 0.92); border-color: rgba(98, 230, 255, 0.6); }
-      #sat-tree-btn:focus-visible, #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
       #sat-tree {
-        position: fixed; left: 12px; bottom: 50px; z-index: 2; width: min(320px, calc(100vw - 24px));
-        max-height: calc(100vh - 130px); overflow: auto; box-sizing: border-box; padding: 12px 12px 10px 10px;
+        position: fixed; left: 12px; bottom: calc(var(--drawer-h, 0px) + 12px); z-index: 3; width: min(320px, calc(100vw - 24px));
+        max-height: calc(100vh - var(--drawer-h, 0px) - 120px); overflow: auto; box-sizing: border-box; padding: 12px 12px 10px 10px;
         border-radius: 8px; background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.28);
         box-shadow: 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px;
       }
@@ -81,6 +73,58 @@
       #sat-tree .labels[aria-pressed="true"] { color: #04101a; background: #62e6ff; border-color: #62e6ff; }
       #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); }
       #sat-tree kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
+      /* Layer drawer: bottom centre, same panel language — dark glass, cyan rule, Chakra Petch. */
+      #drawer {
+        position: fixed; left: 50%; bottom: 0; z-index: 2; transform: translateX(-50%);
+        max-width: calc(100vw - 16px); display: flex; flex-direction: column; align-items: center; pointer-events: none;
+      }
+      #drawer > * { pointer-events: auto; }
+      #drawer .drawer-tab {
+        display: flex; align-items: center; gap: 6px; padding: 4px 14px 5px;
+        font: 600 10px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.16em; text-transform: uppercase;
+        color: #62e6ff; background: rgba(8, 12, 24, 0.9); border: 1px solid rgba(98, 230, 255, 0.3); border-bottom: 0;
+        border-radius: 8px 8px 0 0; cursor: pointer;
+      }
+      #drawer .drawer-tab::after { content: '▴'; margin-left: 2px; }
+      #drawer.open .drawer-tab::after { content: '▾'; }
+      #drawer .drawer-body {
+        display: flex; gap: 12px; max-width: 100%; box-sizing: border-box; overflow-x: auto; padding: 8px 12px 6px;
+        background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(98, 230, 255, 0.28); border-bottom: 0;
+        border-radius: 10px 10px 0 0; box-shadow: 0 0 24px rgba(0, 200, 255, 0.08); scrollbar-width: thin;
+      }
+      #drawer .drawer-group + .drawer-group { padding-left: 12px; border-left: 1px solid rgba(98, 230, 255, 0.14); }
+      #drawer .drawer-title {
+        margin: 0 0 3px 4px; font: 600 9px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.18em;
+        text-transform: uppercase; color: rgba(143, 216, 240, 0.6);
+      }
+      #drawer .drawer-row { display: flex; gap: 2px; }
+      #drawer .drawer-cell { position: relative; }
+      #drawer .drawer-btn {
+        position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 54px; padding: 6px 0 7px;
+        font: 500 8.5px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.06em; text-transform: uppercase;
+        color: rgba(143, 216, 240, 0.4); background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer;
+      }
+      #drawer .drawer-btn:hover { color: rgba(143, 216, 240, 0.8); background: rgba(98, 230, 255, 0.06); border-color: rgba(98, 230, 255, 0.18); }
+      #drawer .drawer-btn[aria-pressed="true"] { color: #62e6ff; }
+      #drawer .drawer-btn[aria-pressed="true"] svg,
+      #drawer .drawer-btn[aria-pressed="true"] .initials { filter: drop-shadow(0 0 4px rgba(98, 230, 255, 0.55)); }
+      #drawer .drawer-btn[aria-pressed="true"]::after {
+        content: ''; position: absolute; left: 32%; right: 32%; bottom: 1px; height: 2px; border-radius: 1px;
+        background: #62e6ff; box-shadow: 0 0 6px #62e6ff;
+      }
+      #drawer .caption { white-space: nowrap; }
+      #drawer .initials {
+        display: grid; place-items: center; width: 20px; height: 20px; box-sizing: border-box;
+        border: 1.6px solid currentColor; border-radius: 6px; font: 600 10px/1 "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.02em;
+        text-transform: none;
+      }
+      #drawer .tag { position: absolute; top: 1px; left: 3px; font: 600 7px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.06em; color: #ffc857; }
+      #drawer .drawer-extra {
+        position: absolute; top: 0; right: -3px; display: grid; place-items: center; width: 19px; height: 19px; padding: 0;
+        color: #8fd8f0; background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.28); border-radius: 5px; cursor: pointer;
+      }
+      #drawer .drawer-extra:hover { color: #62e6ff; border-color: rgba(98, 230, 255, 0.6); }
+      #drawer button:focus-visible { outline: 1px solid #62e6ff; outline-offset: 1px; }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>
@@ -88,11 +132,11 @@
     <canvas id="globe"></canvas>
     <canvas id="overlay"></canvas>
     <div id="toast" role="status" aria-live="polite"></div>
-    <button id="sat-tree-btn" type="button" aria-controls="sat-tree" aria-expanded="false">Satellites</button>
+    <nav id="drawer" aria-label="Layers"></nav>
     <aside id="sat-tree" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>
-      <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> panel</footer>
+      <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <aside id="help" hidden>

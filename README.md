@@ -57,7 +57,7 @@ global cloud layer refreshed every hour from geostationary satellites.
   their own colour-coded categories; zoom out to see the navigation shells (~20,000 km) and
   the geostationary ring (~36,000 km). All are propagated live with SGP4 from CelesTrak
   elements, hidden behind the Earth, and dimmed in its shadow.
-  - **Satellite panel** (bottom-left button, or Shift+O): a tree of every category with
+  - **Satellite panel** (the tree button beside Satellites in the layer drawer, or Shift+O): a tree of every category with
     tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
     small enough to label. Every far constellation (the diamonds) is named by default; the dense low-orbit dots are not. Satellites a few pixels apart share a label ("MTG-I2 · MTG-S1"), and each label tries right, left, below and above before it is left out.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
@@ -65,6 +65,23 @@ global cloud layer refreshed every hour from geostationary satellites.
   hourly to an equirectangular alpha map and cross-faded in.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
+
+## Layer drawer
+
+Every layer has a toggle in the drawer along the bottom, grouped Earth (clouds, city lights,
+snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora), Hazards (cyclones,
+fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a button for the
+satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate). Each
+button runs the same action as its hotkey (shown in its tooltip), so cycling layers keep
+their cycles and toasts: stars show PHOTO, satellites NAMED, ISS telemetry TRACK in their
+in-between states. A lit underline marks what's on. The tab above it (or Shift+D) folds the
+drawer away; whether it's open is remembered per browser. While it's open, the toast, the
+satellite panel, the RainViewer credit and the attribution sit above it, and callouts,
+city labels and satellite names keep out of it.
+
+Icons are [Lucide](https://lucide.dev) (ISC), imported one by one so only those used are
+bundled. Lucide has no aurora glyph, so aurora is drawn as initials ("Au") in the same line
+style. A test checks that every layer hotkey has a drawer button.
 
 ## Hotkeys
 
@@ -89,6 +106,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `Space` `.` `,` `T` | pause, faster, slower (into reverse), back to now |
 | `R` `F` `H` | check for new clouds, fullscreen, help |
 | `D` | frame-rate display |
+| `Shift+D` | layer drawer |
 
 The table lives in `web/src/hotkeys.ts` and also generates the in-app help, so they can't
 drift apart.
@@ -109,6 +127,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
+  src/drawer.ts      the layer drawer (Lucide icons; buttons run the hotkeys)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
@@ -448,6 +467,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
+- Icons: Lucide (ISC License).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
 - Aurora, space weather and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:

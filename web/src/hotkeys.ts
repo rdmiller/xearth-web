@@ -34,6 +34,8 @@ export interface HotkeyContext {
   toggleHelp(open?: boolean): void;
   /** The satellite tree panel. */
   toggleSatTree(open?: boolean): void;
+  /** The layer drawer along the bottom. */
+  toggleDrawer(): void;
   toast(message: string): void;
 }
 
@@ -426,6 +428,7 @@ export const HOTKEYS: readonly Hotkey[] = [
       ctx.toast('Checking for new clouds…');
     },
   },
+  { keys: ['shift+d'], label: 'Shift+D', description: 'Layer drawer', group: 'App', run: (ctx) => ctx.toggleDrawer() },
   { keys: ['f'], label: 'F', description: 'Fullscreen', group: 'App', run: (ctx) => ctx.toggleFullscreen() },
   { ...layer('d', 'fps', 'Frame-rate display'), group: 'App' },
   { keys: ['h', '?'], label: 'H', description: 'This help', group: 'App', run: (ctx) => ctx.toggleHelp() },
@@ -443,6 +446,11 @@ export const HOTKEYS: readonly Hotkey[] = [
 
 const BY_KEY = new Map<string, Hotkey>();
 for (const hk of HOTKEYS) for (const k of hk.keys) BY_KEY.set(k, hk);
+
+/** The hotkey bound to a key name as written in HOTKEYS ("c", "shift+r"). */
+export function hotkeyByKey(key: string): Hotkey | undefined {
+  return BY_KEY.get(key);
+}
 
 /**
  * The hotkey for a key event, or undefined (Ctrl/Cmd/Alt chords are left to the

@@ -23,6 +23,7 @@ import {
   type SatLeaf,
 } from './satcategories';
 import { SatTree } from './satTree';
+import { Drawer } from './drawer';
 import {
   decodeNwsAlerts,
   isAlertCategory,
@@ -98,7 +99,7 @@ import {
   type LaunchState,
 } from './launches';
 import { CloudSync, type CloudStatus } from './cloudSync';
-import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
+import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
   clearOverlaySprites,
   drawOverlay,
@@ -915,10 +916,32 @@ function satLabels(date: Date): SatLabelOverlay[] {
 
 // ---- satellite tree -----------------------------------------------------------------
 
-const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, document.getElementById('sat-tree-btn') as HTMLButtonElement, {
+const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, {
   toggle: (node) => update(toggleNode(node, settings)),
   toggleLabels: (leaf) => update({ satlabels: toggleLabels(leaf, settings.satlabels) }),
 });
+
+// ---- layer drawer --------------------------------------------------------------------
+// Its buttons run the hotkeys, so they behave exactly like the keys (toasts included).
+
+let drawerInset = 0;
+const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
+  run(key) {
+    const hk = hotkeyByKey(key);
+    const k = key.replace('shift+', '');
+    hk?.run(hotkeyContext, { key: k, shiftKey: key.startsWith('shift+') });
+  },
+  openSatTree: () => satTree.toggle(),
+  keyLabel: (key) => hotkeyByKey(key)?.label ?? key.toUpperCase(),
+  resized(inset) {
+    if (inset === drawerInset) return;
+    drawerInset = inset;
+    document.documentElement.style.setProperty('--drawer-h', `${inset}px`);
+    // Deferred: the drawer reports its size while this module is still initialising.
+    queueMicrotask(requestRedraw);
+  },
+});
+satTree.opener = drawer.satTreeButton;
 
 /** Satellites per category for the tree: the bulk counts, and 1 for each named one we have. */
 function treeCounts(): Record<string, number> {
@@ -1088,6 +1111,7 @@ function frame(now: number) {
     issPanel: issPanelState(sunDir),
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
+    bottomInset: drawerInset,
     weatherLine: weatherLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps
@@ -1168,6 +1192,7 @@ function update(patch: Partial<Settings>) {
   if (settings.clouds !== cloudsBefore) syncClouds();
   syncIssLive();
   satTree.refresh(settings, treeCounts());
+  drawer.refresh(settings);
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
   // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
@@ -1273,6 +1298,9 @@ const hotkeyContext: HotkeyContext = {
   toggleSatTree(open) {
     satTree.toggle(open);
   },
+  toggleDrawer() {
+    drawer.toggle();
+  },
   toast,
 };
 
@@ -1311,4 +1339,5 @@ for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 radarCredit.hidden = !settings.radar;
 syncIssLive();
 satTree.refresh(settings, treeCounts());
+drawer.refresh(settings);
 requestRedraw();

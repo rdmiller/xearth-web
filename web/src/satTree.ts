@@ -1,4 +1,4 @@
-// The satellite tree: a panel (bottom left, opened by its button or Shift+O)
+// The satellite tree: a panel (bottom left, opened from the layer drawer or Shift+O)
 // listing every satellite category as a tree of tri-state checkboxes, with a
 // colour swatch, a count, and — for categories small enough — a labels toggle.
 //
@@ -52,14 +52,15 @@ export class SatTree {
   private readonly rows: Row[] = [];
   private readonly collapsed = loadCollapsed();
 
+  /** The button that opens the panel (the drawer's), told when it opens and closes. */
+  opener: HTMLElement | undefined;
+
   constructor(
     private readonly panel: HTMLElement,
-    private readonly button: HTMLButtonElement,
     handlers: SatTreeHandlers,
   ) {
     const list = panel.querySelector('ul[role="tree"]') as HTMLUListElement;
     list.append(...SAT_TREE.children.map((n) => this.item(n, handlers, 1)));
-    button.addEventListener('click', () => this.toggle());
     panel.querySelector('.close')?.addEventListener('click', () => this.toggle(false));
   }
 
@@ -69,7 +70,7 @@ export class SatTree {
 
   toggle(open = !this.open) {
     this.panel.hidden = !open;
-    this.button.setAttribute('aria-expanded', String(open));
+    this.opener?.setAttribute('aria-expanded', String(open));
     if (open) (this.panel.querySelector('input') as HTMLInputElement | null)?.focus({ preventScroll: true });
   }
 

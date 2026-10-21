@@ -24,6 +24,7 @@ function harness(initial: Partial<Settings> = {}) {
     toggleFullscreen: vi.fn(),
     toggleHelp: vi.fn(),
     toggleSatTree: vi.fn(),
+    toggleDrawer: vi.fn(),
     toast(m) {
       this.toasts.push(m);
     },
