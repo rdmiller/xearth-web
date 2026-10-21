@@ -20,6 +20,10 @@ global cloud layer refreshed every hour from geostationary satellites.
   earthshine. When either is out of frame, a marker at the screen edge points to it, and **E**
   frames the Sun, then the Moon, just beside the Earth. `bodyscale` enlarges them; at true size
   the Moon is ~1/50 of the Earth's disc.
+- **Launch mode:** upcoming launches worldwide (Launch Library 2) as pad markers with live
+  countdowns and status. For Starlink missions, SpaceX's own pre-launch orbit prediction (via
+  CelesTrak) drives a flight you can watch: an approximate ascent, the coast on the predicted
+  orbit, and deployment at the exact predicted time. **J** follows it; **K** previews it from T−1 min.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~10,600 Starlinks are drawn as a point cloud. All are propagated live with SGP4 from
@@ -35,6 +39,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 |---|---|
 | `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
 | `B` | Sun and Moon on/off |
+| `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `S` | stars: on → camera exposure → off |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -60,6 +65,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/cloudSync.ts   polls clouds/latest.json, hands new maps to the renderer
   src/stars.ts       star frame, magnitude → brightness/size, B−V → colour
   src/bodies.ts      Sun/Moon positions, sizes, Moon phase and orientation, framing views
+  src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   Starlink propagation off the main thread
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
@@ -78,6 +84,7 @@ pnpm textures --current      # this month's Blue Marble + Black Marble (~3 MB); 
 pip install -e ../pipeline   # numpy, netCDF4, Pillow
 pnpm clouds                  # newest GMGSI file → public/clouds/
 pnpm satellites              # CelesTrak elements → public/satellites/ (at most every 3 h)
+pnpm launches                # Launch Library 2 + SpaceX pre-launch orbits → public/launches/
 pnpm dev
 ```
 
@@ -91,7 +98,8 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | Parameter | Meaning | Default |
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
-| `track` | `iss`, `tiangong`, `satgus`, or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
+| `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
+| `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (Starlink + named), `featured`, `0` | `all` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
@@ -163,6 +171,27 @@ read as thin cloud. Both are limits of a single IR channel.
 - **Scale:** a Starlink is ~10 m across, so the dots are deliberately oversized, as on every
   tracker.
 
+## Launch mode
+
+No launch provider publishes live telemetry: SpaceX's on-screen speed and altitude are burned
+into the webcast. So launch mode is built from what *is* published, and says which part is which.
+
+- **Schedule and status:** the pipeline reads Launch Library 2 (The Space Devs) every hour, which
+  is two requests against a free tier of ~15 an hour. Near T−0, in live mode, the browser
+  re-reads just that launch every 5 minutes, so holds and scrubs show up.
+- **Predicted orbit:** for Starlink, SpaceX gives CelesTrak a pre-launch state vector, published
+  as supplemental GP for the stack and for one satellite. Each comes with the deploy time and a
+  set per backup launch opportunity. The pipeline parses CelesTrak's index and matches entries
+  by launch time, so a hold to a backup opportunity switches to that opportunity's prediction.
+- **Phases:**
+  - *countdown*: the pad and its predicted route.
+  - *ascent (approx.)*: ~T+8.5 min, synthesised, ending on the predicted orbit with matching
+    speed. Altitude follows u²(3−2u), close to a typical Falcon 9.
+  - *coast*: SpaceX's predicted orbit.
+  - *deployed*: the exact predicted time; the camera stays for 30 minutes.
+  - Launches without a prediction get a countdown and an "in flight, no trajectory data" marker
+    on the pad, never an invented path.
+
 ## Frame rate
 
 Press **D** (or add `?fps=1`) for a panel showing frames per second, a sparkline of frame
@@ -198,6 +227,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
+- Launches: Launch Library 2 by The Space Devs; Starlink pre-launch orbits are SpaceX state
+  vectors published by CelesTrak as supplemental GP.
 - Satellite elements: CelesTrak (Dr T.S. Kelso), from the 18th Space Defense Squadron's GP
   data. SGP4: satellite.js (MIT). SAT GUS is operated by CrunchLabs.
 - Clouds: NOAA/NESDIS Global Mosaic of Geostationary Satellite Imagery (GMGSI) via the NOAA

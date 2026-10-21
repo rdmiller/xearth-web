@@ -47,6 +47,18 @@ jobs:
         continue-on-error: true
         run: python -m xearth_clouds.satellites --out web/public/satellites
 
+      # Launch Library 2's free tier allows ~15 requests an hour; this makes two.
+      # Pre-launch SupGP is reused from the cached file when CelesTrak says it hasn't changed.
+      - name: Restore previous launch data
+        uses: actions/cache@v4
+        with:
+          path: web/public/launches
+          key: launches-${{ github.run_id }}
+          restore-keys: launches-
+      - name: Upcoming launches (Launch Library 2 + SpaceX pre-launch orbits)
+        continue-on-error: true
+        run: python -m xearth_clouds.launches --out web/public/launches
+
       - name: Cache NASA textures
         uses: actions/cache@v4
         with:

@@ -19,6 +19,7 @@ function harness(initial: Partial<Settings> = {}) {
     goLive: vi.fn(() => {
       settings = { ...settings, speed: 1, time: null };
     }),
+    previewLaunch: vi.fn(() => 'Falcon 9 · Starlink Group 15-15'),
     refreshClouds: vi.fn(),
     toggleFullscreen: vi.fn(),
     toggleHelp: vi.fn(),
@@ -96,6 +97,23 @@ describe('satellite keys', () => {
     const h = harness({ view: 'track', track: 'iss' });
     h.press('ArrowUp');
     expect(h.s).toMatchObject({ view: 'fixed', lat: 17, lon: 34 });
+  });
+});
+
+describe('launch keys', () => {
+  it('U toggles launches; J follows the next launch, turning them back on', () => {
+    const h = harness();
+    h.press('u');
+    expect(h.s.launches).toBe(false);
+    h.press('j');
+    expect(h.s).toMatchObject({ view: 'track', track: 'launch', launches: true });
+  });
+
+  it('K previews the next launch and says which', () => {
+    const h = harness();
+    h.press('k');
+    expect(h.ctx.previewLaunch).toHaveBeenCalled();
+    expect(h.ctx.toasts.at(-1)).toMatch(/Preview: Falcon 9 · Starlink Group 15-15/);
   });
 });
 

@@ -37,6 +37,11 @@ describe('parseSettings', () => {
     expect(parseSettings('?bodyscale=99').bodyscale).toBe(30);
   });
 
+  it('reads the launch settings', () => {
+    expect(parseSettings('?launches=0').launches).toBe(false);
+    expect(parseSettings('?view=track&track=launch')).toMatchObject({ view: 'track', track: 'launch' });
+  });
+
   it('ignores junk values', () => {
     const d = defaults();
     const s = parseSettings('?view=mars&mag=abc&time=yesterday', d);

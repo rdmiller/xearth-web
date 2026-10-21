@@ -25,6 +25,8 @@ export interface Settings extends ViewSettings {
   fps: boolean;
   /** Sun and Moon in the sky. */
   bodies: boolean;
+  /** Launch mode: pads, countdowns, ascents. */
+  launches: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
   bodyscale: number;
   /** Fixed start time (ISO), or null for "now". */
@@ -35,6 +37,8 @@ export interface Settings extends ViewSettings {
   cloudsrc: string;
   /** Where the satellites' latest.json lives. */
   satsrc: string;
+  /** Where the launches' latest.json lives. */
+  launchsrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -65,11 +69,13 @@ export function defaults(): Settings {
     label: true,
     fps: false,
     bodies: true,
+    launches: true,
     bodyscale: 1,
     time: null,
     speed: 1,
     cloudsrc: (import.meta.env?.VITE_CLOUD_BASE as string | undefined) ?? 'clouds/',
     satsrc: (import.meta.env?.VITE_SAT_BASE as string | undefined) ?? 'satellites/',
+    launchsrc: (import.meta.env?.VITE_LAUNCH_BASE as string | undefined) ?? 'launches/',
   };
 }
 
@@ -127,11 +133,13 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     label: bool(q, 'label', base.label),
     fps: bool(q, 'fps', base.fps),
     bodies: bool(q, 'bodies', base.bodies),
+    launches: bool(q, 'launches', base.launches),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
     cloudsrc: q.get('cloudsrc') ?? base.cloudsrc,
     satsrc: q.get('satsrc') ?? base.satsrc,
+    launchsrc: q.get('launchsrc') ?? base.launchsrc,
   };
 }
 

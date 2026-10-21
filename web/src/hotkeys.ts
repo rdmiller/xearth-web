@@ -26,6 +26,8 @@ export interface HotkeyContext {
   setSpeed(speed: number): void;
   /** Back to the present, in real time. */
   goLive(): void;
+  /** Jump the clock to just before the next launch at 10×; returns its name, or null if none. */
+  previewLaunch(): string | null;
   refreshClouds(): void;
   toggleFullscreen(): void;
   toggleHelp(open?: boolean): void;
@@ -81,7 +83,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 export const STAR_LABELS: Record<StarMode, string> = {
@@ -189,6 +191,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   },
   layer('n', 'lights', 'City lights'),
   layer('b', 'bodies', 'Sun and Moon'),
+  layer('u', 'launches', 'Upcoming launches'),
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
   layer('l', 'label', 'Label'),
@@ -222,6 +225,16 @@ export const HOTKEYS: readonly Hotkey[] = [
       const next = ctx.settings.view === 'track' && ctx.settings.track === 'sunrise' ? 'moonrise' : 'sunrise';
       ctx.update({ view: 'track', track: next, ...(ctx.settings.bodies ? {} : { bodies: true }) });
       ctx.toast(next === 'sunrise' ? 'Sun just past the Earth' : 'Moon beside the Earth');
+    },
+  },
+  {
+    keys: ['j'],
+    label: 'J',
+    description: 'Follow the next launch (or the one in flight)',
+    group: 'View',
+    run(ctx) {
+      ctx.update({ view: 'track', track: 'launch', ...(ctx.settings.launches ? {} : { launches: true }) });
+      ctx.toast('Following the next launch');
     },
   },
   {
@@ -340,6 +353,16 @@ export const HOTKEYS: readonly Hotkey[] = [
       const s = nextSpeed(ctx.settings.speed, -1);
       ctx.setSpeed(s);
       ctx.toast(formatSpeed(s));
+    },
+  },
+  {
+    keys: ['k'],
+    label: 'K',
+    description: 'Preview the next launch from T−1 min at 10×',
+    group: 'Time',
+    run(ctx) {
+      const name = ctx.previewLaunch();
+      ctx.toast(name ? `Preview: ${name} (T to return to now)` : 'No upcoming launch to preview');
     },
   },
   {

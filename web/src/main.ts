@@ -8,9 +8,28 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
+import {
+  flightPath,
+  focusLaunch,
+  formatClock,
+  isLaunchManifest,
+  launchState,
+  shortRocket,
+  type LaunchManifest,
+  type LaunchPhase,
+  type LaunchState,
+} from './launches';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
-import { clearOverlaySprites, drawOverlay, formatAge, UI_FONT, type BodyMarker, type SatelliteOverlay } from './overlay';
+import {
+  clearOverlaySprites,
+  drawOverlay,
+  formatAge,
+  UI_FONT,
+  type BodyMarker,
+  type LaunchOverlay,
+  type SatelliteOverlay,
+} from './overlay';
 import { FrameStats, GpuTimer } from './perf';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
@@ -238,6 +257,123 @@ function syncSatellites() {
   satTimer = setInterval(loadSatellites, SAT_POLL_MS);
 }
 
+// ---- launches -------------------------------------------------------------------
+const LAUNCH_POLL_MS = 15 * 60_000;
+/** Near T0, ask Launch Library for that one launch's latest NET/status this often. */
+const LAUNCH_LIVE_MS = 5 * 60_000;
+const LL2 = 'https://ll.thespacedevs.com/2.3.0';
+
+let launchManifest: LaunchManifest | undefined;
+let launchTimer: ReturnType<typeof setInterval> | undefined;
+let lastLiveCheck = 0;
+/** From the last frame: is a countdown on screen, is anything in flight (for redraw cadence). */
+let launchFlags = { countdown: false, flying: false };
+
+async function loadLaunches() {
+  try {
+    const url = new URL('latest.json', new URL(settings.launchsrc, location.href)).href;
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`${r.status} ${url}`);
+    const m: unknown = await r.json();
+    if (!isLaunchManifest(m)) throw new Error('launches/latest.json is not a launch manifest');
+    launchManifest = m;
+  } catch (err) {
+    console.warn('launches:', err);
+  }
+  requestRedraw();
+}
+
+/**
+ * Holds and scrubs move minute by minute, which the hourly manifest can't follow.
+ * In live mode, within T−20…T+15 min, re-read that launch from Launch Library at
+ * most every 5 minutes (its free tier allows ~15 requests an hour per client).
+ */
+async function refreshLiveLaunch() {
+  if (!launchManifest || !settings.launches || settings.time || settings.speed !== 1) return;
+  const now = Date.now();
+  if (now - lastLiveCheck < LAUNCH_LIVE_MS) return;
+  const soon = launchManifest.launches.find((l) => {
+    const dt = Date.parse(l.net) - now;
+    return dt < 20 * 60_000 && dt > -15 * 60_000;
+  });
+  if (!soon) return;
+  lastLiveCheck = now;
+  try {
+    const r = await fetch(`${LL2}/launches/${soon.id}/?mode=normal`);
+    if (!r.ok) throw new Error(`${r.status}`);
+    const rec = await r.json();
+    soon.net = rec.net ?? soon.net;
+    soon.status = { abbrev: rec.status?.abbrev ?? soon.status.abbrev, name: rec.status?.name ?? soon.status.name };
+    soon.webcastLive = !!rec.webcast_live;
+    requestRedraw();
+  } catch (err) {
+    console.warn('launch status:', err);
+  }
+}
+setInterval(() => void refreshLiveLaunch(), 60_000);
+
+function syncLaunches() {
+  clearInterval(launchTimer);
+  launchTimer = undefined;
+  if (!settings.launches) return;
+  void loadLaunches();
+  launchTimer = setInterval(() => void loadLaunches(), LAUNCH_POLL_MS);
+}
+
+function launchStates(date: Date): LaunchState[] {
+  if (!settings.launches || !launchManifest) return [];
+  return launchManifest.launches.map((l) => launchState(l, date)).filter((s) => s.phase !== 'done');
+}
+
+const PHASE_LABEL: Record<LaunchPhase, string> = {
+  countdown: '',
+  ascent: 'ASCENT (APPROX.)',
+  coast: 'COAST · PREDICTED ORBIT',
+  deployed: 'DEPLOYED',
+  inflight: 'IN FLIGHT · NO TRAJECTORY DATA',
+  done: '',
+};
+
+function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
+  const tracked = settings.view === 'track' && settings.track === 'launch';
+  const overlays: LaunchOverlay[] = states.map((st) => {
+    const l = st.launch;
+    const flying = st.phase === 'ascent' || st.phase === 'coast' || st.phase === 'deployed';
+    const numbers = [
+      st.altKm !== undefined ? `${Math.round(st.altKm)} KM` : '',
+      st.speed !== undefined ? `${st.speed.toFixed(1)} KM/S` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const detail = flying
+      ? [PHASE_LABEL[st.phase], numbers].filter(Boolean)
+      : st.phase === 'inflight'
+        ? ['IN FLIGHT', 'NO TRAJECTORY DATA']
+        : undefined;
+    return {
+      id: l.id,
+      rocket: shortRocket(l.rocket).toUpperCase(),
+      mission: l.mission.toUpperCase(),
+      clock: formatClock(st.t),
+      status: l.status.abbrev || '?',
+      pad: st.pad,
+      vehicle: flying ? st.pos : undefined,
+      // The focused launch shows its whole predicted route, even before liftoff.
+      path: flying || st === focus ? flightPath(st) : undefined,
+      detail,
+      focus: st === focus,
+      tracked: tracked && st === focus,
+    };
+  });
+  const f = focus;
+  const line = f
+    ? `launch ${shortRocket(f.launch.rocket)} · ${f.launch.mission} · ${formatClock(f.t)} · ${
+        f.phase === 'countdown' ? f.launch.status.name || f.launch.status.abbrev : PHASE_LABEL[f.phase].toLowerCase()
+      }`
+    : undefined;
+  return { overlays, line };
+}
+
 /**
  * Framing views (E): put the body just past the limb. In the sky projection the
  * disc spans atan(1 / focal) of sky, so aim ~1.35 disc radii off the line of sight.
@@ -253,6 +389,10 @@ const resolveTrack: TrackResolver = (key, date) => {
     // Put the body on the screen's longer axis, where there's room beside the globe.
     const toward = globeCanvas.clientWidth >= globeCanvas.clientHeight ? 'east' : 'north';
     return framingViewpoint(key === 'sunrise' ? b.sunDir : b.moonPos, framingOffsetDeg(), toward);
+  }
+  if (key === 'launch') {
+    const f = focusLaunch(launchStates(date));
+    return f ? toLatLon(f.pos) : null;
   }
   const rec = featuredRecs.get(key)?.rec;
   const p = rec ? positionAt(rec, date) : null;
@@ -375,6 +515,13 @@ function frame(now: number) {
         (bodies.sunInShot ? 10 : 0)
       : 0;
   const satOverlay = satelliteOverlay(date, sunDir);
+  const lStates = launchStates(date);
+  const lFocus = focusLaunch(lStates);
+  const launch = launchOverlay(lStates, lFocus);
+  launchFlags = {
+    countdown: lStates.some((s) => s.phase === 'countdown'),
+    flying: lStates.some((s) => s.phase === 'ascent' || s.phase === 'coast' || s.phase === 'deployed'),
+  };
   const t1 = performance.now();
 
   const slot = stats.nextSlot;
@@ -401,6 +548,8 @@ function frame(now: number) {
     viewer: viewerLatLon(settings, date, resolveTrack),
     satellites: satOverlay,
     bodies: settings.bodies ? bodies.markers : undefined,
+    launches: launch.overlays,
+    launchLine: launch.line,
     perf: settings.fps
       ? {
           summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
@@ -429,13 +578,19 @@ function frame(now: number) {
 function schedule() {
   clearTimeout(timer);
   if (document.hidden) return;
-  const interval = redrawInterval({
+  let interval = redrawInterval({
     animating: renderer.cloudMix < 1 || dragging,
-    leo: settings.sats !== 'off' || settings.view === 'orbit' || settings.view === 'track',
+    leo: settings.sats !== 'off' || settings.view === 'orbit' || settings.view === 'track' || launchFlags.flying,
     speed: settings.speed,
     radiusPx: radiusCss(),
     wait: settings.wait,
   });
+  // A countdown on screen ticks on every whole second of the (simulated) clock.
+  if (launchFlags.countdown && interval > 0 && settings.speed !== 0) {
+    const ms = simTime().getTime();
+    const toNextSecond = (1000 - (((ms % 1000) + 1000) % 1000)) / 1000 / Math.abs(settings.speed);
+    interval = Math.min(interval, Math.max(0.02, toNextSecond + 0.01));
+  }
   renderMode = describeCadence(interval);
   redrawEvery = interval;
   if (interval === 0) raf ||= requestAnimationFrame(frame);
@@ -461,7 +616,9 @@ let urlTimer: ReturnType<typeof setTimeout> | undefined;
 function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
   const satsBefore = settings.sats;
+  const launchesBefore = settings.launches;
   settings = { ...settings, ...patch };
+  if (settings.launches !== launchesBefore) syncLaunches();
   if (settings.clouds !== cloudsBefore) syncClouds();
   if ((settings.sats === 'off') !== (satsBefore === 'off')) syncSatellites();
   clearTimeout(urlTimer);
@@ -535,6 +692,18 @@ const hotkeyContext: HotkeyContext = {
     clockStart = wallAt();
     update({ time: null, speed: 1 });
   },
+  previewLaunch() {
+    if (!settings.launches) update({ launches: true });
+    const upcoming = launchStates(simTime())
+      .filter((s) => s.phase === 'countdown')
+      .sort((a, b) => a.t0 - b.t0);
+    // Prefer one with a predicted orbit: that's the one with something to watch.
+    const next = upcoming.find((s) => s.deployT !== undefined) ?? upcoming[0];
+    if (!next) return null;
+    clockStart = wallAt();
+    update({ time: new Date(next.t0 - 60_000), speed: 10, view: 'track', track: 'launch' });
+    return `${shortRocket(next.launch.rocket)} · ${next.launch.mission}`;
+  },
   refreshClouds: () => {
     if (!settings.clouds) update({ clouds: true });
     else void clouds.check();
@@ -577,4 +746,5 @@ Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.f
 
 syncClouds();
 syncSatellites();
+syncLaunches();
 requestRedraw();

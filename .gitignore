@@ -4,6 +4,7 @@ web/dist/
 web/public/textures/
 web/public/clouds/
 web/public/satellites/
+web/public/launches/
 *.part
 __pycache__/
 *.egg-info/
