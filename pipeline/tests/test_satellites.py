@@ -30,7 +30,7 @@ def fake_fetch(calls):
             return [SATGUS]
         if query == "CATNR=99999":
             return []  # decayed
-        if query == "GROUP=starlink":
+        if query in ("GROUP=starlink", "supgp:FILE=starlink"):
             return [starlink(44714), starlink(44713)]
         raise AssertionError(query)
 
@@ -49,7 +49,8 @@ def test_build_fetches_featured_and_groups_and_skips_decayed():
     calls = []
     now = dt.datetime(2026, 10, 21, 17, tzinfo=dt.timezone.utc)
     m = satellites.build(fake_fetch(calls), featured=[62713, 99999], groups=["starlink"], now=now)
-    assert calls == ["CATNR=62713", "CATNR=99999", "GROUP=starlink"]
+    assert calls == ["CATNR=62713", "CATNR=99999", "supgp:FILE=starlink"]  # SpaceX-derived first
+    assert m["groupSources"]["starlink"].startswith("CelesTrak SupGP")
     assert list(m["featured"]) == ["62713"]
     assert [r[0] for r in m["groups"]["starlink"]] == [44713, 44714]  # sorted, stable diffs
     assert m["generated"] == "2026-10-21T17:00:00Z"
@@ -99,6 +100,21 @@ def test_not_updated_reuses_previous_data_and_seeds_skip_the_fetch():
     m = satellites.build(fake_fetch(calls), featured=[62713], groups=["starlink"], seeds={"starlink": [starlink(1)]})
     assert calls == ["CATNR=62713"]
     assert m["groups"]["starlink"][0][0] == 1
+
+
+def test_starlink_falls_back_to_catalogue_gp_when_supgp_fails():
+    calls = []
+
+    def fetch(query):
+        calls.append(query)
+        if query.startswith("supgp:"):
+            raise OSError("502")
+        return [starlink(44714)] if query == "GROUP=starlink" else [SATGUS]
+
+    m = satellites.build(fetch, featured=[62713], groups=["starlink"])
+    assert calls[-2:] == ["supgp:FILE=starlink", "GROUP=starlink"]
+    assert m["groupSources"]["starlink"].startswith("CelesTrak GP")
+    assert m["groups"]["starlink"][0][0] == 44714
 
 
 def test_write_is_compact_json(tmp_path):

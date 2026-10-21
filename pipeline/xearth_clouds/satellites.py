@@ -29,6 +29,12 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 GP_URL = "https://celestrak.org/NORAD/elements/gp.php"
+# Supplemental GP: for Starlink, fitted by CelesTrak to SpaceX's own published
+# ephemerides — more accurate than the 18 SDS catalogue GP, and it carries new
+# satellites (under temporary IDs) before they're catalogued.
+SUPGP_URL = "https://celestrak.org/NORAD/elements/supplemental/sup-gp.php"
+# Groups to take from SupGP first (falling back to catalogue GP if that fails).
+SUPGP_GROUPS = {"starlink": "starlink"}
 MANIFEST = "latest.json"
 USER_AGENT = "xearth-web (+https://github.com) satellite layer, fetches at most every few hours"
 
@@ -64,7 +70,9 @@ class NotUpdated(Exception):
 
 
 def http_fetch(query: str) -> list[dict]:
-    req = urllib.request.Request(f"{GP_URL}?{query}&FORMAT=json", headers={"User-Agent": USER_AGENT})
+    """`query` is a GP query (GROUP=…, CATNR=…) or `supgp:FILE=…` for supplemental GP."""
+    base, q = (SUPGP_URL, query[len("supgp:") :]) if query.startswith("supgp:") else (GP_URL, query)
+    req = urllib.request.Request(f"{base}?{q}&FORMAT=json", headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             body = resp.read().decode("utf-8")
@@ -132,6 +140,13 @@ def parse_tle(line1: str, line2: str) -> dict:
     }
 
 
+def read_seed_file(path: Path) -> list[dict]:
+    """A local group: CelesTrak OMM JSON (GP or SupGP) or two-line element text."""
+    if path.suffix.lower() == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    return read_tle_file(path)
+
+
 def read_tle_file(path: Path) -> list[dict]:
     lines = [ln.rstrip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     pairs = [(a, b) for a, b in zip(lines, lines[1:]) if a.startswith("1 ") and b.startswith("2 ")]
@@ -179,25 +194,43 @@ def build(
         if recs:  # a decayed or unknown satellite returns nothing; skip it rather than fail
             objects[key] = compact(recs[0])
     group_data = {}
+    group_sources = {}
     for group in groups:
         if group in seeds:
-            recs = seeds[group]
+            recs, source = seeds[group], "local seed"
         else:
             try:
-                recs = fetch(f"GROUP={group}")
+                recs, source = _fetch_group(fetch, group)
             except NotUpdated:
                 if group not in previous.get("groups", {}):
                     raise
                 group_data[group] = previous["groups"][group]
+                group_sources[group] = previous.get("groupSources", {}).get(group, "previous run")
                 continue
         group_data[group] = sorted((compact(r) for r in recs), key=lambda a: a[0])
+        group_sources[group] = source
     return {
         "generated": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "source": "CelesTrak GP data (celestrak.org)",
         "fields": list(FIELDS),
         "featured": objects,
         "groups": group_data,
+        "groupSources": group_sources,
     }
+
+
+def _fetch_group(fetch: Fetch, group: str) -> tuple[list[dict], str]:
+    """Supplemental GP (SpaceX-derived) where configured, else catalogue GP."""
+    if group in SUPGP_GROUPS:
+        try:
+            recs = fetch(f"supgp:FILE={SUPGP_GROUPS[group]}")
+            if recs:
+                return recs, "CelesTrak SupGP (SpaceX ephemerides)"
+        except NotUpdated:
+            raise
+        except Exception as err:  # fall back rather than drop the group
+            print(f"satellites: SupGP {group} unavailable ({err}); using catalogue GP", file=sys.stderr)
+    return fetch(f"GROUP={group}"), "CelesTrak GP (18 SDS catalogue)"
 
 
 def write(manifest: dict, out_dir: Path) -> Path:
@@ -213,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--max-age-hours", type=float, default=3.0)
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--seed", action="append", default=[], metavar="GROUP=FILE.tle", help="take a group from a local TLE file")
+    ap.add_argument("--seed", action="append", default=[], metavar="GROUP=FILE", help="take a group from a local TLE or OMM JSON file")
     args = ap.parse_args(argv)
 
     now = dt.datetime.now(dt.timezone.utc)
@@ -223,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     seeds = {}
     for spec in args.seed:
         group, _, path = spec.partition("=")
-        seeds[group] = read_tle_file(Path(path))
+        seeds[group] = read_seed_file(Path(path))
     manifest = build(http_fetch, now=now, previous=read_manifest(args.out), seeds=seeds)
     path = write(manifest, args.out)
     counts = ", ".join(f"{len(v)} {k}" for k, v in manifest["groups"].items())
