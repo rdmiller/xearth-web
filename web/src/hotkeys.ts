@@ -81,7 +81,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 export const STAR_LABELS: Record<StarMode, string> = {
@@ -352,6 +352,7 @@ export const HOTKEYS: readonly Hotkey[] = [
     },
   },
   { keys: ['f'], label: 'F', description: 'Fullscreen', group: 'App', run: (ctx) => ctx.toggleFullscreen() },
+  { ...layer('d', 'fps', 'Frame-rate display'), group: 'App' },
   { keys: ['h', '?'], label: 'H', description: 'This help', group: 'App', run: (ctx) => ctx.toggleHelp() },
   { keys: ['escape'], label: 'Esc', description: 'Close help', group: 'App', run: (ctx) => ctx.toggleHelp(false) },
 ];

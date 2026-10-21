@@ -21,8 +21,8 @@ export interface FrameState {
   grid: boolean;
   /** Star layer, or null when stars are off. */
   stars: { frame: Float32Array; focal: number; magShift: number } | null;
-  /** Draw the bulk satellite layer (Starlink). */
-  satellites: boolean;
+  /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
+  satellites: { dt: number } | null;
   dpr: number;
 }
 
@@ -132,9 +132,9 @@ export class GlobeRenderer {
     this.stars.setCatalog(catalog);
   }
 
-  /** Bulk satellite positions, xyz per satellite in Earth radii (origin = none). */
-  setSatellites(xyz: Float32Array<ArrayBuffer>) {
-    this.sats.setPositions(xyz);
+  /** Bulk satellite positions (Earth radii, origin = none) and velocities (Earth radii/s). */
+  setSatellites(xyz: Float32Array<ArrayBuffer>, vel: Float32Array<ArrayBuffer>) {
+    this.sats.setPositions(xyz, vel);
   }
 
   /** Match the drawing buffer to the canvas's CSS size × devicePixelRatio. */
@@ -188,7 +188,10 @@ export class GlobeRenderer {
     gl.bindVertexArray(null);
 
     if (f.satellites) {
-      this.sats.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr }, [this.canvas.width, this.canvas.height]);
+      this.sats.draw(
+        { camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr, dt: f.satellites.dt },
+        [this.canvas.width, this.canvas.height],
+      );
     }
   }
 }

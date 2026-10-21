@@ -37,6 +37,7 @@ global cloud layer refreshed every hour from geostationary satellites.
 | `+` `−` `[` `]` `0` | zoom, rotate, reset · `P` perspective/orthographic |
 | `Space` `.` `,` `T` | pause, faster, slower (into reverse), back to now |
 | `R` `F` `H` | check for new clouds, fullscreen, help |
+| `D` | frame-rate display |
 
 The table lives in `web/src/hotkeys.ts` and also generates the in-app help, so they can't
 drift apart.
@@ -91,6 +92,7 @@ Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
 | `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
 | `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
+| `fps` | `1` shows the frame-rate display | 0 |
 | `cloudsrc`, `satsrc` | folders holding each `latest.json` (e.g. an R2/S3 bucket) | `clouds/`, `satellites/` |
 
 ## How the cloud map is made
@@ -150,6 +152,32 @@ read as thin cloud. Both are limits of a single IR channel.
   speed and sunlit state.
 - **Scale:** a Starlink is ~10 m across, so the dots are deliberately oversized, as on every
   tracker.
+
+## Frame rate
+
+Press **D** (or add `?fps=1`) for a panel showing frames per second, a sparkline of frame
+intervals (60 and 30 fps guides), main-thread time split into `sim` / `gl` / `overlay`, GPU
+time (when the browser exposes `EXT_disjoint_timer_query_webgl2`), and how redraws are
+scheduled.
+
+- **Redraws follow on-screen motion.** The app redraws only as often as needed to keep
+  anything from moving more than half a pixel between frames, capped by `wait`. At default
+  zoom satellites move ~0.4 px/s, so that's about once a second. Zoomed in 6× it's every
+  ~170 ms, and a fast clock, a drag or a cloud cross-fade renders every display frame.
+  "1 FPS" at rest is by design.
+- **Time is read on the frame's vsync timestamp**, so motion advances evenly per frame.
+- **Starlink is extrapolated, not re-propagated, each frame.** The worker returns positions
+  *and* Earth-fixed velocities every 10 simulated seconds, and the shader carries each point to
+  the frame's exact time (~0.4 km error at 10 s; clamped at ±60 s).
+- **Orbit tracks are sampled on a fixed time grid** and cached, so a frame computes at most
+  one new SGP4 sample instead of ~480.
+- **Glows are cached as sprites.** Canvas `shadowBlur` is rasterised after our code returns,
+  so it never shows in JS timings, but ~40 glowing city labels cost ~15 ms a frame. City,
+  satellite and reticle glows are drawn once into offscreen canvases and stamped.
+
+Measured at ×600 in Chrome (1568×741, this machine): **32–40 fps, worst frame 66.6 ms → a
+locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5 ms; simulation
+2.1 → 0.5 ms.
 
 ## Data and credits
 

@@ -1,12 +1,16 @@
 // Satellite layer: one GL point per satellite at its real 3-D position, drawn
 // after the globe. Occlusion by the Earth and the Earth's shadow are both
-// worked out per point in the vertex shader.
+// worked out per point in the vertex shader. Positions come from an SGP4 pass
+// at one moment; the shader carries each point along its velocity to the
+// exact time of the frame (error ~0.5·g·Δt², ~0.4 km after 10 s).
 
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 
 const VERT = `#version 300 es
 in vec3 aPos;            // Earth-fixed, Earth radii; the origin means "no position"
+in vec3 aVel;            // Earth-fixed, Earth radii per second
+uniform float uDt;       // seconds from the SGP4 pass to this frame
 uniform vec3 uDir;
 uniform vec3 uRight;
 uniform vec3 uUp;
@@ -18,8 +22,8 @@ uniform vec3 uSun;
 uniform float uSize;
 out float vLight;
 void main() {
-  vec3 p = aPos;
-  bool ok = dot(p, p) > 0.5;
+  bool ok = dot(aPos, aPos) > 0.5;
+  vec3 p = aPos + aVel * uDt;
   vec2 q;
   bool hidden;
   if (uDist <= 0.0) {
@@ -60,6 +64,8 @@ void main() {
 
 export interface SatFrameState {
   camera: Camera;
+  /** Seconds from the positions' SGP4 pass to this frame (simulated time). */
+  dt: number;
   radiusPx: number;
   sun: Vec3;
   dpr: number;
@@ -69,6 +75,7 @@ export class SatLayer {
   private readonly program: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
   private readonly buf: WebGLBuffer;
+  private readonly velBuf: WebGLBuffer;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private count = 0;
   private capacity = 0;
@@ -80,11 +87,17 @@ export class SatLayer {
     this.program = link(VERT, FRAG);
     this.vao = gl.createVertexArray()!;
     this.buf = gl.createBuffer()!;
+    this.velBuf = gl.createBuffer()!;
     gl.bindVertexArray(this.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    const loc = gl.getAttribLocation(this.program, 'aPos');
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+    for (const [name, buf] of [
+      ['aPos', this.buf],
+      ['aVel', this.velBuf],
+    ] as const) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      const loc = gl.getAttribLocation(this.program, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+    }
     gl.bindVertexArray(null);
   }
 
@@ -93,15 +106,18 @@ export class SatLayer {
     return this.uniforms.get(name)!;
   }
 
-  setPositions(xyz: Float32Array<ArrayBuffer>) {
+  setPositions(xyz: Float32Array<ArrayBuffer>, vel: Float32Array<ArrayBuffer>) {
     const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    if (xyz.byteLength > this.capacity) {
-      gl.bufferData(gl.ARRAY_BUFFER, xyz, gl.DYNAMIC_DRAW);
-      this.capacity = xyz.byteLength;
-    } else {
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, xyz);
+    const grow = xyz.byteLength > this.capacity;
+    for (const [buf, data] of [
+      [this.buf, xyz],
+      [this.velBuf, vel],
+    ] as const) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      if (grow) gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      else gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
     }
+    if (grow) this.capacity = xyz.byteLength;
     this.count = xyz.length / 3;
   }
 
@@ -122,6 +138,7 @@ export class SatLayer {
     gl.uniform1f(this.u('uRadiusPx'), f.radiusPx);
     gl.uniform2f(this.u('uRes'), res[0], res[1]);
     gl.uniform3fv(this.u('uSun'), f.sun);
+    gl.uniform1f(this.u('uDt'), f.dt);
     gl.uniform1f(this.u('uSize'), 2.2 * f.dpr);
     gl.uniform3f(this.u('uColor'), 0.82, 0.9, 1.0);
     gl.enable(gl.BLEND);

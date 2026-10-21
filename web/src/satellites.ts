@@ -145,22 +145,91 @@ export function stateAt(rec: SatRec, date: Date, sun: Vec3): SatState | null {
   };
 }
 
+/** Earth's rotation rate, rad/s (WGS-84). */
+export const EARTH_ROTATION = 7.2921159e-5;
+
 /**
- * Fill `out` with xyz per satellite (Earth radii). Failures are written as the
- * origin, which the renderer treats as "no position".
+ * Fill `out` with xyz per satellite (Earth radii) and, if given, `vel` with
+ * the Earth-fixed velocity (Earth radii per second) — enough for the renderer
+ * to move each point to the exact time of every frame between SGP4 passes.
+ * Failures are written as the origin, which the renderer treats as "no position".
  */
-export function propagateAll(recs: readonly (SatRec | null)[], date: Date, out: Float32Array): number {
+export function propagateAll(recs: readonly (SatRec | null)[], date: Date, out: Float32Array, vel?: Float32Array): number {
   const gmst = gstime(date);
   let ok = 0;
   for (let i = 0; i < recs.length; i++) {
     const rec = recs[i];
-    const p = rec ? positionAt(rec, date, gmst) : null;
-    out[i * 3] = p ? p[0] : 0;
-    out[i * 3 + 1] = p ? p[1] : 0;
-    out[i * 3 + 2] = p ? p[2] : 0;
-    if (p) ok++;
+    const pv = rec ? propagate(rec, date) : null;
+    if (!pv) {
+      out.fill(0, i * 3, i * 3 + 3);
+      vel?.fill(0, i * 3, i * 3 + 3);
+      continue;
+    }
+    const f = eciToEcf(pv.position, gmst);
+    const x = f.x / EARTH_RADIUS_KM;
+    const y = f.y / EARTH_RADIUS_KM;
+    out[i * 3] = x;
+    out[i * 3 + 1] = y;
+    out[i * 3 + 2] = f.z / EARTH_RADIUS_KM;
+    if (vel) {
+      // Rotate the inertial velocity into the Earth-fixed frame, then remove the
+      // frame's own rotation: v_ecf = R·v_eci − ω × r.
+      const v = eciToEcf(pv.velocity, gmst);
+      vel[i * 3] = v.x / EARTH_RADIUS_KM + EARTH_ROTATION * y;
+      vel[i * 3 + 1] = v.y / EARTH_RADIUS_KM - EARTH_ROTATION * x;
+      vel[i * 3 + 2] = v.z / EARTH_RADIUS_KM;
+    }
+    ok++;
   }
   return ok;
+}
+
+/**
+ * Orbit tracks sampled on a fixed time grid, so consecutive frames reuse
+ * almost every point: only samples entering the window are propagated.
+ * Recomputing ~160 points × 3 satellites every frame was most of the
+ * frame's simulation time.
+ */
+export class TrackCache {
+  private readonly samples = new Map<string, Map<number, Vec3 | null>>();
+  /** SGP4 calls made so far (cache misses). */
+  misses = 0;
+
+  clear() {
+    this.samples.clear();
+  }
+
+  /**
+   * Samples every `stepMin` minutes over [date − before, date + after], plus the
+   * exact current position at t = 0 so the line meets the satellite's marker.
+   */
+  track(key: string, rec: SatRec, date: Date, before: number, after: number, stepMin: number, now: Vec3) {
+    const stepMs = stepMin * 60_000;
+    const nowMs = date.getTime();
+    const k0 = Math.ceil((nowMs - before * 60_000) / stepMs);
+    const k1 = Math.floor((nowMs + after * 60_000) / stepMs);
+    let cache = this.samples.get(key);
+    if (!cache) this.samples.set(key, (cache = new Map()));
+    const out: { t: number; pos: Vec3 | null }[] = [];
+    let placedNow = false;
+    for (let k = k0; k <= k1; k++) {
+      const tMs = k * stepMs;
+      if (!placedNow && tMs > nowMs) {
+        out.push({ t: 0, pos: now });
+        placedNow = true;
+      }
+      let pos = cache.get(k);
+      if (pos === undefined) {
+        pos = positionAt(rec, new Date(tMs));
+        cache.set(k, pos);
+        this.misses++;
+      }
+      out.push({ t: (tMs - nowMs) / 60_000, pos });
+    }
+    if (!placedNow) out.push({ t: 0, pos: now });
+    for (const k of cache.keys()) if (k < k0 - 2 || k > k1 + 2) cache.delete(k);
+    return out;
+  }
 }
 
 /**

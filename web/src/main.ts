@@ -6,20 +6,22 @@ import '@fontsource/chakra-petch/500.css';
 import '@fontsource/chakra-petch/600.css';
 import type { SatRec } from 'satellite.js';
 import { subsolarPoint } from './astronomy';
+import { describeCadence, redrawInterval } from './cadence';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
-import { drawOverlay, formatAge, UI_FONT, type SatelliteOverlay } from './overlay';
+import { clearOverlaySprites, drawOverlay, formatAge, UI_FONT, type SatelliteOverlay } from './overlay';
+import { FrameStats, GpuTimer } from './perf';
 import { parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
   FEATURED,
   isSatelliteManifest,
-  orbitTrack,
   periodMinutes,
   positionAt,
   satrecFor,
   stateAt,
+  TrackCache,
   type Elements,
   type SatelliteManifest,
 } from './satellites';
@@ -39,14 +41,28 @@ const helpKeys = document.getElementById('help-keys') as HTMLElement;
 const toastEl = document.getElementById('toast') as HTMLElement;
 
 let settings: Settings = parseSettings(location.search);
-/** Wall-clock moment that `settings.time` corresponds to. */
-let clockStart = Date.now();
 let note: string | undefined;
 
-function simTime(): Date {
-  if (!settings.time && settings.speed === 1) return new Date();
+// Time is read on the frame's own vsync timestamp (performance.now's clock)
+// rather than Date.now(), so motion advances by an even amount every frame.
+let perfToWall = Date.now() - performance.now();
+
+/** Wall-clock ms at a performance.now() timestamp. */
+function wallAt(perfNow = performance.now()): number {
+  // The two clocks drift apart over long runs (sleep, NTP); re-sync if they do.
+  const drift = Date.now() - (performance.now() + perfToWall);
+  if (Math.abs(drift) > 50) perfToWall += drift;
+  return perfNow + perfToWall;
+}
+
+/** Wall-clock moment that `settings.time` corresponds to. */
+let clockStart = wallAt();
+
+function simTime(perfNow?: number): Date {
+  const wall = wallAt(perfNow);
+  if (!settings.time && settings.speed === 1) return new Date(wall);
   const origin = settings.time ? settings.time.getTime() : clockStart;
-  return new Date(origin + (Date.now() - clockStart) * settings.speed);
+  return new Date(origin + (wall - clockStart) * settings.speed);
 }
 
 /** Label suffix for a clock that isn't simply "now". */
@@ -140,8 +156,14 @@ function syncClouds() {
 
 // ---- satellites ---------------------------------------------------------------
 const SAT_POLL_MS = 30 * 60_000;
-/** Simulated time between Starlink propagations (one SGP4 pass in the worker). */
-const SAT_STEP_MS = 1000;
+/**
+ * Simulated time between Starlink SGP4 passes in the worker. In between, the
+ * renderer moves each point along its velocity to the exact frame time
+ * (error ~0.5·g·Δt²: ~0.4 km at 10 s, well under a pixel).
+ */
+const SAT_REFRESH_MS = 10_000;
+/** Cap on extrapolation: past this a straight line visibly leaves the orbit. */
+const SAT_MAX_EXTRAPOLATE_S = 60;
 const ORBIT_STEPS = 160;
 
 let satManifest: SatelliteManifest | undefined;
@@ -149,7 +171,10 @@ let satError: string | undefined;
 const featuredRecs = new Map<string, { rec: SatRec; elements: Elements }>();
 let bulkCount = 0;
 let workerBusy = false;
-let lastBulkTime = NaN;
+/** Simulated time of the last pass requested, and of the positions now on the GPU. */
+let requestedTime = NaN;
+let bulkTime = NaN;
+const tracks = new TrackCache();
 let satTimer: ReturnType<typeof setInterval> | undefined;
 
 const satWorker = new Worker(new URL('./satWorker.ts', import.meta.url), { type: 'module' });
@@ -158,9 +183,11 @@ satWorker.onmessage = (e: MessageEvent<WorkerResponse>) => {
   workerBusy = false;
   if (m.type === 'loaded') {
     bulkCount = m.valid;
-    lastBulkTime = NaN;
+    requestedTime = NaN;
+    bulkTime = NaN;
   } else {
-    renderer.setSatellites(m.positions as Float32Array<ArrayBuffer>);
+    renderer.setSatellites(m.positions as Float32Array<ArrayBuffer>, m.velocities as Float32Array<ArrayBuffer>);
+    bulkTime = m.time;
   }
   requestRedraw();
 };
@@ -178,6 +205,7 @@ async function loadSatellites() {
     if (satManifest?.generated !== m.generated) {
       satManifest = m;
       featuredRecs.clear();
+      tracks.clear();
       for (const f of FEATURED) {
         const el = m.featured[String(f.norad)];
         const rec = el ? satrecFor(el) : null;
@@ -214,8 +242,9 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
     const entry = featuredRecs.get(sat.key);
     const state = entry ? stateAt(entry.rec, date, sun) : null;
     if (!entry || !state) return [];
-    const half = periodMinutes(entry.elements) / 2;
-    return [{ sat, state, track: orbitTrack(entry.rec, date, half, half, ORBIT_STEPS) }];
+    const period = periodMinutes(entry.elements);
+    const track = tracks.track(sat.key, entry.rec, date, period / 2, period / 2, period / ORBIT_STEPS, state.pos);
+    return [{ sat, state, track }];
   });
   const fetched = formatAge(new Date(satManifest.generated), new Date());
   const bulk = settings.sats === 'all' && bulkCount ? `${bulkCount.toLocaleString()} Starlink · ` : '';
@@ -234,10 +263,19 @@ function radiusCss() {
   return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * 0.9 * settings.mag;
 }
 
-function frame() {
+// ---- frame-rate display ----------------------------------------------------------
+const stats = new FrameStats();
+const gpuTimer = new GpuTimer(renderer.gl);
+/** How the next redraw is scheduled, for the frame-rate display. */
+let renderMode = '';
+/** Current redraw interval, s (0 = every frame); sizes the display's averaging window. */
+let redrawEvery = 0;
+
+function frame(now: number) {
   raf = 0;
+  const t0 = performance.now();
   renderer.resize();
-  const date = simTime();
+  const date = simTime(now);
   void ensureDayTexture(date);
 
   if (renderer.cloudMix < 1) {
@@ -249,17 +287,24 @@ function frame() {
   const sunDir = fromLatLon(sun.lat, sun.lon);
 
   const showBulk = settings.sats === 'all' && bulkCount > 0;
-  if (showBulk && !workerBusy && !(Math.abs(date.getTime() - lastBulkTime) < SAT_STEP_MS)) {
+  const tMs = date.getTime();
+  if (showBulk && !workerBusy && !(Math.abs(tMs - requestedTime) < SAT_REFRESH_MS)) {
     workerBusy = true;
-    lastBulkTime = date.getTime();
-    post({ type: 'propagate', time: lastBulkTime });
+    requestedTime = tMs;
+    post({ type: 'propagate', time: tMs });
   }
+  const bulkDt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (tMs - bulkTime) / 1000));
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
   const radiusPx = radiusCss() * scale;
   const magShift =
     settings.stars === 'photo'
       ? photoMagShift(litScreenFraction(radiusPx, globeCanvas.width, globeCanvas.height, camera.dir, sunDir))
       : 0;
+  const satOverlay = satelliteOverlay(date, sunDir);
+  const t1 = performance.now();
+
+  const slot = stats.nextSlot;
+  if (settings.fps) gpuTimer.begin();
   renderer.render({
     camera,
     sun: sunDir,
@@ -268,15 +313,26 @@ function frame() {
     lights: settings.lights,
     grid: settings.grid,
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
-    satellites: showBulk,
+    satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt } : null,
     dpr: scale,
   });
+  if (settings.fps) gpuTimer.end(slot);
+  const t2 = performance.now();
+
   drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
     viewer: viewerLatLon(settings, date, resolveTrack),
-    satellites: satelliteOverlay(date, sunDir),
+    satellites: satOverlay,
+    perf: settings.fps
+      ? {
+          summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
+          intervals: stats.recentIntervals(120),
+          mode: renderMode,
+          gpuAvailable: gpuTimer.available,
+        }
+      : undefined,
     sun,
     markers: settings.markers,
     label: settings.label,
@@ -285,20 +341,29 @@ function frame() {
     clock: clockLabel(),
     note,
   });
+  const t3 = performance.now();
+
+  if (settings.fps) {
+    stats.record(now, { sim: t1 - t0, gl: t2 - t1, overlay: t3 - t2 });
+    gpuTimer.poll((s, ms) => stats.recordGpu(s, ms));
+  }
   schedule();
 }
 
 function schedule() {
   clearTimeout(timer);
   if (document.hidden) return;
-  const animating = renderer.cloudMix < 1 || dragging || (settings.speed !== 1 && settings.speed !== 0);
-  if (animating) {
-    raf ||= requestAnimationFrame(frame);
-  } else {
-    // Satellites cross ~4° of arc a minute, so keep them moving smoothly.
-    const wait = settings.sats === 'off' ? settings.wait : Math.min(settings.wait, 1);
-    timer = setTimeout(requestRedraw, wait * 1000);
-  }
+  const interval = redrawInterval({
+    animating: renderer.cloudMix < 1 || dragging,
+    leo: settings.sats !== 'off' || settings.view === 'orbit' || settings.view === 'track',
+    speed: settings.speed,
+    radiusPx: radiusCss(),
+    wait: settings.wait,
+  });
+  renderMode = describeCadence(interval);
+  redrawEvery = interval;
+  if (interval === 0) raf ||= requestAnimationFrame(frame);
+  else timer = setTimeout(requestRedraw, interval * 1000);
 }
 
 function requestRedraw() {
@@ -387,11 +452,11 @@ const hotkeyContext: HotkeyContext = {
   setSpeed(speed) {
     // Re-anchor so the displayed moment carries on from where it is.
     const now = simTime();
-    clockStart = Date.now();
+    clockStart = wallAt();
     update({ time: now, speed });
   },
   goLive() {
-    clockStart = Date.now();
+    clockStart = wallAt();
     update({ time: null, speed: 1 });
   },
   refreshClouds: () => {
@@ -428,7 +493,10 @@ helpKeys.innerHTML = helpRows()
 
 // Canvas text doesn't trigger web-font loading; ask for the HUD font, redraw once it's in.
 Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.fonts.load(f)))
-  .then(requestRedraw)
+  .then(() => {
+    clearOverlaySprites(); // labels drawn before the font arrived used the fallback face
+    requestRedraw();
+  })
   .catch(() => {});
 
 syncClouds();
