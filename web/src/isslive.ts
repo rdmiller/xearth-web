@@ -173,7 +173,6 @@ export function issFromTelemetry(v: IssValues, date: Date) {
 
 // ---- panel ---------------------------------------------------------------------------
 
-const fixed = (x: number | undefined, d: number) => (x === undefined ? '—' : x.toFixed(d));
 const label = (v: IssValues, k: IssKey) => v.get(k)?.calibrated.trim().toUpperCase() || '—';
 
 function age(ms: number): string {
@@ -183,43 +182,65 @@ function age(ms: number): string {
   return `${Math.round(s / 3600)} H`;
 }
 
-export interface IssPanel {
+/** The telemetry window's readings, in display units; undefined where the stream hasn't said. */
+export interface IssReadings {
   aos: boolean;
   /** "AOS" or "LOS · 21 H" */
   status: string;
-  rows: string[];
+  /** Station time, "21 OCT 01:02:50Z". */
+  gmt: string;
+  mode: string;
+  /** Attitude reference frame ("LVLH"). */
+  attitude: string;
+  maneuvering: boolean;
+  kuVideo: string;
+  /** From a current state vector: height, speed, and how far the TLE-propagated ISS sits from it. */
+  orbit?: { altKm: number; speed: number; deltaKm?: number };
+  /** Control moment gyroscopes' momentum, % of capacity. */
+  cmgPct?: number;
+  cabinPsi?: number;
+  cabinTempC?: number;
+  o2Psi?: number;
+  co2MmHg?: number;
+  /** Sun beta angle and the solar alpha rotary joints, degrees. */
+  betaDeg?: number;
+  sarjStarboardDeg?: number;
+  sarjPortDeg?: number;
+  massKg?: number;
+  laptops?: number;
 }
 
 /**
- * The telemetry panel: signal, then trajectory, attitude, cabin, power and
- * station rows. `orbit` is the telemetry-derived position, with how far the
- * TLE-propagated ISS sits from it (km), when there's a current state vector.
+ * The telemetry window's readings. `orbit` is the telemetry-derived position, with how far
+ * the TLE-propagated ISS sits from it (km), when there's a current state vector.
  */
-export function issPanel(v: IssValues, now: number, orbit?: { altKm: number; speed: number; deltaKm?: number }): IssPanel | undefined {
+export function issReadings(v: IssValues, now: number, orbit?: { altKm: number; speed: number; deltaKm?: number }): IssReadings | undefined {
   const sig = signal(v, now);
   if (!sig) return undefined;
   // The station's own clock, decoded (NASA's display form counts days from 0, so reads a day early).
   const gmt = new Date(v.get('gmt')!.t);
   const day = gmt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).toUpperCase();
-  const rows = [`GMT ${day} ${gmt.toISOString().slice(11, 19)}Z · MODE ${label(v, 'stationMode')}`];
-  if (orbit) {
-    const delta = orbit.deltaKm !== undefined ? ` · Δ TLE ${orbit.deltaKm.toFixed(1)} KM` : '';
-    rows.push(`ALT ${orbit.altKm.toFixed(1)} KM · ${orbit.speed.toFixed(2)} KM/S${delta}`);
-  }
-  const maneuver = v.get('maneuver')?.value === '1' ? ' · MANEUVERING' : '';
-  rows.push(`ATTITUDE ${label(v, 'attitudeFrame')} · CMG MOMENTUM ${fixed(num(v, 'cmg'), 0)} %${maneuver}`);
-  const cabin = num(v, 'cabinPressure');
-  const o2 = num(v, 'ppO2');
-  rows.push(
-    `CABIN ${fixed(cabin === undefined ? undefined : cabin / MMHG_PER_PSI, 2)} PSI · ${fixed(num(v, 'cabinTemp'), 1)} °C · ` +
-      `O2 ${fixed(o2 === undefined ? undefined : o2 / MMHG_PER_PSI, 2)} PSI · CO2 ${fixed(num(v, 'ppCO2'), 1)} MMHG`,
-  );
-  rows.push(`SUN β ${fixed(num(v, 'beta'), 1)}° · SOLAR ARRAYS ${fixed(num(v, 'sarjStarboard'), 0)}° / ${fixed(num(v, 'sarjPort'), 0)}°`);
-  const mass = num(v, 'mass');
-  rows.push(
-    `MASS ${mass === undefined ? '—' : Math.round(mass).toLocaleString('en-US')} KG · ${fixed(num(v, 'laptops'), 0)} LAPTOPS · KU VIDEO ${label(v, 'kuVideo')}`,
-  );
-  return { aos: sig.aos, status: sig.aos ? 'AOS' : `LOS · ${age(sig.ageMs)}`, rows };
+  const psi = (mmHg: number | undefined) => (mmHg === undefined ? undefined : mmHg / MMHG_PER_PSI);
+  return {
+    aos: sig.aos,
+    status: sig.aos ? 'AOS' : `LOS · ${age(sig.ageMs)}`,
+    gmt: `${day} ${gmt.toISOString().slice(11, 19)}Z`,
+    mode: label(v, 'stationMode'),
+    attitude: label(v, 'attitudeFrame'),
+    maneuvering: v.get('maneuver')?.value === '1',
+    kuVideo: label(v, 'kuVideo'),
+    orbit,
+    cmgPct: num(v, 'cmg'),
+    cabinPsi: psi(num(v, 'cabinPressure')),
+    cabinTempC: num(v, 'cabinTemp'),
+    o2Psi: psi(num(v, 'ppO2')),
+    co2MmHg: num(v, 'ppCO2'),
+    betaDeg: num(v, 'beta'),
+    sarjStarboardDeg: num(v, 'sarjStarboard'),
+    sarjPortDeg: num(v, 'sarjPort'),
+    massKg: num(v, 'mass'),
+    laptops: num(v, 'laptops'),
+  };
 }
 
 // ---- stream ----------------------------------------------------------------------------

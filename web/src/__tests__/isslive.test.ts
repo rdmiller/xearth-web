@@ -3,7 +3,7 @@ import {
   geodetic,
   gpsToUtc,
   issFromTelemetry,
-  issPanel,
+  issReadings,
   issTime,
   propagate,
   signal,
@@ -107,22 +107,43 @@ describe('ISS state vector', () => {
   });
 });
 
-describe('ISS panel', () => {
-  it('reads the snapshot in sensible units, with the signal age', () => {
-    const p = issPanel(values(), NOW)!;
-    expect(p.aos).toBe(false);
-    expect(p.status).toBe('LOS · 21 H');
-    expect(p.rows).toEqual([
-      'GMT 21 OCT 01:02:50Z · MODE EXTERNAL OPS',
-      'ATTITUDE LVLH · CMG MOMENTUM 9 %',
-      'CABIN 14.47 PSI · 23.4 °C · O2 3.21 PSI · CO2 2.4 MMHG',
-      'SUN β -15.6° · SOLAR ARRAYS 161° / 199°',
-      'MASS 485,727 KG · 7 LAPTOPS · KU VIDEO ACTIVE',
-    ]);
+describe('ISS readings', () => {
+  it('reads the snapshot in display units, with the signal age', () => {
+    const r = issReadings(values(), NOW)!;
+    expect(r).toMatchObject({
+      aos: false,
+      status: 'LOS · 21 H',
+      gmt: '21 OCT 01:02:50Z',
+      mode: 'EXTERNAL OPS',
+      attitude: 'LVLH',
+      maneuvering: false,
+      kuVideo: 'ACTIVE',
+      orbit: undefined,
+      laptops: 7,
+    });
+    // Cabin and partial pressures arrive in mmHg: shown in psi, CO2 left in mmHg.
+    expect(r.cabinPsi).toBeCloseTo(14.47, 2);
+    expect(r.o2Psi).toBeCloseTo(3.21, 2);
+    expect(r.co2MmHg).toBeCloseTo(2.44, 2);
+    expect(r.cabinTempC).toBeCloseTo(23.4, 1);
+    expect(r.cmgPct).toBeCloseTo(8.54, 2);
+    expect(r.betaDeg).toBeCloseTo(-15.63, 2);
+    expect(r.sarjStarboardDeg).toBeCloseTo(161.07, 2);
+    expect(r.sarjPortDeg).toBeCloseTo(198.94, 2);
+    expect(r.massKg).toBeCloseTo(485727, 0);
   });
 
-  it('adds the trajectory row when there is a current state vector', () => {
-    const p = issPanel(values(), NOW, { altKm: 418.24, speed: 7.6605, deltaKm: 0.93 })!;
-    expect(p.rows[1]).toBe('ALT 418.2 KM · 7.66 KM/S · Δ TLE 0.9 KM');
+  it('carries the trajectory when there is a current state vector', () => {
+    const orbit = { altKm: 418.24, speed: 7.6605, deltaKm: 0.93 };
+    expect(issReadings(values(), NOW, orbit)!.orbit).toEqual(orbit);
+  });
+
+  it('leaves out what the stream has not sent', () => {
+    const v = values();
+    v.delete('ppCO2');
+    v.delete('sarjPort');
+    const r = issReadings(v, NOW)!;
+    expect(r.co2MmHg).toBeUndefined();
+    expect(r.sarjPortDeg).toBeUndefined();
   });
 });

@@ -1,8 +1,7 @@
-// The frame-rate and ISS telemetry windows: once drawn on the overlay canvas, now toast
-// windows like the rest (toasts.ts). Both update every frame they're shown, so they only
-// touch the DOM when what they show has changed.
+// The frame-rate window: once drawn on the overlay canvas, now a toast window like the rest
+// (toasts.ts). It updates every frame it's shown, so it only touches the DOM when what it
+// shows has changed. (The ISS telemetry window is issView.ts.)
 
-import type { IssPanel } from './isslive';
 import type { PerfSummary } from './perf';
 import type { Toast } from './toasts';
 
@@ -105,33 +104,5 @@ export class PerfPanel {
       const top = y(ms);
       ctx.fillRect(w - (bars.length - i) * bw, top, Math.max(bw - 0.4, 0.6), SPARK_H - top);
     });
-  }
-}
-
-/** The ISS telemetry window: signal in the header chip, then a row per subsystem. */
-export class IssPanelView {
-  private readonly list: HTMLElement;
-  private shownRows = '';
-
-  constructor(private readonly toast: Toast) {
-    this.list = el('div', 'iss-rows');
-    toast.body.append(this.list);
-  }
-
-  update(p: IssPanel | undefined) {
-    this.toast.show(!!p);
-    if (!p) return;
-    // Green while the stream is live, amber with the age when it isn't.
-    this.toast.setStatus(`${p.aos ? '●' : '○'} ${p.status}`, p.aos ? 'ok' : 'warn');
-    const key = p.rows.join('\n');
-    if (key === this.shownRows) return;
-    this.shownRows = key;
-    this.list.replaceChildren(
-      ...p.rows.map((row) => {
-        const div = el('div', 'iss-row', row);
-        div.title = row; // the full row, when the window is too narrow for it
-        return div;
-      }),
-    );
   }
 }

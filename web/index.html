@@ -93,10 +93,50 @@
       #perf .perf-fps { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: rgba(230, 246, 255, 0.94); }
       #perf .perf-ms { font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); }
       #perf .perf-spark { position: static; display: block; width: 100%; height: 34px; margin: 4px 0 6px; }
-      #iss .iss-row {
-        font-size: 11px; line-height: 15px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      /* ISS telemetry (issView.ts): stat tiles with sparklines, meters, dials. Marks carry the
+         colour (cyan, or amber/red for a caution); text stays in the panel's inks. */
+      #iss .iss-content { display: grid; gap: 9px; transition: opacity 0.3s; }
+      #iss .iss-content.los { opacity: 0.55; }
+      #iss .iss-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #8fd8f0; white-space: nowrap; }
+      #iss .iss-label .greek { text-transform: none; }
+      #iss .iss-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+      #iss .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); }
+      #iss .iss-chips { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+      #iss .iss-chip {
+        flex: none; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        color: #dfe6ff; background: rgba(98, 230, 255, 0.1); border: 1px solid rgba(98, 230, 255, 0.22); white-space: nowrap;
       }
+      #iss .iss-chip[data-tone="warn"] { color: #ffc857; border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
+      #iss .iss-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      #iss .iss-tile { min-width: 0; }
+      #iss .iss-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+      #iss .iss-delta { font-size: 10px; color: rgba(175, 215, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #iss .iss-value { margin: 1px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: #f2f7ff; white-space: nowrap; }
+      #iss .iss-spark { display: block; width: 100%; height: 26px; overflow: visible; cursor: crosshair; touch-action: none; }
+      #iss .spark-line { fill: none; stroke: rgba(175, 215, 240, 0.55); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+      #iss .spark-dot { fill: #62e6ff; stroke: rgba(8, 12, 24, 0.92); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+      #iss .spark-cross { stroke: rgba(98, 230, 255, 0.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
+      #iss .iss-note { font-size: 10px; letter-spacing: 0.03em; color: rgba(175, 215, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #iss .iss-note:empty { display: none; }
+      #iss .iss-meters { display: grid; gap: 4px; }
+      #iss .iss-meter { --sev: #62e6ff; display: grid; grid-template-columns: 64px 1fr 66px; align-items: center; gap: 8px; }
+      #iss .iss-meter[data-sev="warn"] { --sev: #ffc857; }
+      #iss .iss-meter[data-sev="bad"] { --sev: #ff6b6b; }
+      #iss .meter-track { position: relative; height: 6px; border-radius: 3px; background: rgba(98, 230, 255, 0.1); overflow: hidden; }
+      /* The normal band: a lighter stretch of the same track. */
+      #iss .meter-band { position: absolute; top: 0; bottom: 0; background: rgba(98, 230, 255, 0.16); }
+      #iss .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--sev); transition: width 0.6s ease-out; }
+      #iss .iss-meter-value { font-size: 11px; font-variant-numeric: tabular-nums; color: #dfe6ff; text-align: right; white-space: nowrap; }
+      #iss .iss-meter[data-sev="warn"] .iss-meter-value::after, #iss .iss-meter[data-sev="bad"] .iss-meter-value::after { content: ' !'; color: var(--sev); font-weight: 600; }
+      #iss .iss-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      #iss .iss-dial { display: grid; justify-items: center; gap: 0; min-width: 0; }
+      #iss .iss-dial svg { display: block; }
+      #iss .dial-track { fill: none; stroke: rgba(98, 230, 255, 0.18); stroke-width: 3; }
+      #iss .dial-tick { stroke: rgba(98, 230, 255, 0.45); stroke-width: 1.2; }
+      #iss .dial-needle { transform-box: view-box; stroke: #62e6ff; stroke-width: 2; stroke-linecap: round; transition: transform 0.6s ease-out; }
+      #iss .dial-hub { fill: #62e6ff; }
+      #iss .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #f2f7ff; }
+      @media (prefers-reduced-motion: reduce) { #iss .meter-fill, #iss .dial-needle, #iss .iss-content { transition: none; } }
       /* Phones: the column spans the width and sits at the bottom, clear of the readout. */
       @media (max-width: 600px) {
         #toasts { left: 12px; width: auto; top: auto; max-height: 55vh; justify-content: flex-end; }

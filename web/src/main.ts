@@ -8,10 +8,11 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint, sunDirection } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
-import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issPanel } from './isslive';
+import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issReadings } from './isslive';
 import { FeedLog, type FeedState } from './feeds';
 import { FeedBoard, type FeedRow } from './feedBoard';
-import { IssPanelView, PerfPanel } from './hudPanels';
+import { PerfPanel } from './hudPanels';
+import { IssPanelView } from './issView';
 import { ToastManager } from './toasts';
 import {
   BULK_LEAVES,
@@ -966,7 +967,7 @@ function issPanelState(sun: Vec3) {
   const rec = featuredRecs.get('iss')?.rec;
   const sgp = live && rec ? positionAt(rec, now) : null;
   const deltaKm = live && sgp ? Math.hypot(live.pos[0] - sgp[0], live.pos[1] - sgp[1], live.pos[2] - sgp[2]) * EARTH_RADIUS_KM : undefined;
-  return issPanel(issLive.values, now.getTime(), live && { altKm: live.altKm, speed: live.speed, deltaKm });
+  return issReadings(issLive.values, now.getTime(), live && { altKm: live.altKm, speed: live.speed, deltaKm });
 }
 
 // ---- true-colour detail (NASA GIBS) --------------------------------------------------------

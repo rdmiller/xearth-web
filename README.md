@@ -47,7 +47,7 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Tsunami alerts:** bulletins from NOAA's two Tsunami Warning Centers at the earthquake's
     epicentre, and live NWS tsunami warnings, watches and advisories lit along US coasts.
 - **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
-  panel while the ISS is tracked: signal, trajectory, attitude, cabin air, solar arrays. While
+  window of gauges while the ISS is tracked: signal, orbit sparklines, cabin-air meters, solar-array dials. While
   the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
@@ -646,7 +646,15 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     and the panel shows how far SGP4 is from it. Otherwise SGP4 places the ISS as before.
   - *Signal:* the stream only moves while the ISS has a TDRS link. Out of signal, or when the
     feed itself stalls, the server keeps serving the last values, so the panel shows LOS
-    and how old they are. On 2026-10-21 the newest values were from 01:02Z, ~21 h earlier.
+    and how old they are, and dims its instruments. On 2026-10-21 the newest values were from
+    01:02Z, ~21 h earlier.
+  - *Window:* instruments rather than rows of text. Two stat tiles show altitude and speed
+    with their change and a 15-minute sparkline; hover a sparkline to read off any point.
+    Below them is how far the TLE prediction sits from the telemetry. Meters show cabin
+    pressure, temperature, O₂, CO₂ and gyroscope (CMG) momentum, each marking its normal
+    band and turning amber or red outside it. The bands are approximate, from NASA's
+    published cabin norms, not flight rules. Dials show the Sun's β angle and the two solar
+    array joints. Chips show the station mode, attitude frame, any maneuver, and Ku-band video.
 - Tsunami, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
