@@ -31,6 +31,8 @@ export interface Settings extends ViewSettings {
   label: boolean;
   /** Frame-rate display. */
   fps: boolean;
+  /** Data-feeds dashboard: each source's last update and next check. */
+  feeds: boolean;
   /** Sun and Moon in the sky. */
   bodies: boolean;
   /** Launch mode: pads, countdowns, ascents. */
@@ -123,6 +125,7 @@ export function defaults(): Settings {
     satlabels: [...DEFAULT_LABELS],
     label: true,
     fps: false,
+    feeds: false,
     bodies: true,
     launches: true,
     aurora: true,
@@ -226,6 +229,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     satlabels: keyList(q, 'satlabels', base.satlabels),
     label: bool(q, 'label', base.label),
     fps: bool(q, 'fps', base.fps),
+    feeds: bool(q, 'feeds', base.feeds),
     bodies: bool(q, 'bodies', base.bodies),
     launches: bool(q, 'launches', base.launches),
     aurora: bool(q, 'aurora', base.aurora),

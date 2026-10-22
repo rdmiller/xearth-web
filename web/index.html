@@ -196,6 +196,79 @@
         #drawer .dock { transform: none; }
         #drawer .dock-btn { transition: color 120ms, border-color 120ms; }
       }
+      /* Feeds dashboard: a column of toast cards on the right, one per data source on screen.
+         The ring drains to the next check; the bar fills (green → amber → red) as the data ages. */
+      #feeds {
+        position: fixed; right: 12px; top: 50%; z-index: 3; transform: translateY(-50%); width: 272px;
+        max-height: calc(100vh - var(--dock-full, 0px) - 140px); overflow: auto; box-sizing: border-box;
+        display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin;
+      }
+      #feeds[hidden] { display: none; }
+      #feeds header {
+        display: flex; align-items: center; justify-content: space-between; padding: 3px 4px 3px 10px; border-radius: 6px;
+        background: rgba(8, 12, 24, 0.85); border: 1px solid rgba(98, 230, 255, 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
+      }
+      #feeds h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #62e6ff; }
+      #feeds .close { padding: 2px 6px; font: 600 15px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #feeds .close:hover { color: #fff; }
+      #feeds .close:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      #feeds ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      #feeds.empty ul::before { content: 'No data layers on'; padding: 8px 10px; font-size: 12px; color: rgba(175, 215, 240, 0.7);
+        border-radius: 6px; background: rgba(8, 12, 24, 0.85); border: 1px solid rgba(98, 230, 255, 0.2); }
+      #feeds .feed {
+        --fresh: rgba(175, 215, 240, 0.35);
+        display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 7px; border-radius: 6px;
+        background: rgba(8, 12, 24, 0.94); border: 1px solid rgba(98, 230, 255, 0.28);
+        box-shadow: inset 2px 0 0 var(--fresh), 0 0 18px rgba(0, 200, 255, 0.08);
+      }
+      #feeds .feed[data-fresh="fresh"] { --fresh: #6fdc8c; }
+      #feeds .feed[data-fresh="late"] { --fresh: #ffc857; }
+      #feeds .feed[data-fresh="stale"] { --fresh: #ff4d4d; }
+      #feeds .feed.error { border-color: rgba(255, 77, 77, 0.55); }
+      #feeds .feed.in { animation: feed-in 0.22s ease-out; }
+      #feeds .feed.out { animation: feed-out 0.2s ease-in forwards; }
+      #feeds .feed.pulse { animation: feed-pulse 1.4s ease-out; }
+      @keyframes feed-in { from { opacity: 0; transform: translateX(16px); } }
+      @keyframes feed-out { to { opacity: 0; transform: translateX(16px); } }
+      @keyframes feed-pulse { from { border-color: #62e6ff; box-shadow: inset 2px 0 0 var(--fresh), 0 0 22px rgba(98, 230, 255, 0.55); } }
+      #feeds .ring { position: relative; flex: none; width: 36px; height: 36px; }
+      #feeds .ring svg { display: block; transform: rotate(-90deg); }
+      #feeds .ring circle { fill: none; stroke-width: 3; }
+      #feeds .ring .track { stroke: rgba(98, 230, 255, 0.14); }
+      #feeds .ring .arc { stroke: #62e6ff; stroke-linecap: round; transition: stroke-dashoffset 0.9s linear; filter: drop-shadow(0 0 3px rgba(98, 230, 255, 0.5)); }
+      #feeds .feed.error .ring .arc { stroke: #ff4d4d; filter: none; }
+      #feeds .feed.busy .ring svg { animation: feed-spin 1s linear infinite; }
+      #feeds .feed.busy .ring .arc { stroke-dashoffset: 70 !important; transition: none; }
+      #feeds .feed.live .ring .arc { animation: feed-live 2s ease-in-out infinite; }
+      @keyframes feed-spin { to { transform: rotate(270deg); } }
+      @keyframes feed-live { 50% { opacity: 0.35; } }
+      #feeds .ring-text {
+        position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 600;
+        letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: #dfe6ff;
+      }
+      #feeds .feed.live .ring-text { font-size: 8px; letter-spacing: 0.08em; color: #62e6ff; }
+      #feeds .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+      #feeds .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+      #feeds .name { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #f2f7ff; white-space: nowrap; }
+      #feeds .src { font-size: 10px; letter-spacing: 0.04em; color: rgba(143, 216, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .age { display: flex; align-items: center; gap: 7px; }
+      #feeds .bar { position: relative; flex: none; width: 52px; height: 4px; border-radius: 2px; background: rgba(175, 215, 240, 0.14); overflow: hidden; }
+      #feeds .fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--fresh); transition: width 0.9s linear; }
+      /* The usual age: past this mark the data is late. */
+      #feeds .tick { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(4, 10, 20, 0.9); }
+      #feeds .age-text { font-size: 11px; font-variant-numeric: tabular-nums; color: #dfe6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .next { font-size: 11px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .feed.error .next { color: #ff9a9a; }
+      #feeds footer { padding: 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); text-align: right; }
+      #feeds kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
+      /* Phones: a strip above the dock instead of a column down the side. */
+      @media (max-width: 600px) {
+        #feeds { left: 12px; right: 12px; top: auto; bottom: calc(var(--dock-full, 0px) + 12px); transform: none; width: auto; max-height: 45vh; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #feeds .feed.in, #feeds .feed.out, #feeds .feed.pulse, #feeds .feed.busy .ring svg, #feeds .feed.live .ring .arc { animation: none; }
+        #feeds .ring .arc, #feeds .fill { transition: none; }
+      }
       /* Place search: the same HUD glass, near the top centre. */
       #search {
         position: fixed; left: 50%; top: max(14px, 11vh); z-index: 4; transform: translateX(-50%);
@@ -240,6 +313,11 @@
       <ul role="tree" aria-label="Satellite categories"></ul>
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
     </aside>
+    <aside id="feeds" aria-label="Data feeds" hidden>
+      <header><h2>Data feeds</h2><button class="close" type="button" aria-label="Close">×</button></header>
+      <ul aria-label="Data sources"></ul>
+      <footer>bar: data age · ring: next check · <kbd>Shift+U</kbd></footer>
+    </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <aside id="help" hidden>
       <h2>xearth web</h2>
@@ -277,6 +355,7 @@
         <tr><td><code>launches</code></td><td><code>0</code> hides launch mode (key <kbd>U</kbd>)</td></tr>
         <tr><td><code>bodies</code>, <code>bodyscale</code></td><td>Sun and Moon on/off; enlarge their discs (1 = true size)</td></tr>
         <tr><td><code>fps</code></td><td><code>1</code> shows the frame-rate display (key <kbd>D</kbd>)</td></tr>
+        <tr><td><code>feeds</code></td><td><code>1</code> shows the data-feeds dashboard: each source's last update and next check (key <kbd>Shift+U</kbd>)</td></tr>
         <tr><td><code>cloudsrc</code>, <code>satsrc</code></td><td>folders holding each <code>latest.json</code></td></tr>
       </table>
     </aside>

@@ -156,7 +156,7 @@ Imagery in the dock) turns it off.
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
 snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora), Hazards (cyclones,
 fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a small button for
-the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate).
+the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
 - **No panel:** the buttons rise in as the mouse comes within ~160 px of the bottom of the
   window (fully shown within 90 px) and sink away when it leaves. The nearest ones grow a
@@ -203,6 +203,7 @@ style. A test checks that every layer hotkey has a button.
 | `R` `F` `H` | check for new clouds, fullscreen, help |
 | `D` | frame-rate display |
 | `Shift+D` | pin the layer buttons |
+| `Shift+U` | data-feeds dashboard |
 
 The table lives in `web/src/hotkeys.ts` and also generates the in-app help, so they can't
 drift apart.
@@ -395,6 +396,7 @@ docker compose down                 # stop (the data volume is kept)
 | `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
 | `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
 | `fps` | `1` shows the frame-rate display | 0 |
+| `feeds` | `1` shows the data-feeds dashboard | 0 |
 | `bodies`, `bodyscale` | Sun and Moon on/off; disc enlargement (1 = true size, up to 30) | 1, 1 |
 | `cloudsrc`, `satsrc` | folders holding each `latest.json` (e.g. an R2/S3 bucket) | `clouds/`, `satellites/` |
 
@@ -648,6 +650,27 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 - Tsunami, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
+
+## Data feeds
+
+Press **Shift+U** (or add `?feeds=1`, or use the Feeds button in the dock) for a column of
+toast cards down the right edge, one per data source on screen. Each card shows two things,
+on two clocks kept apart on purpose:
+
+- **Last update, as a bar:** when the data itself was published (the pipeline's run, the
+  cloud scan, the radar frame, USGS's feed, the OVATION observation, the Sun image's
+  `Last-Modified`), its age, and a bar that fills as it ages. The bar's midpoint is the
+  source's usual age (90 min for hourly pipeline layers, 2 h for clouds, 20 min for radar and
+  aurora, 10 min for quakes, 4 h for satellite elements). The bar is green up to that point,
+  amber up to twice it, and red beyond.
+- **Next update, as a ring:** a ring that drains to the app's next check, with the time
+  left inside it and "checked 3 min ago · next in 6:12" beside it. It spins during a check
+  and turns red, with the error in its tooltip, when the last check failed. ISS telemetry is
+  a stream, not a poll, so its ring reads LIVE.
+
+Cards slide in and out as layers are switched on and off, and flash when new data arrives.
+The Sun-image card appears once the Sun has been in frame (that's the only time it's fetched).
+The dashboard ticks once a second while open, and not at all while closed or hidden.
 
 ## Frame rate
 

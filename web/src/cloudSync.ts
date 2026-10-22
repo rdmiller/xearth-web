@@ -31,6 +31,8 @@ export class CloudSync<Img> {
   private current: CloudManifest | undefined;
   private inFlight: Promise<boolean> | undefined;
   status: CloudStatus = { state: 'idle' };
+  /** Wall-clock ms the next scheduled check is due; undefined while stopped. */
+  nextCheckAt: number | undefined;
 
   constructor(
     /** URL of the directory holding latest.json (absolute). */
@@ -38,7 +40,7 @@ export class CloudSync<Img> {
     private readonly deps: CloudSyncDeps<Img>,
     private readonly onImage: (image: Img, manifest: CloudManifest) => void,
     private readonly onStatus: (status: CloudStatus) => void = () => {},
-    private readonly intervalMs = 10 * 60_000,
+    readonly intervalMs = 10 * 60_000,
   ) {}
 
   get manifestUrl() {
@@ -50,6 +52,7 @@ export class CloudSync<Img> {
     const tick = async () => {
       await this.check();
       this.timer = setTimeout(tick, this.intervalMs);
+      this.nextCheckAt = Date.now() + this.intervalMs;
     };
     void tick();
   }
@@ -57,6 +60,7 @@ export class CloudSync<Img> {
   stop() {
     clearTimeout(this.timer);
     this.timer = undefined;
+    this.nextCheckAt = undefined;
   }
 
   /** Check once; resolves true if a new map was delivered. Concurrent calls share one check. */

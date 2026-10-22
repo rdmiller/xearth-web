@@ -92,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'truecolor' | 'relief';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'truecolor' | 'relief';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -437,15 +437,17 @@ export const HOTKEYS: readonly Hotkey[] = [
   { keys: ['shift+d'], label: 'Shift+D', description: 'Pin the layer buttons', group: 'App', run: (ctx) => ctx.toggleDrawer() },
   { keys: ['f'], label: 'F', description: 'Fullscreen', group: 'App', run: (ctx) => ctx.toggleFullscreen() },
   { ...layer('d', 'fps', 'Frame-rate display'), group: 'App' },
+  { ...layer('shift+u', 'feeds', 'Data feeds: last update and next check'), group: 'App' },
   { keys: ['h', '?'], label: 'H', description: 'This help', group: 'App', run: (ctx) => ctx.toggleHelp() },
   {
     keys: ['escape'],
     label: 'Esc',
-    description: 'Close help and the satellite panel',
+    description: 'Close help, the satellite panel and the feeds dashboard',
     group: 'App',
     run: (ctx) => {
       ctx.toggleHelp(false);
       ctx.toggleSatTree(false);
+      if (ctx.settings.feeds) ctx.update({ feeds: false });
     },
   },
 ];

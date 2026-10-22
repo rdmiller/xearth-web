@@ -8,7 +8,9 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint, sunDirection } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
-import { IssLive, issFromTelemetry, issPanel } from './isslive';
+import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issPanel } from './isslive';
+import { FeedLog, type FeedState } from './feeds';
+import { FeedBoard, type FeedRow } from './feedBoard';
 import {
   BULK_LEAVES,
   bulkCatalog,
@@ -173,6 +175,8 @@ const toastEl = document.getElementById('toast') as HTMLElement;
 
 let settings: Settings = parseSettings(location.search);
 let note: string | undefined;
+/** Every polled source's checks, for the feeds dashboard (Shift+U). */
+const feedLog = new FeedLog();
 
 // Time is read on the frame's own vsync timestamp (performance.now's clock)
 // rather than Date.now(), so motion advances by an even amount every frame.
@@ -345,6 +349,7 @@ const clouds = new CloudSync<ImageBitmap>(
   new URL(settings.cloudsrc, location.href).href,
   {
     fetchJson: async (url) => {
+      feedLog.begin('clouds', Date.now());
       const r = await fetch(url, { cache: 'no-cache' });
       if (!r.ok) throw new Error(`${r.status} ${url}`);
       return r.json();
@@ -358,6 +363,8 @@ const clouds = new CloudSync<ImageBitmap>(
   },
   (status) => {
     cloudStatus = status;
+    if (status.state === 'ok') feedLog.done('clouds', Date.now(), status.manifest.t);
+    else if (status.state === 'error') feedLog.fail('clouds', Date.now(), status.message);
     requestRedraw();
   },
 );
@@ -413,6 +420,7 @@ satWorker.onmessage = (e: MessageEvent<WorkerResponse>) => {
 const post = (msg: WorkerRequest) => satWorker.postMessage(msg);
 
 async function loadSatellites() {
+  feedLog.begin('satellites', Date.now(), SAT_POLL_MS);
   try {
     const url = new URL('latest.json', new URL(settings.satsrc, location.href)).href;
     const r = await fetch(url, { cache: 'no-cache' });
@@ -442,8 +450,10 @@ async function loadSatellites() {
       post({ type: 'load', elements: catalog.elements, category: catalog.category });
       satTree.refresh(settings, treeCounts());
     }
+    feedLog.done('satellites', Date.now(), m.generated);
   } catch (err) {
     satError = err instanceof Error ? err.message : String(err);
+    feedLog.fail('satellites', Date.now(), err);
     console.warn('satellites:', err);
   }
   requestRedraw();
@@ -452,7 +462,7 @@ async function loadSatellites() {
 function syncSatellites() {
   clearInterval(satTimer);
   satTimer = undefined;
-  if (settings.sats === 'off') return;
+  if (settings.sats === 'off') return feedLog.stop('satellites');
   void loadSatellites();
   satTimer = setInterval(loadSatellites, SAT_POLL_MS);
 }
@@ -470,6 +480,7 @@ let lastLiveCheck = 0;
 let launchFlags = { countdown: false, flying: false };
 
 async function loadLaunches() {
+  feedLog.begin('launches', Date.now(), LAUNCH_POLL_MS);
   try {
     const url = new URL('latest.json', new URL(settings.launchsrc, location.href)).href;
     const r = await fetch(url, { cache: 'no-cache' });
@@ -477,7 +488,9 @@ async function loadLaunches() {
     const m: unknown = await r.json();
     if (!isLaunchManifest(m)) throw new Error('launches/latest.json is not a launch manifest');
     launchManifest = m;
+    feedLog.done('launches', Date.now(), m.generated);
   } catch (err) {
+    feedLog.fail('launches', Date.now(), err);
     console.warn('launches:', err);
   }
   requestRedraw();
@@ -515,7 +528,7 @@ setInterval(() => void refreshLiveLaunch(), 60_000);
 function syncLaunches() {
   clearInterval(launchTimer);
   launchTimer = undefined;
-  if (!settings.launches) return;
+  if (!settings.launches) return feedLog.stop('launches');
   void loadLaunches();
   launchTimer = setInterval(() => void loadLaunches(), LAUNCH_POLL_MS);
 }
@@ -585,6 +598,8 @@ let stormManifest: StormManifest | undefined;
 let firePoints: FirePoints | undefined;
 let fireManifest: FireManifest | undefined;
 let quakes: Quake[] = [];
+/** When USGS generated the feed now shown, ms. */
+let quakesAt: number | undefined;
 let lightningManifest: LightningManifest | undefined;
 let eventManifest: EventManifest | undefined;
 let snowIce: SnowIceManifest | undefined;
@@ -609,6 +624,7 @@ let sunImageLoading = false;
 async function loadSunImage() {
   if (sunImageLoading || Date.now() - sunImageAt < SUN_IMAGE_EVERY_MS) return;
   sunImageLoading = true;
+  feedLog.begin('sun', Date.now(), SUN_IMAGE_EVERY_MS);
   try {
     const r = await fetch(SUVI_URL, { cache: 'no-cache' });
     if (!r.ok) throw new Error(`${r.status} ${SUVI_URL}`);
@@ -616,10 +632,13 @@ async function loadSunImage() {
     renderer.setSun(await createImageBitmap(await r.blob()), SUVI_LIMB);
     sunImageTime = modified ? new Date(modified).toISOString().slice(11, 16) : undefined;
     sunImageAt = Date.now();
+    feedLog.done('sun', sunImageAt, modified);
     requestRedraw();
   } catch (err) {
     console.warn('sun image:', err);
     sunImageAt = Date.now() - SUN_IMAGE_EVERY_MS + 60_000; // retry in a minute
+    feedLog.fail('sun', Date.now(), err);
+    feedLog.next('sun', sunImageAt + SUN_IMAGE_EVERY_MS);
   } finally {
     sunImageLoading = false;
   }
@@ -635,7 +654,8 @@ const pipelineFile = (src: string) => new URL('latest.json', new URL(src, locati
 
 type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
 
-const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }> = {
+/** `dataAt`: when the data now held was published, for the feeds dashboard. */
+const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; dataAt: () => string | number | undefined }> = {
   aurora: {
     everyMs: 10 * 60_000,
     load: async () => {
@@ -646,6 +666,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       // Space weather drives the aurora, so it refreshes with it.
       spaceWeather = await fetchSpaceWeather(fetchJson);
     },
+    dataAt: () => aurora?.observed,
   },
   storms: {
     everyMs: 15 * 60_000,
@@ -655,6 +676,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       stormManifest = m;
       stormCache = undefined;
     },
+    dataAt: () => stormManifest?.generated,
   },
   fires: {
     everyMs: 30 * 60_000,
@@ -665,6 +687,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       firePoints = decodeFires(m);
       renderer.setFires(firePoints);
     },
+    dataAt: () => fireManifest?.generated,
   },
   quakes: {
     everyMs: 5 * 60_000,
@@ -672,7 +695,9 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       const f = await fetchJson(USGS_QUAKES_URL);
       if (!isQuakeFeed(f)) throw new Error('not a USGS earthquake feed');
       quakes = decodeQuakes(f);
+      quakesAt = (f as { metadata?: { generated?: number } }).metadata?.generated;
     },
+    dataAt: () => quakesAt,
   },
   lightning: {
     everyMs: 15 * 60_000,
@@ -682,6 +707,8 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       lightningManifest = m;
       renderer.setLightning(decodeLightning(m));
     },
+    // The newest flash in the window, which trails the pipeline's run by its processing time.
+    dataAt: () => lightningManifest?.latest ?? lightningManifest?.generated,
   },
   events: {
     everyMs: 30 * 60_000,
@@ -691,6 +718,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       eventManifest = m;
       eventCache = undefined;
     },
+    dataAt: () => eventManifest?.generated,
   },
   snow: {
     everyMs: 60 * 60_000,
@@ -705,6 +733,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       renderer.setSnowIce(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
       snowIce = m;
     },
+    dataAt: () => snowIce?.generated,
   },
   smoke: {
     everyMs: 30 * 60_000,
@@ -718,6 +747,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       renderer.setSmoke(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
       smoke = m;
     },
+    dataAt: () => smoke?.generated,
   },
   // Live US alerts from NWS every 2 min (CORS-enabled); the centers' bulletins from the
   // pipeline alongside. During an alert, a sample of its coastal zones is fetched once each.
@@ -739,6 +769,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       }
       tsunamiCache = undefined;
     },
+    dataAt: () => tsunamiManifest?.generated,
   },
   // RainViewer publishes a frame every 10 min. Its tiles are fetched only for a new
   // frame (or a finer zoom), never while the tab is hidden: the free API asks for caching.
@@ -761,22 +792,32 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
       radarFrame = frame;
       radarZoomShown = zoom;
     },
+    dataAt: () => radarFrame && radarFrame.time * 1000,
   },
 };
 
 const hazardTimers: Partial<Record<HazardKey, ReturnType<typeof setInterval>>> = {};
 
+/** Load a layer once. `everyMs`: this is its scheduled check, and the next is due that long after. */
+function runHazard(key: HazardKey, everyMs?: number): Promise<void> {
+  feedLog.begin(key, Date.now(), everyMs);
+  return HAZARDS[key]
+    .load()
+    .then(() => feedLog.done(key, Date.now(), HAZARDS[key].dataAt()))
+    .catch((err) => {
+      feedLog.fail(key, Date.now(), err);
+      console.warn(`${key}:`, err);
+    })
+    .finally(requestRedraw);
+}
+
 function syncHazard(key: HazardKey) {
   clearInterval(hazardTimers[key]);
   delete hazardTimers[key];
-  if (!settings[key]) return;
-  const run = () =>
-    HAZARDS[key]
-      .load()
-      .catch((err) => console.warn(`${key}:`, err))
-      .finally(requestRedraw);
-  void run();
-  hazardTimers[key] = setInterval(run, HAZARDS[key].everyMs);
+  if (!settings[key]) return feedLog.stop(key);
+  const { everyMs } = HAZARDS[key];
+  void runHazard(key, everyMs);
+  hazardTimers[key] = setInterval(() => void runHazard(key, everyMs), everyMs);
 }
 
 /** Storm drawing is fixed per manifest, so it's built once per load. */
@@ -1089,6 +1130,52 @@ const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
   },
 });
 satTree.opener = drawer.satTreeButton;
+
+// ---- feeds dashboard -----------------------------------------------------------------
+// A card for each source on screen: how old its data is, and when the app checks again.
+
+const MIN = 60_000;
+/** Pipeline layers are rebuilt every hour at :50, then deployed within minutes. */
+const PIPELINE_FRESH = 90 * MIN;
+
+/** Each source's card, in the dock's order. `freshMs`: how old its newest data normally gets. */
+const FEEDS: { key: string; label: string; source: string; freshMs: number; on: () => boolean; everyMs?: number }[] = [
+  // Scans land in NOAA's bucket 35–45 min after the hour and the pipeline runs at :50.
+  { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
+  { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
+  { key: 'radar', label: 'Radar', source: 'RainViewer', freshMs: 20 * MIN, on: () => settings.radar },
+  { key: 'smoke', label: 'Smoke', source: 'NOAA HMS', freshMs: PIPELINE_FRESH, on: () => settings.smoke },
+  { key: 'sun', label: 'Sun image', source: 'GOES SUVI', freshMs: 30 * MIN, on: () => settings.bodies && feedLog.get('sun').startedAt !== undefined, everyMs: SUN_IMAGE_EVERY_MS },
+  { key: 'aurora', label: 'Aurora', source: 'NOAA SWPC', freshMs: 20 * MIN, on: () => settings.aurora },
+  { key: 'storms', label: 'Cyclones', source: 'GDACS · NHC', freshMs: PIPELINE_FRESH, on: () => settings.storms },
+  { key: 'fires', label: 'Fires', source: 'NASA FIRMS', freshMs: PIPELINE_FRESH, on: () => settings.fires },
+  { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
+  { key: 'lightning', label: 'Lightning', source: 'GOES GLM', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
+  { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
+  { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
+  // CelesTrak updates elements every 2 h; the pipeline refetches them at most every 3 h.
+  { key: 'satellites', label: 'Satellites', source: 'CelesTrak', freshMs: 4 * 60 * MIN, on: () => settings.sats !== 'off', everyMs: SAT_POLL_MS },
+  { key: 'launches', label: 'Launches', source: 'Launch Library 2', freshMs: PIPELINE_FRESH, on: () => settings.launches, everyMs: LAUNCH_POLL_MS },
+];
+
+function feedRows(): FeedRow[] {
+  const rows: FeedRow[] = FEEDS.filter((f) => f.on()).map((f) => {
+    const hazard = HAZARDS[f.key as HazardKey];
+    const state: FeedState = f.key === 'clouds' ? { ...feedLog.get('clouds'), nextAt: clouds.nextCheckAt } : feedLog.get(f.key);
+    // The Sun image is only fetched while the Sun is in frame.
+    const note = f.key === 'sun' ? 'when in view' : undefined;
+    return { key: f.key, label: f.label, source: f.source, freshMs: f.freshMs, everyMs: f.everyMs ?? hazard?.everyMs, state, note };
+  });
+  // A stream, not a poll: its age is that of the newest value received.
+  if (issLiveWanted()) {
+    let newest: number | undefined;
+    for (const v of issLive.values.values()) newest = Math.max(newest ?? v.t, v.t);
+    rows.push({ key: 'iss', label: 'ISS telemetry', source: 'NASA ISSLive', freshMs: AOS_MAX_AGE_MS, live: true, state: { busy: false, dataAt: newest } });
+  }
+  return rows;
+}
+
+const feedBoard = new FeedBoard(document.getElementById('feeds') as HTMLElement, feedRows, () => update({ feeds: false }));
 
 // ---- going to a place ------------------------------------------------------------------
 // From the search box or a double-click: glide along the great circle to it (a fixed
@@ -1495,12 +1582,13 @@ function update(patch: Partial<Settings>) {
   syncIssLive();
   satTree.refresh(settings, treeCounts());
   drawer.refresh(settings);
+  feedBoard.show(settings.feeds);
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
   // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
   if (settings.radar && radarZoom(settings.mag) !== radarZoom(magBefore)) {
     clearTimeout(radarZoomTimer);
-    radarZoomTimer = setTimeout(() => void HAZARDS.radar.load().catch((err) => console.warn('radar:', err)).finally(requestRedraw), 800);
+    radarZoomTimer = setTimeout(() => void runHazard('radar'), 800);
   }
   if ((settings.sats === 'off') !== (satsBefore === 'off')) syncSatellites();
   clearTimeout(urlTimer);
@@ -1691,4 +1779,5 @@ radarCredit.hidden = !settings.radar;
 syncIssLive();
 satTree.refresh(settings, treeCounts());
 drawer.refresh(settings);
+feedBoard.show(settings.feeds);
 requestRedraw();

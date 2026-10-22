@@ -32,6 +32,7 @@ import {
   Snowflake,
   Sparkles,
   SunMoon,
+  Timer,
   Tornado,
   TriangleAlert,
   Waves,
@@ -117,6 +118,7 @@ export const DRAWER: DrawerGroup[] = [
       { key: 'm', label: 'Cities', icon: MapPin, state: flag('markers') },
       { key: 'l', label: 'Readout', icon: AlignLeft, state: flag('label') },
       { key: 'd', label: 'FPS', icon: Gauge, state: flag('fps') },
+      { key: 'shift+u', label: 'Feeds', icon: Timer, state: flag('feeds') },
     ],
   },
 ];
