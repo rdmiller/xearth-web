@@ -83,7 +83,22 @@
       }
       .toast-close:hover { color: #fff; background: rgba(98, 230, 255, 0.1); }
       .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
-      .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; scrollbar-width: thin; }
+      .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; }
+      /* A window's scroll bar, when it has one: a slim cyan rail on no track, inset from the
+         rounded corners, widening and brightening under the pointer. (Chromium and Safari draw
+         these; the transparent border is what makes the thumb thinner than its gutter.) */
+      .toast-body::-webkit-scrollbar { width: 9px; }
+      .toast-body::-webkit-scrollbar-track { background: transparent; margin: 2px 0 8px; }
+      .toast-body::-webkit-scrollbar-thumb {
+        border: 3px solid transparent; border-radius: 5px; background: rgba(98, 230, 255, 0.3) padding-box;
+      }
+      .toast-body::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgba(98, 230, 255, 0.6); }
+      .toast-body::-webkit-scrollbar-thumb:active { background-color: #62e6ff; }
+      .toast-body::-webkit-scrollbar-button, .toast-body::-webkit-scrollbar-corner { display: none; background: transparent; }
+      /* Firefox styles only colour and width: the same rail, as near as it gets. */
+      @supports not selector(::-webkit-scrollbar) {
+        .toast-body { scrollbar-width: thin; scrollbar-color: rgba(98, 230, 255, 0.35) transparent; }
+      }
       .toast-window.folded .toast-body { display: none; }
       /* Label: value rows, as in the frame-rate window. */
       .hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
