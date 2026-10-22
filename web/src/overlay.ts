@@ -1080,10 +1080,42 @@ const BODY_COLOR = { sun: '#ffd27a', moon: '#d8dde6' };
 const EDGE_INSET = 26;
 
 /**
+ * Slide an edge marker along its screen edge until `box` (its chevron and label at a
+ * point) is clear of `reserved` — the readout, the panels, the dock. A marker on a
+ * side edge moves up or down, one on the top or bottom edge left or right, to the
+ * nearer clear side of whatever it hit. If there's no clear spot it stays put.
+ */
+export function slideClear(
+  p: { x: number; y: number },
+  box: (x: number, y: number) => Rect,
+  reserved: Rect[],
+  w: number,
+  h: number,
+  inset: number,
+): { x: number; y: number } {
+  let { x, y } = p;
+  const sideEdge = x <= inset + 0.5 || x >= w - inset - 0.5;
+  for (let i = 0; i < 6; i++) {
+    const b = box(x, y);
+    const hit = reserved.find((r) => overlaps(b, r));
+    if (!hit) return { x, y };
+    const options = sideEdge
+      ? [hit.y - PAD - (b.y + b.h - y), hit.y + hit.h + PAD + (y - b.y)].filter((v) => v >= inset && v <= h - inset)
+      : [hit.x - PAD - (b.x + b.w - x), hit.x + hit.w + PAD + (x - b.x)].filter((v) => v >= inset && v <= w - inset);
+    if (!options.length) break;
+    const here = sideEdge ? y : x;
+    const next = options.reduce((a, v) => (Math.abs(v - here) < Math.abs(a - here) ? v : a));
+    if (sideEdge) y = next;
+    else x = next;
+  }
+  return p;
+}
+
+/**
  * A label beside each body on screen; for one out of frame (or behind the
  * camera), a chevron at the screen edge pointing the way to it.
  */
-function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number) {
+function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, reserved: Rect[]) {
   ctx.save();
   ctx.font = `600 11px ${UI_FONT}`;
   ctx.letterSpacing = '0.12em';
@@ -1107,8 +1139,19 @@ function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
       ctx.fillText(text, right ? px + gap : px - gap, py);
       continue;
     }
-    // Off screen: chevron on the edge, label on the inward side.
-    const e = edgePoint(b.x, b.y, w, h, EDGE_INSET);
+    // Off screen: chevron on the edge, label on the inward side, slid clear of the panels.
+    const edge = edgePoint(b.x, b.y, w, h, EDGE_INSET);
+    const inward = Math.cos(edge.angle) > 0;
+    const labelDy = Math.abs(Math.sin(edge.angle)) > 0.7 ? (Math.sin(edge.angle) > 0 ? 14 : -14) : 0;
+    const labelW = ctx.measureText(b.label).width;
+    const markerBox = (x: number, y: number): Rect => {
+      const lx = inward ? x - 10 - labelW : x + 10;
+      const left = Math.min(x - 10, lx);
+      const right = Math.max(x + 10, lx + labelW);
+      const top = Math.min(y - 10, y + labelDy - 8);
+      return { x: left, y: top, w: right - left, h: Math.max(y + 10, y + labelDy + 8) - top };
+    };
+    const e = { ...slideClear(edge, markerBox, reserved, w, h, EDGE_INSET), angle: edge.angle };
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -1121,9 +1164,8 @@ function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
     ctx.lineTo(...tip(-3, 6));
     ctx.closePath();
     ctx.fill();
-    const inward = Math.cos(e.angle) > 0;
     ctx.textAlign = inward ? 'right' : 'left';
-    ctx.fillText(b.label, e.x + (inward ? -10 : 10), e.y + (Math.abs(Math.sin(e.angle)) > 0.7 ? (Math.sin(e.angle) > 0 ? 14 : -14) : 0));
+    ctx.fillText(b.label, e.x + (inward ? -10 : 10), e.y + labelDy);
   }
   ctx.restore();
   ctx.textAlign = 'left';
@@ -1304,7 +1346,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
   drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawLaunches(ctx, s, w, h, dpr);
   drawCallouts(ctx, callouts);
-  drawBodies(ctx, s, w, h);
+  drawBodies(ctx, s, w, h, reserved);
 
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';

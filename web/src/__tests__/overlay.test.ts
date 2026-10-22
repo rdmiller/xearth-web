@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calloutRect, layoutSatLabels, placeCallout, type Rect } from '../overlay';
+import { calloutRect, layoutSatLabels, placeCallout, slideClear, type Rect } from '../overlay';
 
 const screen = { w: 800, h: 600 };
 
@@ -71,5 +71,33 @@ describe('layoutSatLabels', () => {
     expect(out[0].side).toBe('left');
     const blocked: Rect[] = [{ x: 0, y: 0, w: 1000, h: 600 }];
     expect(layoutSatLabels([pt(500, 300, 'GPS PRN 02')], blocked, 1000, 600, width)).toEqual([]);
+  });
+});
+
+describe('slideClear', () => {
+  const box = (x: number, y: number): Rect => ({ x: x - 10, y: y - 10, w: 20, h: 20 });
+  const inset = 26;
+
+  it('leaves a marker that is already clear', () => {
+    expect(slideClear({ x: 26, y: 300 }, box, [{ x: 600, y: 0, w: 200, h: 100 }], 800, 600, inset)).toEqual({ x: 26, y: 300 });
+  });
+
+  it('slides a side-edge marker past a panel, to the nearer clear side', () => {
+    const readout = { x: 8, y: 8, w: 300, h: 250 };
+    const p = slideClear({ x: 26, y: 200 }, box, [readout], 800, 600, inset);
+    expect(p.x).toBe(26);
+    expect(p.y).toBeGreaterThanOrEqual(258 + 10); // its box now starts below the readout
+  });
+
+  it('slides a bottom-edge marker sideways, clear of the dock', () => {
+    const dock = { x: 200, y: 520, w: 400, h: 80 };
+    const p = slideClear({ x: 380, y: 574 }, box, [dock], 800, 600, inset);
+    expect(p.y).toBe(574);
+    expect(p.x + 10).toBeLessThanOrEqual(200);
+  });
+
+  it('stays put when there is nowhere clear on that edge', () => {
+    const wall = { x: 0, y: 0, w: 100, h: 600 };
+    expect(slideClear({ x: 26, y: 300 }, box, [wall], 800, 600, inset)).toEqual({ x: 26, y: 300 });
   });
 });
