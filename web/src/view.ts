@@ -123,6 +123,11 @@ export function isOccluded(cam: Camera, p: Vec3): boolean {
   return t1 > 0 && t1 < 1 - 1e-6;
 }
 
+/** Zoom after a pinch: the starting zoom scaled by how far the two fingers have spread. */
+export function pinchMag(startMag: number, startSpread: number, spread: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, startMag * (spread / Math.max(startSpread, 1))));
+}
+
 /**
  * The point on the Earth's surface under screen point (x, y) — screen units as
  * `project` gives them (Earth radii, y up, disc centred at the origin) — or

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeGeocoder, formatCoordinates, glideAt, glideMs, mergePlaces, parseCoordinates, searchCities } from '../places';
-import { cameraFor, project, unproject } from '../view';
+import { cameraFor, pinchMag, project, unproject } from '../view';
 import { defaults } from '../params';
 import { fromLatLon } from '../vec';
 
@@ -99,5 +99,14 @@ describe('unproject', () => {
       expect(Math.hypot(back[0] - p[0], back[1] - p[1], back[2] - p[2])).toBeLessThan(1e-9);
     }
     expect(unproject(cam, 2, 2)).toBeNull();
+  });
+});
+
+describe('pinch zoom', () => {
+  it('scales the starting zoom by how far the fingers spread, within limits', () => {
+    expect(pinchMag(2, 100, 200, 0.2, 50)).toBe(4);
+    expect(pinchMag(2, 100, 50, 0.2, 50)).toBe(1);
+    expect(pinchMag(40, 100, 400, 0.2, 50)).toBe(50);
+    expect(pinchMag(1, 0, 10, 0.2, 50)).toBe(10); // a zero starting spread doesn't divide by zero
   });
 });

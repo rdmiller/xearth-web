@@ -87,11 +87,21 @@ export class GlobeRenderer {
     this.bodies = new BodyLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.fireLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), FIRE_STYLE);
     this.lightningLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), LIGHTNING_STYLE);
-    this.auroraTex = gl.createTexture()!;
-    this.snowIceTex = gl.createTexture()!;
-    this.radarTex = gl.createTexture()!;
-    this.smokeTex = gl.createTexture()!;
-    this.detailTex = gl.createTexture()!;
+    // Optional layers start as a transparent 1×1 texture: the globe shader keeps them all
+    // bound, and an empty texture object on a bound unit makes WebGL warn every frame
+    // ("texture … is not renderable") until the layer's data first arrives.
+    const empty = () => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); // no mipmaps to need
+      return t;
+    };
+    this.auroraTex = empty();
+    this.snowIceTex = empty();
+    this.radarTex = empty();
+    this.smokeTex = empty();
+    this.detailTex = empty();
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);

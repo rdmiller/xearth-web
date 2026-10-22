@@ -21,9 +21,18 @@
     "events": "cd ../pipeline && python -m xearth_clouds.events --out ../web/public/events",
     "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice",
     "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke",
-    "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami"
+    "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
+    "icons": "python scripts/make-icons.py",
+    "android:build": "vite build --mode android && cap sync android",
+    "android:open": "cap open android",
+    "android:run": "cap run android",
+    "twa:manifest": "node scripts/twa.mjs manifest",
+    "twa:assetlinks": "node scripts/twa.mjs assetlinks"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
     "@fontsource/chakra-petch": "^5.3.0",
     "astronomy-engine": "^2.1.19",
     "lightstreamer-client-web": "^9.2.3",
@@ -31,6 +40,7 @@
     "satellite.js": "^7.1.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",

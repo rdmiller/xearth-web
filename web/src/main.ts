@@ -120,7 +120,7 @@ import {
   type StormOverlay,
 } from './overlay';
 import { FrameStats, GpuTimer } from './perf';
-import { parseSettings, toQuery, type Settings } from './params';
+import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
@@ -139,10 +139,13 @@ import {
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
 import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
-import { cameraFor, ORTHO_SKY_FOCAL, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
+import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
+import { Capacitor } from '@capacitor/core';
 import type { BodyDraw } from './renderer/bodies';
 
 const BASE = import.meta.env.BASE_URL;
+/** NASA textures are served with the data (they're ~40 MB, too big to bundle in an app). */
+const TEXTURE_BASE = DATA_BASE || BASE;
 const FADE_MS = 2500;
 const TOAST_MS = 1400;
 
@@ -200,7 +203,7 @@ function updateNote() {
 }
 
 async function ensureDayTexture(date: Date) {
-  const url = dayTextureUrl(BASE, date);
+  const url = dayTextureUrl(TEXTURE_BASE, date);
   if (url === dayUrl) return;
   dayUrl = url;
   try {
@@ -214,7 +217,7 @@ async function ensureDayTexture(date: Date) {
   requestRedraw();
 }
 
-loadImage(nightTextureUrl(BASE), renderer.maxTextureSize)
+loadImage(nightTextureUrl(TEXTURE_BASE), renderer.maxTextureSize)
   .then((img) => renderer.setNight(img))
   .catch((err) => {
     console.warn('night texture:', err);
@@ -225,7 +228,7 @@ loadImage(nightTextureUrl(BASE), renderer.maxTextureSize)
     requestRedraw();
   });
 
-loadImage(`${BASE}textures/moon.jpg`, renderer.maxTextureSize)
+loadImage(`${TEXTURE_BASE}textures/moon.jpg`, renderer.maxTextureSize)
   .then((img) => {
     renderer.setMoon(img);
     requestRedraw();
@@ -1293,16 +1296,37 @@ function update(patch: Partial<Settings>) {
 let dragging = false;
 let last = { x: 0, y: 0 };
 
+// One pointer drags; two pinch to zoom (touch screens). Lifting one finger of a pinch
+// carries on as a drag with the other.
+const pointers = new Map<number, { x: number; y: number }>();
+let pinch: { spread: number; mag: number } | null = null;
+const spread = () => {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+};
+
 overlayCanvas.addEventListener('pointerdown', (e) => {
   cancelAnimationFrame(glideFrame); // grabbing the globe stops a glide in progress
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  overlayCanvas.setPointerCapture(e.pointerId);
+  if (pointers.size >= 2) {
+    dragging = false;
+    pinch = { spread: spread(), mag: settings.mag };
+    return;
+  }
   dragging = true;
   last = { x: e.clientX, y: e.clientY };
-  overlayCanvas.setPointerCapture(e.pointerId);
   const here = viewerLatLon(settings, simTime(), resolveTrack);
   if (settings.view !== 'fixed') update({ view: 'fixed', lat: here.lat, lon: here.lon, rot: 0 });
 });
 
 overlayCanvas.addEventListener('pointermove', (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size >= 2) {
+    update({ mag: pinchMag(pinch.mag, pinch.spread, spread(), MAG_MIN, MAG_MAX) });
+    return;
+  }
   if (!dragging) return;
   const degPerPx = 180 / Math.PI / radiusCss();
   const dx = e.clientX - last.x;
@@ -1314,9 +1338,17 @@ overlayCanvas.addEventListener('pointermove', (e) => {
   });
 });
 
-const endDrag = () => {
-  dragging = false;
-  requestRedraw();
+const endDrag = (e: PointerEvent) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  const rest = [...pointers.values()][0];
+  if (rest) {
+    dragging = true;
+    last = { ...rest };
+  } else {
+    dragging = false;
+    requestRedraw();
+  }
 };
 overlayCanvas.addEventListener('pointerup', endDrag);
 overlayCanvas.addEventListener('pointercancel', endDrag);
@@ -1424,6 +1456,21 @@ syncClouds();
 syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
+
+// Installed web app / Android TWA: an offline shell (public/sw.js). Not inside the
+// Capacitor app, whose files are bundled; there, Android's back button closes panels.
+if (Capacitor.isNativePlatform()) {
+  void import('@capacitor/app').then(({ App }) =>
+    App.addListener('backButton', () => {
+      if (search.open) search.toggle(false);
+      else if (satTree.open) satTree.toggle(false);
+      else if (!help.hidden) help.hidden = true;
+      else void App.minimizeApp();
+    }),
+  );
+} else if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register(new URL('sw.js', document.baseURI)).catch((err) => console.warn('service worker:', err));
+}
 radarCredit.hidden = !settings.radar;
 syncIssLive();
 satTree.refresh(settings, treeCounts());

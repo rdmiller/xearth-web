@@ -16,3 +16,11 @@ web/public/tsunami/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+# Android build settings (the data host); see web/.env.android.example
+web/.env.android
+# Android TWA (Bubblewrap): twa-manifest.json is the project; the generated Gradle project,
+# builds and the signing key stay local. Never commit a keystore.
+web/android-twa/*
+!web/android-twa/twa-manifest.json
+*.keystore
+*.jks

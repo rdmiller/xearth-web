@@ -178,6 +178,10 @@ web/        Vite + TypeScript + WebGL2 app
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
   src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
+  public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
+  capacitor.config.ts, android/   the Capacitor Android app
+  scripts/twa.mjs    Bubblewrap TWA manifest and assetlinks.json
+  scripts/make-icons.py   app, Android launcher and splash icons
   src/search.ts      the place search box (combobox)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
@@ -210,6 +214,74 @@ The app runs without textures or clouds (plain blue globe, "clouds unavailable")
 which is missing in the label.
 
 Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
+
+## Android
+
+Two ways to ship it, from the same code. Both need the site hosted somewhere public over
+https (GitHub Pages via the deploy workflow, or the Docker stack behind a tunnel).
+
+| | Capacitor (`web/android/`) | Bubblewrap TWA (`web/android-twa/`) |
+|---|---|---|
+| What the app is | The built site, bundled, in Android's WebView | A thin launcher that opens the hosted site full-screen in Chrome |
+| Size | ~12 MB | ~1.7 MB |
+| Updates | A new build each release; data from the server either way | Whenever the site deploys |
+| Native extras | Plugins: the back button closes panels now; notifications etc. later | None (it's Chrome) |
+| Needs | `VITE_DATA_BASE` pointing at the server, with CORS on the data | The site's `/.well-known/assetlinks.json` naming the app's signing key |
+
+Both use the same icon (`pnpm icons` draws them, including Android's launcher icons and
+splash images), the web app manifest, pinch-to-zoom, and the touch dock (the grip pins it).
+The app ID `dev.xearthweb.app` / `dev.xearthweb.twa` is a placeholder: change it to a
+reverse domain you control before publishing (`capacitor.config.ts`,
+`android/app/build.gradle`, and `--package` below).
+
+### Capacitor
+
+```sh
+cd web
+cp .env.android.example .env.android   # set VITE_DATA_BASE=https://your-host/
+pnpm android:build                     # vite build --mode android && cap sync android
+pnpm android:open                      # Android Studio; or: cd android && ./gradlew assembleDebug
+pnpm android:run                       # build, install and launch on a device/emulator
+```
+
+- The bundle has no pipeline beside it, so every layer folder and the NASA textures come
+  from `VITE_DATA_BASE`; an Android build without it stops with an error. The server must
+  send `Access-Control-Allow-Origin` on the data: GitHub Pages does, and so does the
+  Docker nginx (also on 404s, so a missing layer reads as missing, not as a CORS failure).
+- Gradle needs JDK 21 (Android Studio's bundled one works) and an Android SDK
+  (`android/local.properties`: `sdk.dir=…`, forward slashes on Windows).
+- Android's back button closes the search, the satellite panel, then help, then minimises.
+  The system bars are black (Android 15 draws apps edge to edge).
+- Testing against a local http server (e.g. the Docker stack at `http://10.0.2.2:8090/` from
+  the emulator): sync with `XEARTH_ANDROID_LOCAL=1` to allow cleartext and mixed content.
+  Never ship a build synced that way.
+- Checked on the Android 15 tablet emulator (2026-10-22): globe, clouds, radar, smoke, snow
+  and ice, satellites, storms and GDACS all load from the server; the dock pins with a tap;
+  Back closes the keyboard, then the search, then minimises.
+
+### Bubblewrap (Trusted Web Activity)
+
+```sh
+cd web
+pnpm twa:manifest -- --url https://you.github.io/xearth-web/    # writes android-twa/twa-manifest.json
+cd android-twa
+npx @bubblewrap/cli update --skipVersionUpgrade                  # generate the Android project
+npx @bubblewrap/cli build                                        # signed APK + AAB (makes a key on first run)
+npx @bubblewrap/cli fingerprint list                             # the key's SHA-256
+cd .. && pnpm twa:assetlinks -- --fingerprint AA:BB:…            # public/.well-known/assetlinks.json
+```
+
+- Deploy the site with `assetlinks.json` (GitHub Pages and the Docker nginx serve it) and
+  Chrome opens the app with no URL bar; without it the TWA still works, as a Custom Tab
+  with one. If Google Play re-signs the app, add Play's fingerprint too (comma-separated).
+- The installed site also gets a service worker (`public/sw.js`): the app shell opens
+  offline, hashed assets and textures are cached, and layer data is always fetched fresh.
+- Bubblewrap downloads its own JDK 17 and Android SDK on first run if it can't use yours.
+- `twa-manifest.json` is the project file to commit; the generated Gradle project, builds
+  and the keystore are gitignored. Keep the keystore safe: updates must be signed with it.
+- Checked: a manifest from this script builds and signs with Bubblewrap 1.27 (minSdk 24,
+  which androidbrowserhelper 2.7 needs) and launches into Chrome on the emulator. Loading the
+  real site needs it deployed over https.
 
 ## Self-hosting with Docker
 

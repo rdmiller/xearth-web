@@ -87,6 +87,16 @@ export function timezoneLongitude(offsetMinutes = new Date().getTimezoneOffset()
   return Math.max(-180, Math.min(180, -offsetMinutes / 4)) || 0; // no -0 for UTC
 }
 
+/**
+ * Where a layer's files live: its own VITE_*_BASE if set, else VITE_DATA_BASE + folder (the
+ * Android build sets that to the hosted server, since the app bundle has no pipeline beside
+ * it), else the folder beside the page.
+ */
+export const DATA_BASE = (import.meta.env?.VITE_DATA_BASE as string | undefined) ?? '';
+function dataSrc(env: string, folder: string): string {
+  return (import.meta.env?.[env] as string | undefined) ?? `${DATA_BASE}${folder}`;
+}
+
 export function defaults(): Settings {
   return {
     view: 'fixed',
@@ -127,16 +137,16 @@ export function defaults(): Settings {
     bodyscale: 1,
     time: null,
     speed: 1,
-    cloudsrc: (import.meta.env?.VITE_CLOUD_BASE as string | undefined) ?? 'clouds/',
-    satsrc: (import.meta.env?.VITE_SAT_BASE as string | undefined) ?? 'satellites/',
-    launchsrc: (import.meta.env?.VITE_LAUNCH_BASE as string | undefined) ?? 'launches/',
-    stormsrc: (import.meta.env?.VITE_STORM_BASE as string | undefined) ?? 'storms/',
-    firesrc: (import.meta.env?.VITE_FIRE_BASE as string | undefined) ?? 'fires/',
-    lightningsrc: (import.meta.env?.VITE_LIGHTNING_BASE as string | undefined) ?? 'lightning/',
-    eventsrc: (import.meta.env?.VITE_EVENT_BASE as string | undefined) ?? 'events/',
-    snowsrc: (import.meta.env?.VITE_SNOW_BASE as string | undefined) ?? 'snowice/',
-    smokesrc: (import.meta.env?.VITE_SMOKE_BASE as string | undefined) ?? 'smoke/',
-    tsunamisrc: (import.meta.env?.VITE_TSUNAMI_BASE as string | undefined) ?? 'tsunami/',
+    cloudsrc: dataSrc('VITE_CLOUD_BASE', 'clouds/'),
+    satsrc: dataSrc('VITE_SAT_BASE', 'satellites/'),
+    launchsrc: dataSrc('VITE_LAUNCH_BASE', 'launches/'),
+    stormsrc: dataSrc('VITE_STORM_BASE', 'storms/'),
+    firesrc: dataSrc('VITE_FIRE_BASE', 'fires/'),
+    lightningsrc: dataSrc('VITE_LIGHTNING_BASE', 'lightning/'),
+    eventsrc: dataSrc('VITE_EVENT_BASE', 'events/'),
+    snowsrc: dataSrc('VITE_SNOW_BASE', 'snowice/'),
+    smokesrc: dataSrc('VITE_SMOKE_BASE', 'smoke/'),
+    tsunamisrc: dataSrc('VITE_TSUNAMI_BASE', 'tsunami/'),
   };
 }
 
