@@ -48,7 +48,7 @@ export class Toast {
     readonly spec: ToastSpec,
     private readonly manager: ToastManager,
   ) {
-    this.el = el('section', 'toast-window');
+    this.el = el('section', 'toast-window glass glass--rail');
     this.el.id = spec.id;
     this.el.hidden = true;
     this.el.style.setProperty('--shrink', String(spec.shrink ?? 1));

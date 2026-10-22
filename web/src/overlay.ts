@@ -506,6 +506,9 @@ function drawCallouts(ctx: CanvasRenderingContext2D, callouts: Callout[]) {
     ctx.beginPath();
     ctx.roundRect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, 3);
     ctx.fill();
+    // A 2px notch down the left in the callout's own colour, like the panels' accent rail.
+    ctx.fillStyle = c.rows[0]?.[0]?.color ?? HUD.accent;
+    ctx.fillRect(c.rect.x, c.rect.y + 2, 2, c.rect.h - 4);
     c.rows.forEach((row, i) => {
       let x = c.x;
       for (const part of row) {

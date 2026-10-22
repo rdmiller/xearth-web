@@ -42,7 +42,8 @@
         --glass-track: rgb(var(--hud-cyan-rgb) / 0.14);
         --glass-hover: rgb(var(--hud-cyan-rgb) / 0.1);
         --glass-select: rgb(var(--hud-cyan-rgb) / 0.12);
-        --shadow-panel: 0 0 24px rgb(0 200 255 / 0.08);
+        --shadow-panel: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 24px rgb(0 200 255 / 0.07);
+        --screen-inset: 12px;
         --glow-sm: 0 0 6px rgb(var(--hud-cyan-rgb) / 0.45);
         /* Type. */
         --font-ui: "HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif;
@@ -66,11 +67,32 @@
       canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       #overlay { touch-action: none; cursor: grab; }
       #overlay:active { cursor: grabbing; }
+      /* Glass: the one surface every panel uses (toast windows, help, satellites, search, the
+         status toast). A --rail panel carries a 2px stripe in its --accent down the left. Its
+         scroll bars are a slim cyan rail on no track, inset from the rounded corners, widening
+         and brightening under the pointer (Chromium and Safari draw these; the transparent
+         border is what makes the thumb thinner than its gutter). */
+      .glass {
+        box-sizing: border-box; color: var(--ink-2); background: var(--glass-fill-solid);
+        border: 1px solid var(--glass-edge); border-radius: var(--r-lg); box-shadow: var(--shadow-panel);
+      }
+      .glass--rail { box-shadow: inset 2px 0 0 var(--accent, var(--hud-accent)), var(--shadow-panel); }
+      :is(.glass, .glass *)::-webkit-scrollbar { width: 9px; }
+      :is(.glass, .glass *)::-webkit-scrollbar-track { background: transparent; margin: 2px 0 8px; }
+      :is(.glass, .glass *)::-webkit-scrollbar-thumb {
+        border: 3px solid transparent; border-radius: 5px; background: rgb(var(--hud-cyan-rgb) / 0.3) padding-box;
+      }
+      :is(.glass, .glass *)::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgb(var(--hud-cyan-rgb) / 0.6); }
+      :is(.glass, .glass *)::-webkit-scrollbar-thumb:active { background-color: var(--hud-accent); }
+      :is(.glass, .glass *)::-webkit-scrollbar-button, :is(.glass, .glass *)::-webkit-scrollbar-corner { display: none; background: transparent; }
+      /* Firefox styles only colour and width: the same rail, as near as it gets. */
+      @supports not selector(::-webkit-scrollbar) {
+        .glass, .glass * { scrollbar-width: thin; scrollbar-color: rgb(var(--hud-cyan-rgb) / 0.35) transparent; }
+      }
       #help {
-        position: fixed; right: 16px; top: 16px; z-index: 5; max-width: min(420px, calc(100vw - 32px));
-        max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
-        padding: 14px 16px; border-radius: var(--r-lg); background: var(--glass-fill-solid);
-        border: 1px solid var(--glass-edge); box-shadow: var(--shadow-panel);
+        position: fixed; right: var(--screen-inset); top: var(--screen-inset); z-index: 5;
+        max-width: min(420px, calc(100vw - 2 * var(--screen-inset))); max-height: calc(100vh - 2 * var(--screen-inset));
+        overflow: auto; padding: 14px 16px;
       }
       #help h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent); }
       #help h3 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent-soft); }
@@ -82,8 +104,7 @@
       #help td:first-child { width: 4.5em; white-space: nowrap; }
       #toast {
         position: fixed; left: 50%; bottom: calc(var(--drawer-h, 0px) + 18px); transform: translate(-50%, 8px); z-index: 3;
-        padding: 6px 14px; border-radius: 6px; background: var(--glass-fill-solid);
-        border: 1px solid rgb(var(--hud-cyan-rgb) / 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
+        padding: 6px 14px;
         font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
         opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
       }
@@ -117,10 +138,8 @@
       }
       .toast-window {
         --accent: var(--hud-accent);
-        flex: 0 var(--shrink, 1) auto; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
-        border-radius: var(--r-lg); background: var(--glass-fill-solid); border: 1px solid var(--glass-edge);
-        box-shadow: inset 2px 0 0 var(--accent), var(--shadow-panel);
-        font-size: 13px; color: var(--ink-2); pointer-events: auto;
+        flex: 0 var(--shrink, 1) auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+        font-size: 13px; pointer-events: auto;
       }
       .toast-window[hidden] { display: none; }
       .toast-window.in { animation: toast-in var(--dur-panel) var(--ease-out); }
@@ -148,21 +167,6 @@
       .toast-close:hover { color: #fff; background: rgb(var(--hud-cyan-rgb) / 0.1); }
       .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; }
-      /* A window's scroll bar, when it has one: a slim cyan rail on no track, inset from the
-         rounded corners, widening and brightening under the pointer. (Chromium and Safari draw
-         these; the transparent border is what makes the thumb thinner than its gutter.) */
-      .toast-body::-webkit-scrollbar { width: 9px; }
-      .toast-body::-webkit-scrollbar-track { background: transparent; margin: 2px 0 8px; }
-      .toast-body::-webkit-scrollbar-thumb {
-        border: 3px solid transparent; border-radius: var(--r-md); background: rgb(var(--hud-cyan-rgb) / 0.3) padding-box;
-      }
-      .toast-body::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgb(var(--hud-cyan-rgb) / 0.6); }
-      .toast-body::-webkit-scrollbar-thumb:active { background-color: var(--hud-accent); }
-      .toast-body::-webkit-scrollbar-button, .toast-body::-webkit-scrollbar-corner { display: none; background: transparent; }
-      /* Firefox styles only colour and width: the same rail, as near as it gets. */
-      @supports not selector(::-webkit-scrollbar) {
-        .toast-body { scrollbar-width: thin; scrollbar-color: rgb(var(--hud-cyan-rgb) / 0.35) transparent; }
-      }
       .toast-window.folded .toast-body { display: none; }
       /* Label: value rows, as in the frame-rate window: quiet small-caps labels, bright values. */
       .hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
@@ -251,13 +255,11 @@
       #place-card .unlabel[hidden] { display: none; }
       #place-card .credit { margin-left: auto; color: var(--ink-4); text-decoration: none; }
       #place-card .credit:hover { color: var(--hud-accent); text-decoration: underline; }
-      /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
+      /* Satellite tree: a glass panel of tri-state checkboxes. */
       #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       #sat-tree {
         position: fixed; left: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 3; width: min(320px, calc(100vw - 24px));
-        max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; box-sizing: border-box; padding: 12px 12px 10px 10px;
-        border-radius: var(--r-lg); background: var(--glass-fill-solid); border: 1px solid var(--glass-edge);
-        box-shadow: var(--shadow-panel); font-size: 13px;
+        max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; padding: 12px 12px 10px 10px; font-size: 13px;
       }
       #sat-tree header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
       #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent); }
@@ -272,7 +274,19 @@
       #sat-tree .caret:disabled { cursor: default; }
       #sat-tree .caret:disabled::before { content: ''; }
       #sat-tree label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
-      #sat-tree input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--hud-accent); cursor: pointer; }
+      #sat-tree input {
+        flex: none; display: grid; place-items: center; width: 14px; height: 14px; margin: 0; appearance: none; cursor: pointer;
+        background: rgb(var(--hud-cyan-rgb) / 0.06); border: 1px solid var(--glass-edge-hi); border-radius: var(--r-sm);
+        transition: background var(--dur-ui), border-color var(--dur-ui);
+      }
+      #sat-tree input:hover { border-color: var(--hud-accent); }
+      #sat-tree input:checked, #sat-tree input:indeterminate { background: var(--hud-accent); border-color: var(--hud-accent); }
+      /* The tick and the dash: thin dark strokes on the lit box. */
+      #sat-tree input:checked::before {
+        content: ''; width: 7px; height: 4px; margin-top: -2px; rotate: -45deg;
+        border: solid var(--ink-on-accent); border-width: 0 0 1.6px 1.6px;
+      }
+      #sat-tree input:indeterminate::before { content: ''; width: 8px; height: 1.6px; background: var(--ink-on-accent); }
       #sat-tree .swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
       #sat-tree .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #sat-tree li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent-soft); }
@@ -327,7 +341,7 @@
       #drawer .caption {
         position: absolute; bottom: calc(100% + 9px); left: 50%; transform: translateX(-50%); padding: 3px 7px; white-space: nowrap;
         font: 600 10px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase;
-        color: var(--ink-2); background: var(--glass-fill-solid); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.3); border-radius: var(--r-md);
+        color: var(--ink-2); background: var(--glass-fill-solid); border: 1px solid var(--glass-edge); border-radius: var(--r-md);
         opacity: 0; pointer-events: none; transition: opacity 100ms;
       }
       #drawer .dock-btn:hover .caption, #drawer .dock-btn:focus-visible .caption { opacity: 1; }
@@ -432,9 +446,7 @@
       /* Place search: the same HUD glass, near the top centre. */
       #search {
         position: fixed; left: 50%; top: max(14px, 11vh); z-index: 4; transform: translateX(-50%);
-        width: min(440px, calc(100vw - 24px)); box-sizing: border-box; padding: 10px;
-        background: var(--glass-fill-solid); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.35); border-radius: var(--r-lg);
-        box-shadow: 0 0 28px rgba(0, 200, 255, 0.12), 0 6px 24px rgba(0, 0, 0, 0.5);
+        width: min(440px, calc(100vw - 24px)); padding: 10px;
       }
       #search input {
         width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px var(--font-ui);
@@ -445,6 +457,7 @@
       #search input::placeholder { color: var(--ink-4); }
       #search ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: min(320px, 50vh); overflow: auto; }
       #search li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: var(--r-md); cursor: pointer; }
+      #search li:hover { background: var(--glass-hover); }
       #search li[aria-selected="true"] { background: rgb(var(--hud-cyan-rgb) / 0.12); box-shadow: inset 2px 0 0 var(--hud-accent); }
       #search .place-name { font-weight: 600; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #search .place-detail { flex: none; max-width: 55%; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -458,9 +471,9 @@
   <body>
     <canvas id="globe"></canvas>
     <canvas id="overlay"></canvas>
-    <div id="toast" role="status" aria-live="polite"></div>
+    <div id="toast" class="glass" role="status" aria-live="polite"></div>
     <nav id="drawer" aria-label="Layers"></nav>
-    <div id="search" role="search" hidden>
+    <div id="search" class="glass glass--rail" role="search" hidden>
       <input type="text" role="combobox" aria-label="Go to a place" aria-controls="place-list" aria-expanded="false"
         aria-autocomplete="list" placeholder="Go to a place, or lat, lon" autocomplete="off" spellcheck="false" />
       <div class="search-status" role="status" aria-live="polite"></div>
@@ -468,14 +481,14 @@
       <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
     </div>
     <div id="toasts" role="region" aria-label="Panels"></div>
-    <aside id="sat-tree" aria-label="Satellite categories" hidden>
+    <aside id="sat-tree" class="glass glass--rail" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <footer id="credits"><span class="sources">Data: NASA · NOAA · USGS · GDACS · CelesTrak · The Space Devs · Open-Meteo · </span><button type="button" aria-controls="help">All credits</button></footer>
-    <aside id="help" hidden>
+    <aside id="help" class="glass glass--rail" hidden>
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
       <div id="help-keys"></div>
