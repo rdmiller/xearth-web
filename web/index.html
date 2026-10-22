@@ -16,7 +16,7 @@
       #overlay { touch-action: none; cursor: grab; }
       #overlay:active { cursor: grabbing; }
       #help {
-        position: fixed; right: 16px; top: 16px; max-width: min(420px, calc(100vw - 32px));
+        position: fixed; right: 16px; top: 16px; z-index: 5; max-width: min(420px, calc(100vw - 32px));
         max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
         padding: 14px 16px; border-radius: 8px; background: rgba(8, 12, 24, 0.88);
         border: 1px solid rgba(98, 230, 255, 0.28); box-shadow: 0 0 24px rgba(0, 200, 255, 0.08);
@@ -43,11 +43,20 @@
         color: rgba(170, 205, 235, 0.7); text-decoration: none;
       }
       #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
+      /* The right-hand column: the feeds dashboard at the top, the place card at the bottom. It
+         starts below the HUD's own panels on that side (frame rate, ISS telemetry: --hud-right,
+         set as they're drawn) and ends above the dock's full height, so nothing on the right
+         overlaps; when both are open, the dashboard gives way and scrolls. */
+      #right-stack {
+        position: fixed; right: 12px; top: calc(var(--hud-right, 0px) + 12px); bottom: calc(var(--dock-full, 0px) + 12px); z-index: 4;
+        width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+        pointer-events: none;
+      }
+      #right-stack > * { pointer-events: auto; }
       /* Place card: after a search, the weather and alerts there. Same glass as the panels,
-         with the pink of the place's label; above the dock's full height, so it stays put. */
+         with the pink of the place's label; kept to the foot of the column, so it stays put. */
       #place-card {
-        position: fixed; right: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 4; width: min(360px, calc(100vw - 24px));
-        max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; box-sizing: border-box; padding: 10px 12px 9px 14px;
+        flex: 0 1 auto; min-height: 0; margin-top: auto; width: 100%; overflow: auto; box-sizing: border-box; padding: 10px 12px 9px 14px;
         border-radius: 8px; background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(98, 230, 255, 0.28);
         box-shadow: inset 2px 0 0 #ff7ad9, 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px; color: #dfe6ff;
         animation: card-in 0.2s ease-out;
@@ -196,13 +205,14 @@
         #drawer .dock { transform: none; }
         #drawer .dock-btn { transition: color 120ms, border-color 120ms; }
       }
-      /* Feeds dashboard: a column of toast cards on the right, one per data source on screen.
-         The ring drains to the next check; the bar fills (green → amber → red) as the data ages. */
+      /* Feeds dashboard: toast cards at the top of the right-hand column, one per data source on
+         screen. The ring drains to the next check; the bar fills (green → amber → red) as the data ages. */
       #feeds {
-        position: fixed; right: 12px; top: 50%; z-index: 3; transform: translateY(-50%); width: 272px;
-        max-height: calc(100vh - var(--dock-full, 0px) - 140px); overflow: auto; box-sizing: border-box;
+        flex: 0 1 auto; min-height: 0; width: 272px; overflow: auto; box-sizing: border-box;
         display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin;
       }
+      /* Both open: the place card keeps to the lower part, so the dashboard always has room. */
+      #feeds:not([hidden]) ~ #place-card { max-height: 55%; }
       #feeds[hidden] { display: none; }
       #feeds header {
         display: flex; align-items: center; justify-content: space-between; padding: 3px 4px 3px 10px; border-radius: 6px;
@@ -261,9 +271,10 @@
       #feeds .feed.error .next { color: #ff9a9a; }
       #feeds footer { padding: 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); text-align: right; }
       #feeds kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
-      /* Phones: a strip above the dock instead of a column down the side. */
+      /* Phones: the column spans the width and sits at the bottom, clear of the readout. */
       @media (max-width: 600px) {
-        #feeds { left: 12px; right: 12px; top: auto; bottom: calc(var(--dock-full, 0px) + 12px); transform: none; width: auto; max-height: 45vh; }
+        #right-stack { left: 12px; width: auto; align-items: stretch; justify-content: flex-end; }
+        #feeds { width: auto; max-height: 40vh; }
       }
       @media (prefers-reduced-motion: reduce) {
         #feeds .feed.in, #feeds .feed.out, #feeds .feed.pulse, #feeds .feed.busy .ring svg, #feeds .feed.live .ring .arc { animation: none; }
@@ -307,16 +318,18 @@
       <ul id="place-list" role="listbox" aria-label="Places"></ul>
       <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
     </div>
-    <aside id="place-card" aria-label="Place" aria-live="polite" hidden></aside>
+    <div id="right-stack">
+      <aside id="feeds" aria-label="Data feeds" hidden>
+        <header><h2>Data feeds</h2><button class="close" type="button" aria-label="Close">×</button></header>
+        <ul aria-label="Data sources"></ul>
+        <footer>bar: data age · ring: next check · <kbd>Shift+U</kbd></footer>
+      </aside>
+      <aside id="place-card" aria-label="Place" aria-live="polite" hidden></aside>
+    </div>
     <aside id="sat-tree" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
-    </aside>
-    <aside id="feeds" aria-label="Data feeds" hidden>
-      <header><h2>Data feeds</h2><button class="close" type="button" aria-label="Close">×</button></header>
-      <ul aria-label="Data sources"></ul>
-      <footer>bar: data age · ring: next check · <kbd>Shift+U</kbd></footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <aside id="help" hidden>

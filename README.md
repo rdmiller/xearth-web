@@ -672,6 +672,12 @@ Cards slide in and out as layers are switched on and off, and flash when new dat
 The Sun-image card appears once the Sun has been in frame (that's the only time it's fetched).
 The dashboard ticks once a second while open, and not at all while closed or hidden.
 
+It shares the right-hand side with the HUD's other panels instead of covering them. The
+frame-rate and ISS telemetry panels stay at the top. The dashboard starts just below
+whichever of them are showing, and moves up when they close. A searched place's card stays
+at the foot of the same column, above the dock. When both are open, the dashboard shrinks
+and scrolls. Globe labels keep clear of the column, as they do for the readout.
+
 ## Frame rate
 
 Press **D** (or add `?fps=1`) for a panel showing frames per second, a sparkline of frame

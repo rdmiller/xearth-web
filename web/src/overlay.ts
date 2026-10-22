@@ -337,6 +337,8 @@ export interface OverlayState {
   satLabels?: SatLabelOverlay[];
   /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
   bottomInset?: number;
+  /** Page panels over the globe (the feeds dashboard): labels keep out of these too. */
+  panels?: Rect[];
   /** Where the view just went (search or double-click): a reticle and the name, for a while. */
   target?: { pos: Vec3; name: string };
   /** Places gone to from the search: labelled like cities, in pink, even with cities off. */
@@ -890,8 +892,8 @@ function drawSatLabels(ctx: CanvasRenderingContext2D, s: OverlayState, w: number
 
 // ---- ISS live telemetry -----------------------------------------------------------------
 
-/** Top right (below the frame-rate panel when that's shown): title, signal chip, rows. */
-function drawIssPanel(ctx: CanvasRenderingContext2D, p: IssPanel, w: number, top: number) {
+/** Top right (below the frame-rate panel when that's shown): title, signal chip, rows. Returns its bottom edge. */
+function drawIssPanel(ctx: CanvasRenderingContext2D, p: IssPanel, w: number, top: number): number {
   ctx.save();
   ctx.font = `500 11px ${UI_FONT}`;
   ctx.letterSpacing = '0.06em';
@@ -922,6 +924,7 @@ function drawIssPanel(ctx: CanvasRenderingContext2D, p: IssPanel, w: number, top
   });
   ctx.restore();
   ctx.letterSpacing = '0px';
+  return top + height;
 }
 
 // ---- GDACS floods, wildfires, eruptions ------------------------------------------------
@@ -1163,6 +1166,9 @@ export interface PerfOverlay {
 
 const FRAME_60 = 1000 / 60;
 
+/** Bottom edge of the frame-rate panel (it's a fixed size). */
+const PERF_BOTTOM = 148;
+
 function drawPerf(ctx: CanvasRenderingContext2D, p: PerfOverlay, w: number) {
   const panelW = 236;
   const x = w - panelW - 14;
@@ -1175,7 +1181,7 @@ function drawPerf(ctx: CanvasRenderingContext2D, p: PerfOverlay, w: number) {
   ctx.strokeStyle = 'rgba(98, 230, 255, 0.28)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(x - 10, y - 8, panelW + 20, 142, 6);
+  ctx.roundRect(x - 10, y - 8, panelW + 20, PERF_BOTTOM - (y - 8), 6);
   ctx.fill();
   ctx.stroke();
 
@@ -1347,7 +1353,11 @@ function readoutLines(s: OverlayState): string[] {
   return lines;
 }
 
-export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
+/**
+ * Draws the HUD. Returns how far down (CSS px) its top-right panels reach, 0 when there are
+ * none, so page panels on that side can start below them.
+ */
+export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): { rightTop: number } {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -1369,7 +1379,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   // Labels keep clear of the status readout and, while it's pinned, the layer dock.
   // (Its band starts above the attribution line, which the dock floats over.)
   const inset = s.bottomInset ?? 0;
-  const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : [])];
+  const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : []), ...(s.panels ?? [])];
   // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
   const callouts = placeCallouts(
     ctx,
@@ -1391,7 +1401,8 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);
   if (s.perf) drawPerf(ctx, s.perf, w);
-  if (s.issPanel) drawIssPanel(ctx, s.issPanel, w, s.perf ? 170 : 8);
+  let rightTop = s.perf ? PERF_BOTTOM : 0;
+  if (s.issPanel) rightTop = drawIssPanel(ctx, s.issPanel, w, s.perf ? 170 : 8);
 
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
@@ -1424,4 +1435,5 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   );
   ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';
+  return { rightTop };
 }

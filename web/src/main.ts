@@ -1389,6 +1389,19 @@ function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, 
   return { draws, markers, sunInShot };
 }
 
+/** The right-hand column (feeds dashboard, place card) and how far down the HUD's panels reach. */
+const rightStack = document.getElementById('right-stack') as HTMLElement;
+let hudRightTop = 0;
+
+/** Screen boxes of the page panels showing in the right-hand column, for labels to avoid. */
+function rightPanels(): { x: number; y: number; w: number; h: number }[] {
+  return [...rightStack.children].flatMap((el) => {
+    if ((el as HTMLElement).hidden) return [];
+    const r = el.getBoundingClientRect();
+    return r.height ? [{ x: r.left, y: r.top, w: r.width, h: r.height }] : [];
+  });
+}
+
 function radiusCss() {
   return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * 0.9 * settings.mag;
 }
@@ -1480,7 +1493,7 @@ function frame(now: number) {
   if (settings.fps) gpuTimer.end(slot);
   const t2 = performance.now();
 
-  drawOverlay(overlayCanvas, {
+  const hud = drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
@@ -1499,6 +1512,7 @@ function frame(now: number) {
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
     bottomInset: drawerInset,
+    panels: rightPanels(),
     target: target && target.until > Date.now() ? target : undefined,
     places: placeLabels,
     weatherLine: weatherLine(),
@@ -1520,6 +1534,11 @@ function frame(now: number) {
     note,
   });
   const t3 = performance.now();
+  // The right-hand column of page panels starts below the HUD's own panels on that side.
+  if (hud.rightTop !== hudRightTop) {
+    hudRightTop = hud.rightTop;
+    document.documentElement.style.setProperty('--hud-right', `${hudRightTop}px`);
+  }
 
   if (settings.fps) {
     stats.record(now, { sim: t1 - t0, gl: t2 - t1, overlay: t3 - t2 });
