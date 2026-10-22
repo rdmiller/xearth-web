@@ -8,6 +8,8 @@
 //    read by the browser every two minutes. An alert lists the coastal zones it
 //    covers; a sample of them is fetched and lit along the coast.
 
+import { SEV } from './tokens';
+
 export interface TsunamiBulletin {
   id: string;
   /** NTWC or PTWC. */
@@ -45,9 +47,9 @@ const STATEMENT_LABEL_HOURS = 6;
 export const isAlertCategory = (c: string) => c === 'warning' || c === 'threat' || c === 'advisory' || c === 'watch';
 
 export const TSUNAMI_COLOR: Record<string, string> = {
-  warning: '#ff3b5c',
-  threat: '#ff3b5c',
-  advisory: '#ff9f43',
+  warning: SEV.warning,
+  threat: SEV.warning,
+  advisory: SEV.watch,
   watch: '#ffd166',
   cancellation: '#8a9bb0',
   information: '#8fb8ff',

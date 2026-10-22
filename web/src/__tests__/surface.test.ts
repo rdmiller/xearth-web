@@ -14,6 +14,7 @@ import {
   smokeSummary,
   type GdacsEvent,
 } from '../hazards';
+import { SEV } from '../tokens';
 import { toLatLon } from '../vec';
 
 describe('lightning', () => {
@@ -114,6 +115,6 @@ describe('GDACS impact levels', () => {
     expect(['Green', 'Orange', 'Red', 'red', ' Orange '].map(impactLevel)).toEqual([1, 2, 3, 3, 2]);
     expect(impactLevel('Unknown')).toBe(0);
     expect(impactLevel(null)).toBe(0);
-    expect(IMPACT_COLOR[3]).toBe('#ff4d4d');
+    expect(IMPACT_COLOR[3]).toBe(SEV.warning);
   });
 });

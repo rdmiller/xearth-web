@@ -10,7 +10,8 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <title>xearth web</title>
     <style>
-      /* Design tokens: every colour, ink, surface, type stack, radius and timing the HUD uses. */
+      /* Design tokens: every colour, ink, surface, type stack, radius and timing the HUD uses.
+         Canvas code reads the same values through tok() (src/tokens.ts). */
       :root {
         color-scheme: dark;
         /* Accent: the HUD cyan, and its softer tint for headings, carets and idle icons. */
@@ -25,7 +26,8 @@
         --ink-4: rgb(175 215 240 / 0.62);
         --ink-label: rgb(var(--hud-cyan-rgb) / 0.78);
         --ink-on-accent: #04101a;
-        /* Status, for UI state (marks, chips, tones). Data layers have their own scales. */
+        /* Status, for UI state (marks, chips, tones). Data layers have their own scales; their
+           severity colours (--sev-advisory, --sev-watch, --sev-warning) come from src/tokens.ts. */
         --ok: #7dffa8;
         --warn: #ffc857;
         --bad: #ff6b6b;
@@ -235,9 +237,9 @@
       #place-card .no-alerts { margin-top: 8px; color: var(--ok); }
       #place-card ul.alerts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
       #place-card .alert { display: grid; padding: 4px 8px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.04); box-shadow: inset 2px 0 0 var(--alert); }
-      #place-card .alert.warning { --alert: #ff4d4d; }
-      #place-card .alert.watch { --alert: #ff9f43; }
-      #place-card .alert.advisory { --alert: #ffd84d; }
+      #place-card .alert.warning { --alert: var(--sev-warning); }
+      #place-card .alert.watch { --alert: var(--sev-watch); }
+      #place-card .alert.advisory { --alert: var(--sev-advisory); }
       #place-card .alert.info { --alert: var(--hud-accent); }
       #place-card .alert-title { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--alert); }
       .meter { flex: none; }
@@ -388,7 +390,7 @@
       #feeds .feed + .feed { border-top: 1px solid rgb(var(--hud-cyan-rgb) / 0.1); }
       #feeds .feed[data-fresh="fresh"] { --fresh: var(--ok); }
       #feeds .feed[data-fresh="late"] { --fresh: var(--warn); }
-      #feeds .feed[data-fresh="stale"] { --fresh: #ff4d4d; }
+      #feeds .feed[data-fresh="stale"] { --fresh: var(--bad); }
       #feeds .feed.in { animation: feed-in 0.22s ease-out; }
       #feeds .feed.out { animation: feed-out 0.2s ease-in forwards; }
       #feeds .feed.pulse { animation: feed-pulse 1.4s ease-out; }
@@ -400,7 +402,7 @@
       #feeds .ring circle { fill: none; stroke-width: 3; }
       #feeds .ring .track { stroke: var(--glass-track); }
       #feeds .ring .arc { stroke: var(--hud-accent); stroke-linecap: round; transition: stroke-dashoffset 0.9s linear; filter: drop-shadow(0 0 3px rgb(var(--hud-cyan-rgb) / 0.5)); }
-      #feeds .feed.error .ring .arc { stroke: #ff4d4d; filter: none; }
+      #feeds .feed.error .ring .arc { stroke: var(--bad); filter: none; }
       #feeds .feed.busy .ring svg { animation: feed-spin 1s linear infinite; }
       #feeds .feed.busy .ring .arc { stroke-dashoffset: 70 !important; transition: none; }
       #feeds .feed.live .ring .arc { animation: feed-live 2s ease-in-out infinite; }
@@ -480,8 +482,8 @@
       <h3>Symbols</h3>
       <p class="legend">
         <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#6fdc8c"/><rect x="5" y="3" width="3" height="7" fill="rgba(175,215,240,.22)"/><rect x="10" y="0" width="3" height="10" fill="rgba(175,215,240,.22)"/></svg>
-        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#ff9f43"/><rect x="5" y="3" width="3" height="7" fill="#ff9f43"/><rect x="10" y="0" width="3" height="10" fill="rgba(175,215,240,.22)"/></svg>
-        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#ff4d4d"/><rect x="5" y="3" width="3" height="7" fill="#ff4d4d"/><rect x="10" y="0" width="3" height="10" fill="#ff4d4d"/></svg>
+        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" style="fill: var(--sev-watch)"/><rect x="5" y="3" width="3" height="7" style="fill: var(--sev-watch)"/><rect x="10" y="0" width="3" height="10" fill="rgba(175,215,240,.22)"/></svg>
+        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" style="fill: var(--sev-warning)"/><rect x="5" y="3" width="3" height="7" style="fill: var(--sev-warning)"/><rect x="10" y="0" width="3" height="10" style="fill: var(--sev-warning)"/></svg>
         GDACS impact — low, medium, high: the humanitarian impact expected (hazard, people exposed,
         vulnerability), not the event's size.
       </p>

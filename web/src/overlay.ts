@@ -6,20 +6,22 @@ import { CITIES } from './cities';
 import type { CloudStatus } from './cloudSync';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
+import { tok } from './tokens';
 import { project, type Camera } from './view';
 import { dot, fromLatLon, normalize, sub, type Vec3 } from './vec';
 
 /** "HUD Digits" (registered in main.ts) supplies fixed-width digits ahead of Chakra Petch. */
 export const UI_FONT = '"HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif';
 
+// The HUD's colours, from the design tokens in index.html (line, glow and halo are canvas-only).
 const HUD = {
-  accent: '#62e6ff',
+  accent: tok('--hud-accent'),
   /** The readout's keys: small-caps labels in the accent, quieter than the values beside them. */
-  key: 'rgba(98, 230, 255, 0.78)',
+  key: tok('--ink-label'),
   line: 'rgba(98, 230, 255, 0.7)',
   glow: 'rgba(0, 200, 255, 0.55)',
-  text: 'rgba(230, 246, 255, 0.94)',
-  dim: 'rgba(175, 215, 240, 0.72)',
+  text: tok('--ink-1'),
+  dim: tok('--ink-3'),
   halo: 'rgba(0, 6, 14, 0.9)',
 };
 
@@ -34,7 +36,7 @@ interface LabelLook {
 }
 
 const CITY_LOOK: LabelLook = { key: 'city', accent: HUD.accent, line: HUD.line, glow: HUD.glow, text: HUD.text };
-export const PLACE_COLOR = '#ff7ad9';
+export const PLACE_COLOR = tok('--hud-place');
 const PLACE_LOOK: LabelLook = {
   key: 'place',
   accent: PLACE_COLOR,
@@ -397,7 +399,7 @@ export interface LaunchOverlay {
 }
 
 const LAUNCH_COLOR = '#ff9f43';
-const STATUS_COLOR: Record<string, string> = { go: '#7dffa8', hold: '#ff5c7a', success: HUD.accent };
+const STATUS_COLOR: Record<string, string> = { go: tok('--ok'), hold: tok('--bad'), success: HUD.accent };
 const LABEL_ROW = 15;
 
 /** A run of text in one colour — or, with `meter`, the impact meter (that many of 3 bars lit). */

@@ -16,6 +16,7 @@ import {
   stormTitle,
   type Storm,
 } from '../hazards';
+import { SEV } from '../tokens';
 import { toLatLon } from '../vec';
 
 describe('decodeOvation', () => {
@@ -78,7 +79,7 @@ describe('storms', () => {
 
   it('colours by class', () => {
     expect(stormColor('TD')).toBe('#5ebaff');
-    expect(stormColor('MH')).toBe('#ff6060');
+    expect(stormColor('MH')).toBe(SEV.warning);
     expect(stormColor('??')).toBe('#c8d6e5');
   });
 });

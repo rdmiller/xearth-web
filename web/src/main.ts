@@ -128,6 +128,7 @@ import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type
 import {
   clearOverlaySprites,
   drawOverlay,
+  PLACE_COLOR,
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
@@ -141,6 +142,7 @@ import {
   type StormOverlay,
 } from './overlay';
 import { FrameStats, GpuTimer } from './perf';
+import { publishSeverity } from './tokens';
 import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
@@ -172,6 +174,9 @@ const DIGITS = 'U+0030-0039, U+002B-002E, U+003A, U+00B0, U+2212'; // 0-9 + , - 
 for (const [weight, url] of [['500', mono500], ['600', mono600]] as const) {
   document.fonts.add(new FontFace('HUD Digits', `url(${url}) format('woff2')`, { weight, unicodeRange: DIGITS }));
 }
+
+// Data-layer severity colours are defined in tokens.ts; CSS gets them as --sev-*.
+publishSeverity(document.documentElement);
 
 const BASE = import.meta.env.BASE_URL;
 /** NASA textures are served with the data (they're ~40 MB, too big to bundle in an app). */
@@ -1196,7 +1201,7 @@ const placeToast = toasts.add({
   id: 'place-card',
   title: 'Place',
   order: 3,
-  accent: '#ff7ad9',
+  accent: PLACE_COLOR,
   shrink: 0,
   maxShare: 0.5,
   onClose: () => placeCard.hide(),

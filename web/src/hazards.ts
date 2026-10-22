@@ -5,6 +5,7 @@
 // is in renderer/ and overlay.ts.
 
 import type { SurfacePoints } from './renderer/points';
+import { SEV } from './tokens';
 import { fromLatLon } from './vec';
 
 // ---- aurora ------------------------------------------------------------------------
@@ -148,7 +149,7 @@ export function stormColor(cls: string): string {
     case 'HU':
       return '#ffb347';
     case 'MH':
-      return '#ff6060';
+      return SEV.warning;
     default:
       return '#c8d6e5';
   }
@@ -299,7 +300,7 @@ export function quakeRadius(mag: number): number {
 /** Red within the hour, orange within 6 h, then yellow; fading over the day. */
 export function quakeStyle(ageMs: number): { color: string; alpha: number } {
   const h = ageMs / 3_600_000;
-  const color = h < 1 ? '#ff4d6d' : h < 6 ? '#ff8c42' : '#ffd166';
+  const color = h < 1 ? SEV.warning : h < 6 ? '#ff8c42' : '#ffd166';
   return { color, alpha: Math.max(0.35, 1 - h / 30) };
 }
 
@@ -436,8 +437,8 @@ export function isEventManifest(v: unknown): v is EventManifest {
   return !!m && typeof m.generated === 'string' && Array.isArray(m.events) && !!m.counts;
 }
 
-export const EVENT_COLOR: Record<GdacsType, string> = { FL: '#4da3ff', WF: '#ff7a45', VO: '#ff4d6d' };
-export const ALERT_COLOR: Record<string, string> = { Green: '#6fdc8c', Orange: '#ff9f43', Red: '#ff4d4d' };
+export const EVENT_COLOR: Record<GdacsType, string> = { FL: '#4da3ff', WF: '#ff7a45', VO: SEV.warning };
+export const ALERT_COLOR: Record<string, string> = { Green: '#6fdc8c', Orange: SEV.watch, Red: SEV.warning };
 
 /**
  * GDACS alert levels grade expected humanitarian impact (hazard × exposed population ×

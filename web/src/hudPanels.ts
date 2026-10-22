@@ -4,6 +4,10 @@
 
 import type { PerfSummary } from './perf';
 import type { Toast } from './toasts';
+import { tok } from './tokens';
+
+/** Sparkline bars: on pace, a skipped frame or two, a hitch. */
+const BAR = { ok: tok('--hud-accent'), slow: tok('--warn'), hitch: tok('--bad') };
 
 export interface PerfView {
   summary: PerfSummary;
@@ -97,10 +101,10 @@ export class PerfPanel {
       ctx.fillStyle = !continuous
         ? 'rgba(175, 215, 240, 0.35)'
         : ms <= FRAME_60 * 1.25
-          ? '#62e6ff'
+          ? BAR.ok
           : ms <= FRAME_60 * 2.1
-            ? '#ffc857'
-            : '#ff5c7a';
+            ? BAR.slow
+            : BAR.hitch;
       const top = y(ms);
       ctx.fillRect(w - (bars.length - i) * bw, top, Math.max(bw - 0.4, 0.6), SPARK_H - top);
     });
