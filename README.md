@@ -544,10 +544,11 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   only the three largest are, since FIRMS already shows where they burn. A wildfire's burned
   area is drawn as a dashed circle of the same area once it outgrows the marker.
   - *Impact, not size:* GDACS's Green / Orange / Red grade expected humanitarian impact
-    (the hazard, the people exposed and how vulnerable they are), so labels say LOW / MEDIUM /
-    HIGH IMPACT in those colours — Green means international help is unlikely to be needed,
-    not that nothing is happening (a 66,000 ha fire with few people near it is Green). Cyclone
-    labels use the same wording for GDACS's levels.
+    (the hazard, the people exposed and how vulnerable they are), so labels end in an impact
+    meter: one, two or three rising bars lit in those colours, for low, medium and high
+    impact (the help panel has the legend). Green means international help is unlikely to be
+    needed, not that nothing is happening: a 66,000 ha fire with few people near it is Green.
+    Cyclone labels and the place card's alerts show the same meter for GDACS's levels.
 - **Snow and ice:**
   - *North:* the IMS 4 km chart is polar stereographic on WGS84 (true at 60°N, −80° down the
     grid). The pipeline reprojects it with its own projection maths rather than NOAA's 300 MB
