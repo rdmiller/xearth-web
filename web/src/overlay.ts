@@ -9,7 +9,8 @@ import { edgePoint } from './bodies';
 import { project, type Camera } from './view';
 import { dot, fromLatLon, normalize, sub, type Vec3 } from './vec';
 
-export const UI_FONT = '"Chakra Petch", "Segoe UI", system-ui, sans-serif';
+/** "HUD Digits" (registered in main.ts) supplies fixed-width digits ahead of Chakra Petch. */
+export const UI_FONT = '"HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif';
 
 const HUD = {
   accent: '#62e6ff',
@@ -183,6 +184,19 @@ function sprite(key: string, dpr: number, bounds: Rect, draw: (c: CanvasRenderin
   return s;
 }
 
+/**
+ * Text with a dark outline under it, then the soft shadow already set on `c`: a
+ * shadow alone washes out over bright cloud and ice. Only for cached sprites —
+ * stroking costs a second text pass.
+ */
+function haloText(c: CanvasRenderingContext2D, text: string, x: number, y: number) {
+  c.lineJoin = 'round';
+  c.lineWidth = 3;
+  c.strokeStyle = HUD.halo;
+  c.strokeText(text, x, y);
+  c.fillText(text, x, y);
+}
+
 /** Draw a sprite with its anchor at (x, y), snapped to device pixels so text stays crisp. */
 function stamp(ctx: CanvasRenderingContext2D, s: Sprite, x: number, y: number, dpr: number) {
   const px = Math.round((x - s.ax) * dpr) / dpr;
@@ -236,7 +250,7 @@ function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: 
     c.shadowColor = HUD.halo;
     c.shadowBlur = 4;
     c.fillStyle = look.text;
-    c.fillText(name, r.x + PAD, lineY - 3);
+    haloText(c, name, r.x + PAD, lineY - 3);
   });
 }
 
@@ -287,7 +301,7 @@ function satSprite(name: string, color: string, sunlit: boolean, labelX: number,
     c.shadowColor = HUD.halo;
     c.shadowBlur = 4;
     c.fillStyle = color;
-    c.fillText(label, labelX, 0);
+    haloText(c, label, labelX, 0);
   });
 }
 
@@ -486,7 +500,7 @@ function drawCallouts(ctx: CanvasRenderingContext2D, callouts: Callout[]) {
   ctx.letterSpacing = '0.1em';
   ctx.textBaseline = 'middle';
   for (const c of callouts) {
-    ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.85)';
     ctx.beginPath();
     ctx.roundRect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, 3);
     ctx.fill();
@@ -858,7 +872,7 @@ function satLabelSprite(text: string, color: string, side: LabelSide, textW: num
     c.fillStyle = color;
     c.textAlign = side === 'right' ? 'left' : side === 'left' ? 'right' : 'center';
     const [tx, ty] = side === 'right' ? [7, 0] : side === 'left' ? [-7, 0] : side === 'below' ? [0, 12] : [0, -12];
-    c.fillText(text, tx, ty);
+    haloText(c, text, tx, ty);
   });
 }
 
@@ -1234,7 +1248,8 @@ function readoutValueX(ctx: CanvasRenderingContext2D, lines: ReadoutLine[]): num
   return 24 + Math.max(0, ...lines.map((l) => ctx.measureText(l.key).width)) + 12;
 }
 
-export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
+/** Draws the overlay; returns the bottom edge of the status readout (CSS px, 0 when there's none). */
+export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -1298,7 +1313,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   if (readout) {
     // A dark backing so the readout stays legible over bright cloud, then a thin
     // accent rule down the left, like an instrument readout.
-    ctx.fillStyle = 'rgba(4, 10, 20, 0.6)';
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.82)';
     ctx.beginPath();
     ctx.roundRect(readout.x, readout.y, readout.w, readout.h, 4);
     ctx.fill();
@@ -1333,4 +1348,5 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   );
   ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';
+  return readout ? Math.ceil(readout.y + readout.h) : 0;
 }

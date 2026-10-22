@@ -11,7 +11,7 @@
     <title>xearth web</title>
     <style>
       html, body { margin: 0; height: 100%; background: #000; color: #dfe6ff; overflow: hidden; }
-      body { font: 500 14px/1.45 "Chakra Petch", "Segoe UI", system-ui, sans-serif; letter-spacing: 0.02em; }
+      body { font: 500 14px/1.45 "HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif; letter-spacing: 0.02em; }
       canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       #overlay { touch-action: none; cursor: grab; }
       #overlay:active { cursor: grabbing; }
@@ -27,7 +27,7 @@
       #help table { border-collapse: collapse; width: 100%; }
       #help td { padding: 1px 8px 1px 0; vertical-align: top; }
       #help code { font: 12px ui-monospace, Consolas, monospace; color: #fff; }
-      #help kbd { font: 600 12px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; letter-spacing: 0.06em; }
+      #help kbd { font: 600 12px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; letter-spacing: 0.06em; }
       #help td:first-child { width: 4.5em; white-space: nowrap; }
       #toast {
         position: fixed; left: 50%; bottom: calc(var(--drawer-h, 0px) + 18px); transform: translate(-50%, 8px); z-index: 3;
@@ -65,7 +65,7 @@
       @keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
       .toast-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 4px 0 14px; }
       .toast-title {
-        flex: 1; min-width: 0; padding: 7px 0 6px; text-align: left; font: 600 12px "Chakra Petch", system-ui, sans-serif;
+        flex: 1; min-width: 0; padding: 7px 0 6px; text-align: left; font: 600 12px "HUD Digits", "Chakra Petch", system-ui, sans-serif;
         letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); background: none; border: 0; cursor: pointer;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
@@ -79,7 +79,7 @@
       .toast-status[data-tone="bad"] { color: #ff6b6b; }
       .toast-close {
         flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: 4px;
-        font: 600 16px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer;
+        font: 600 16px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer;
       }
       .toast-close:hover { color: #fff; background: rgba(98, 230, 255, 0.1); }
       .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
@@ -152,9 +152,15 @@
       #iss .dial-hub { fill: #62e6ff; }
       #iss .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #f2f7ff; }
       @media (prefers-reduced-motion: reduce) { #iss .meter-fill, #iss .dial-needle, #iss .iss-content { transition: none; } }
-      /* Phones: the column spans the width and sits at the bottom, clear of the readout. */
+      /* Phones: the column spans the width and fills the room between the readout (whose
+         height overlay.ts reports as --readout-bottom) and the dock, stacked from the bottom.
+         When the windows outgrow it, the column scrolls; "safe" keeps the overflow reachable
+         rather than pushed off the top. */
       @media (max-width: 600px) {
-        #toasts { left: 12px; width: auto; top: auto; max-height: 55vh; justify-content: flex-end; }
+        #toasts {
+          left: 12px; width: auto; top: calc(var(--readout-bottom, 0px) + 8px); justify-content: safe flex-end;
+          overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none;
+        }
       }
       @media (prefers-reduced-motion: reduce) { .toast-window.in, .toast-window.out { animation: none; } }
       /* Place card: after a search, the weather and alerts there; a toast window in its label's pink. */
@@ -175,7 +181,7 @@
       .meter { flex: none; }
       #place-card .alert-detail { font-size: 12px; color: rgba(175, 215, 240, 0.8); }
       #place-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 11px; }
-      #place-card .unlabel { padding: 2px 8px; font: 600 11px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
+      #place-card .unlabel { padding: 2px 8px; font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
         color: #ff7ad9; background: none; border: 1px solid rgba(255, 122, 217, 0.45); border-radius: 4px; cursor: pointer; }
       #place-card .unlabel:hover { background: rgba(255, 122, 217, 0.12); }
       #place-card .unlabel[hidden] { display: none; }
@@ -191,7 +197,7 @@
       }
       #sat-tree header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
       #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #62e6ff; }
-      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
       #sat-tree ul { list-style: none; margin: 0; padding: 0; }
       #sat-tree ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid rgba(98, 230, 255, 0.14); }
       #sat-tree li.collapsed > ul { display: none; }
@@ -209,12 +215,12 @@
       #sat-tree .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(223, 230, 255, 0.55); }
       #sat-tree .labels, #sat-tree .labels-spacer { flex: none; width: 28px; }
       #sat-tree .labels {
-        padding: 1px 0; font: 600 10px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.04em;
+        padding: 1px 0; font: 600 10px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.04em;
         color: rgba(143, 216, 240, 0.65); background: none; border: 1px solid rgba(98, 230, 255, 0.22); border-radius: 4px; cursor: pointer;
       }
       #sat-tree .labels[aria-pressed="true"] { color: #04101a; background: #62e6ff; border-color: #62e6ff; }
       #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); }
-      #sat-tree kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
+      #sat-tree kbd { font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
       /* Layer dock: floating glass buttons that rise in as the mouse nears the bottom; a grip pins them. */
       #drawer {
         position: fixed; left: 50%; bottom: 20px; z-index: 2; transform: translateX(-50%);
@@ -251,19 +257,19 @@
       #drawer .dock-btn[aria-pressed="true"] .initials { filter: drop-shadow(0 0 4px rgba(98, 230, 255, 0.6)); }
       #drawer .initials {
         display: grid; place-items: center; width: 20px; height: 20px; box-sizing: border-box; border: 1.6px solid currentColor;
-        border-radius: 6px; font: 600 10px/1 "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.02em;
+        border-radius: 6px; font: 600 10px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.02em;
       }
       /* Names: a HUD tag above the button on hover / keyboard focus; always shown, below, on touch screens. */
       #drawer .caption {
         position: absolute; bottom: calc(100% + 9px); left: 50%; transform: translateX(-50%); padding: 3px 7px; white-space: nowrap;
-        font: 600 10px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase;
+        font: 600 10px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase;
         color: #dfe6ff; background: rgba(4, 10, 20, 0.9); border: 1px solid rgba(98, 230, 255, 0.3); border-radius: 4px;
         opacity: 0; pointer-events: none; transition: opacity 100ms;
       }
       #drawer .dock-btn:hover .caption, #drawer .dock-btn:focus-visible .caption { opacity: 1; }
       #drawer .tag {
         position: absolute; top: -7px; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: 3px;
-        font: 600 7px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.06em; color: #ffc857; background: rgba(4, 10, 20, 0.92);
+        font: 600 7px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.06em; color: #ffc857; background: rgba(4, 10, 20, 0.92);
       }
       #drawer .tag:empty { display: none; }
       #drawer .dock-extra {
@@ -289,6 +295,23 @@
         }
         #drawer .dock-handle { width: 96px; height: 30px; }
         #drawer .grip { width: 52px; height: 5px; background: rgba(98, 230, 255, 0.55); }
+      }
+      /* Phones: one row that scrolls sideways (snapping to buttons) instead of wrapping into
+         rows that cover half the globe. Dock blur is dropped: 25 small blur regions over the
+         WebGL canvas cost GPU time for an effect a 40px button barely shows. */
+      @media (max-width: 600px) {
+        #drawer { left: 0; right: 0; transform: none; width: auto; max-width: none; }
+        #drawer .dock {
+          flex-wrap: nowrap; justify-content: flex-start; gap: 6px 18px; padding-inline: 12px;
+          max-width: 100%; box-sizing: border-box; overflow: auto hidden; overscroll-behavior-x: contain;
+          scroll-snap-type: x proximity; scrollbar-width: none;
+        }
+        #drawer .dock::-webkit-scrollbar { display: none; }
+        #drawer .dock-group { flex: none; gap: 6px; }
+        #drawer .dock-group + .dock-group::before { left: -10.5px; }
+        #drawer .dock-cell { scroll-snap-align: center; }
+        #drawer .dock-btn { width: 40px; height: 40px; backdrop-filter: none; background: rgba(8, 12, 24, 0.86); }
+        #search input { font-size: 16px; } /* below 16px, iOS zooms the page on focus */
       }
       @media (prefers-reduced-motion: reduce) {
         #drawer .dock { transform: none; }
@@ -350,7 +373,7 @@
         box-shadow: 0 0 28px rgba(0, 200, 255, 0.12), 0 6px 24px rgba(0, 0, 0, 0.5);
       }
       #search input {
-        width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px "Chakra Petch", system-ui, sans-serif;
+        width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px "HUD Digits", "Chakra Petch", system-ui, sans-serif;
         letter-spacing: 0.04em; color: #dfe6ff; background: rgba(98, 230, 255, 0.06);
         border: 1px solid rgba(98, 230, 255, 0.3); border-radius: 5px; outline: none;
       }
@@ -364,7 +387,7 @@
       #search .search-status { margin: 6px 2px 0; font-size: 12px; color: rgba(143, 216, 240, 0.6); }
       #search .search-status:empty { display: none; }
       #search footer { margin: 8px 2px 0; font-size: 11px; color: rgba(223, 230, 255, 0.45); letter-spacing: 0.04em; }
-      #search kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
+      #search kbd { font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>

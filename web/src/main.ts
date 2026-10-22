@@ -4,6 +4,8 @@
 
 import '@fontsource/chakra-petch/500.css';
 import '@fontsource/chakra-petch/600.css';
+import mono500 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2?url';
+import mono600 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2?url';
 import type { SatRec } from 'satellite.js';
 import { subsolarPoint, sunDirection } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
@@ -162,6 +164,14 @@ import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } fr
 import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
 import { Capacitor } from '@capacitor/core';
 import type { BodyDraw } from './renderer/bodies';
+
+// Chakra Petch has no tabular figures, so ticking numbers jitter sideways. "HUD Digits" is a
+// monospace face limited to digits and numeric punctuation; it heads every UI font stack, so
+// the browser takes those glyphs from it and everything else falls through to Chakra Petch.
+const DIGITS = 'U+0030-0039, U+002B-002E, U+003A, U+00B0, U+2212'; // 0-9 + , - . : ° −
+for (const [weight, url] of [['500', mono500], ['600', mono600]] as const) {
+  document.fonts.add(new FontFace('HUD Digits', `url(${url}) format('woff2')`, { weight, unicodeRange: DIGITS }));
+}
 
 const BASE = import.meta.env.BASE_URL;
 /** NASA textures are served with the data (they're ~40 MB, too big to bundle in an app). */
@@ -1401,6 +1411,8 @@ const gpuTimer = new GpuTimer(renderer.gl);
 let renderMode = '';
 /** Current redraw interval, s (0 = every frame); sizes the display's averaging window. */
 let redrawEvery = 0;
+/** Last readout bottom edge sent to CSS as --readout-bottom (only written when it changes). */
+let lastReadoutBottom = -1;
 
 function frame(now: number) {
   raf = 0;
@@ -1481,7 +1493,7 @@ function frame(now: number) {
   if (settings.fps) gpuTimer.end(slot);
   const t2 = performance.now();
 
-  drawOverlay(overlayCanvas, {
+  const readoutBottom = drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
@@ -1508,6 +1520,11 @@ function frame(now: number) {
     clock: clockLabel(),
     note,
   });
+  // On phones the toast column starts below the readout instead of covering it.
+  if (readoutBottom !== lastReadoutBottom) {
+    lastReadoutBottom = readoutBottom;
+    document.documentElement.style.setProperty('--readout-bottom', `${readoutBottom}px`);
+  }
   issPanelView.update(issPanelState(sunDir));
   perfPanel.update(
     settings.fps
@@ -1749,7 +1766,8 @@ helpKeys.innerHTML = helpRows()
   .join('');
 
 // Canvas text doesn't trigger web-font loading; ask for the HUD font, redraw once it's in.
-Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.fonts.load(f)))
+// The sample text covers both faces: a letter for Chakra Petch, a digit for HUD Digits.
+Promise.all([`500 11px ${UI_FONT}`, `600 11px ${UI_FONT}`].map((f) => document.fonts.load(f, 'A0')))
   .then(() => {
     clearOverlaySprites(); // labels drawn before the font arrived used the fallback face
     requestRedraw();
