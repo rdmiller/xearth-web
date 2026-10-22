@@ -67,6 +67,17 @@
       canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       #overlay { touch-action: none; cursor: grab; }
       #overlay:active { cursor: grabbing; }
+      /* Keyboard focus: a 2px accent ring with a dark halo inside it, so it holds up over the
+         globe's cyan glow. (The search box draws its own.) */
+      :where(button, a, input, [tabindex]):focus-visible {
+        outline: 2px solid var(--hud-accent); outline-offset: 2px; box-shadow: 0 0 0 4px rgb(0 0 0 / 0.55);
+      }
+      /* Text floor: nothing under 10px; on touch screens, held further away, the smallest
+         text steps up to 11px. */
+      @media (pointer: coarse) {
+        .hud-rows dt, #iss .iss-label, #iss .iss-delta, #iss .iss-note, #iss .iss-chip, #feeds .src, #feeds .ring-text,
+        #sat-tree .labels, #credits, #radar-credit { font-size: 11px; }
+      }
       /* Glass: the one surface every panel uses (toast windows, help, satellites, search, the
          status toast). A --rail panel carries a 2px stripe in its --accent down the left. Its
          scroll bars are a slim cyan rail on no track, inset from the rounded corners, widening
@@ -165,7 +176,6 @@
         font: 600 16px/1 var(--font-ui); color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer;
       }
       .toast-close:hover { color: #fff; background: rgb(var(--hud-cyan-rgb) / 0.1); }
-      .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; }
       .toast-window.folded .toast-body { display: none; }
       /* Label: value rows, as in the frame-rate window: quiet small-caps labels, bright values. */
@@ -186,7 +196,7 @@
       #iss .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
       #iss .iss-chips { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
       #iss .iss-chip {
-        flex: none; padding: 1px 5px; border-radius: var(--r-sm); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        flex: none; padding: 1px 5px; border-radius: var(--r-sm); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
         color: var(--ink-2); background: rgb(var(--hud-cyan-rgb) / 0.1); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22); white-space: nowrap;
       }
       #iss .iss-chip[data-tone="warn"] { color: var(--warn); border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
@@ -256,7 +266,6 @@
       #place-card .credit { margin-left: auto; color: var(--ink-4); text-decoration: none; }
       #place-card .credit:hover { color: var(--hud-accent); text-decoration: underline; }
       /* Satellite tree: a glass panel of tri-state checkboxes. */
-      #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       #sat-tree {
         position: fixed; left: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 3; width: min(320px, calc(100vw - 24px));
         max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; padding: 12px 12px 10px 10px; font-size: 13px;
@@ -346,8 +355,8 @@
       }
       #drawer .dock-btn:hover .caption, #drawer .dock-btn:focus-visible .caption { opacity: 1; }
       #drawer .tag {
-        position: absolute; top: -7px; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: var(--r-sm);
-        font: 600 7px var(--font-ui); letter-spacing: 0.06em; color: var(--warn); background: var(--glass-fill-solid);
+        position: absolute; top: -8px; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: var(--r-sm);
+        font: 600 10px/1 var(--font-ui); letter-spacing: 0.04em; color: var(--warn); background: var(--glass-fill-solid);
       }
       #drawer .tag:empty { display: none; }
       #drawer .dock-extra {
@@ -364,13 +373,14 @@
         box-shadow: 0 0 6px rgb(var(--hud-cyan-rgb) / 0.2); transition: width var(--dur-ui), background var(--dur-ui);
       }
       #drawer .dock-handle:hover .grip, #drawer.pinned .grip { width: 46px; background: var(--hud-accent); }
-      #drawer button:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       @media (pointer: coarse) {
         #drawer .dock { padding-bottom: 16px; }
         #drawer .caption {
-          top: calc(100% + 3px); bottom: auto; padding: 0; font-size: 8px; letter-spacing: 0.06em;
+          top: calc(100% + 3px); bottom: auto; padding: 0; font-size: 10px; letter-spacing: 0.02em; text-transform: none;
           color: var(--ink-3); background: none; border: 0; opacity: 1;
         }
+        /* Room for the caption under each button: mixed case, so the longest fit a 52px cell. */
+        #drawer .dock-cell { display: grid; justify-items: center; min-width: 52px; }
         #drawer .dock-handle { width: 96px; height: 30px; }
         #drawer .grip { width: 52px; height: 5px; background: var(--glass-edge-hi); }
       }
@@ -426,7 +436,7 @@
         position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 600;
         letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--ink-2);
       }
-      #feeds .feed.live .ring-text { font-size: 8px; letter-spacing: 0.08em; color: var(--hud-accent); }
+      #feeds .feed.live .ring-text { font-size: 10px; letter-spacing: 0.04em; color: var(--hud-accent); }
       #feeds .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
       #feeds .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
       #feeds .name { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-1); white-space: nowrap; }
