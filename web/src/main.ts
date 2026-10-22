@@ -24,6 +24,8 @@ import {
 } from './satcategories';
 import { SatTree } from './satTree';
 import { Drawer } from './drawer';
+import { formatCoordinates, glideAt, glideMs, type Place } from './places';
+import { PlaceSearch } from './search';
 import {
   decodeNwsAlerts,
   isAlertCategory,
@@ -136,7 +138,7 @@ import {
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
 import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
 import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
-import { cameraFor, ORTHO_SKY_FOCAL, skyFocal, viewerLatLon, type Camera, type TrackResolver } from './view';
+import { cameraFor, ORTHO_SKY_FOCAL, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
 import type { BodyDraw } from './renderer/bodies';
 
 const BASE = import.meta.env.BASE_URL;
@@ -950,6 +952,44 @@ const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
 });
 satTree.opener = drawer.satTreeButton;
 
+// ---- going to a place ------------------------------------------------------------------
+// From the search box or a double-click: glide along the great circle to it (a fixed
+// view, zoom unchanged), then mark it with a reticle and its name for a while.
+
+const TARGET_MS = 12_000;
+let target: { pos: Vec3; name: string; until: number } | undefined;
+let glideFrame = 0;
+
+function goTo(place: Place) {
+  cancelAnimationFrame(glideFrame);
+  const from = viewerLatLon(settings, simTime(), resolveTrack);
+  const to = { lat: place.lat, lon: place.lon };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ms = reduce ? 0 : glideMs(fromLatLon(from.lat, from.lon), fromLatLon(to.lat, to.lon));
+  target = { pos: fromLatLon(to.lat, to.lon), name: place.name.toUpperCase(), until: Date.now() + TARGET_MS };
+  setTimeout(requestRedraw, TARGET_MS + 50);
+  const start = performance.now();
+  const step = () => {
+    const t = ms ? (performance.now() - start) / ms : 1;
+    const p = glideAt(from, to, t);
+    update({ view: 'fixed', lat: p.lat, lon: p.lon });
+    if (t < 1) glideFrame = requestAnimationFrame(step);
+  };
+  step();
+}
+
+const search = new PlaceSearch(document.getElementById('search') as HTMLElement, { go: goTo, toast });
+
+// Double-click (or double-tap) a point on the globe to centre on it.
+overlayCanvas.addEventListener('dblclick', (e) => {
+  const r = overlayCanvas.getBoundingClientRect();
+  const R = radiusCss();
+  const p = unproject(cameraFor(settings, simTime(), resolveTrack), (e.clientX - r.left - r.width / 2) / R, -(e.clientY - r.top - r.height / 2) / R);
+  if (!p) return;
+  const ll = toLatLon(p);
+  goTo({ name: formatCoordinates(ll.lat, ll.lon), detail: '', ...ll });
+});
+
 /** Satellites per category for the tree: the bulk counts, and 1 for each named one we have. */
 function treeCounts(): Record<string, number> {
   const counts: Record<string, number> = { ...(catalog?.counts ?? {}) };
@@ -1119,6 +1159,7 @@ function frame(now: number) {
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
     bottomInset: drawerInset,
+    target: target && target.until > Date.now() ? target : undefined,
     weatherLine: weatherLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps
@@ -1218,6 +1259,7 @@ let dragging = false;
 let last = { x: 0, y: 0 };
 
 overlayCanvas.addEventListener('pointerdown', (e) => {
+  cancelAnimationFrame(glideFrame); // grabbing the globe stops a glide in progress
   dragging = true;
   last = { x: e.clientX, y: e.clientY };
   overlayCanvas.setPointerCapture(e.pointerId);
@@ -1308,11 +1350,15 @@ const hotkeyContext: HotkeyContext = {
   toggleDrawer() {
     drawer.toggle();
   },
+  openSearch() {
+    search.toggle(true);
+  },
   toast,
 };
 
 window.addEventListener('keydown', (e) => {
-  const target = e.target as HTMLElement | null;
+  // Events aimed at the window or document (not an element) have no closest().
+  const target = e.target instanceof Element ? e.target : null;
   if (target?.closest('textarea, select, [contenteditable], input:not([type="checkbox"])')) return;
   // In the satellite panel, Space and Enter work its checkboxes and buttons.
   if (target?.closest('#sat-tree') && (e.key === ' ' || e.key === 'Enter')) return;

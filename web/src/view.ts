@@ -124,6 +124,38 @@ export function isOccluded(cam: Camera, p: Vec3): boolean {
 }
 
 /**
+ * The point on the Earth's surface under screen point (x, y) — screen units as
+ * `project` gives them (Earth radii, y up, disc centred at the origin) — or
+ * null off the disc. Perspective casts the same ray as the globe shader.
+ */
+export function unproject(cam: Camera, x: number, y: number): Vec3 | null {
+  if (!cam.dist) {
+    const r2 = x * x + y * y;
+    if (r2 > 1) return null;
+    const z = Math.sqrt(1 - r2);
+    return [
+      x * cam.right[0] + y * cam.up[0] + z * cam.dir[0],
+      x * cam.right[1] + y * cam.up[1] + z * cam.dir[1],
+      x * cam.right[2] + y * cam.up[2] + z * cam.dir[2],
+    ];
+  }
+  const eye: Vec3 = [cam.dir[0] * cam.dist, cam.dir[1] * cam.dist, cam.dir[2] * cam.dist];
+  const d: Vec3 = [
+    -cam.dir[0] * cam.focal + x * cam.right[0] + y * cam.up[0],
+    -cam.dir[1] * cam.focal + x * cam.right[1] + y * cam.up[1],
+    -cam.dir[2] * cam.focal + x * cam.right[2] + y * cam.up[2],
+  ];
+  const a = dot(d, d);
+  const b = dot(eye, d);
+  const c = dot(eye, eye) - 1;
+  const disc = b * b - a * c;
+  if (disc < 0) return null;
+  const t = (-b - Math.sqrt(disc)) / a;
+  if (t <= 0) return null;
+  return [eye[0] + t * d[0], eye[1] + t * d[1], eye[2] + t * d[2]];
+}
+
+/**
  * Project a point (Earth radii) to screen units (Earth radii, y up, disc
  * centred at the origin). `visible` is false when the Earth hides it or, in
  * perspective, when it's behind the viewer.

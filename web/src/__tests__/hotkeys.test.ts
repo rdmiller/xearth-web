@@ -25,6 +25,7 @@ function harness(initial: Partial<Settings> = {}) {
     toggleHelp: vi.fn(),
     toggleSatTree: vi.fn(),
     toggleDrawer: vi.fn(),
+    openSearch: vi.fn(),
     toast(m) {
       this.toasts.push(m);
     },

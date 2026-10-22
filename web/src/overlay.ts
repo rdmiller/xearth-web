@@ -309,6 +309,8 @@ export interface OverlayState {
   satLabels?: SatLabelOverlay[];
   /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
   bottomInset?: number;
+  /** Where the view just went (search or double-click): a reticle and the name, for a while. */
+  target?: { pos: Vec3; name: string };
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
   /** Lightning and GDACS summary. */
@@ -611,6 +613,18 @@ function quakeRequests(s: OverlayState): CalloutRequest[] {
       rows: q.rows!.map((text, i) => [{ text, color: i === 0 ? q.color : HUD.dim }]),
       gap: q.radius + 7,
     }));
+}
+
+// ---- go-to target --------------------------------------------------------------------------
+
+function drawTarget(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  if (!s.target) return;
+  const p = project(s.camera, s.target.pos);
+  if (p.visible) stamp(ctx, reticleSprite(HUD.accent, dpr), w / 2 + p.x * s.radiusPx, h / 2 - p.y * s.radiusPx, dpr);
+}
+
+function targetRequests(s: OverlayState): CalloutRequest[] {
+  return s.target ? [{ anchor: s.target.pos, rows: [[{ text: s.target.name, color: HUD.accent }]], gap: 14 }] : [];
 }
 
 // ---- tsunami ---------------------------------------------------------------------------
@@ -1303,12 +1317,13 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     s,
     w,
     h,
-    [...tsunamiRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
+    [...targetRequests(s), ...tsunamiRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
     reserved,
   );
   drawEvents(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawTsunami(ctx, s, w, h, dpr);
+  drawTarget(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
   if (s.markers) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawSatellites(ctx, s, w, h, dpr);
@@ -1344,7 +1359,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · press H',
+    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · Places: GeoNames via Open-Meteo · press H',
     w - 10,
     h - 8,
   );

@@ -152,6 +152,29 @@
         #drawer .dock { transform: none; }
         #drawer .dock-btn { transition: color 120ms, border-color 120ms; }
       }
+      /* Place search: the same HUD glass, near the top centre. */
+      #search {
+        position: fixed; left: 50%; top: max(14px, 11vh); z-index: 4; transform: translateX(-50%);
+        width: min(440px, calc(100vw - 24px)); box-sizing: border-box; padding: 10px;
+        background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.35); border-radius: 8px;
+        box-shadow: 0 0 28px rgba(0, 200, 255, 0.12), 0 6px 24px rgba(0, 0, 0, 0.5);
+      }
+      #search input {
+        width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px "Chakra Petch", system-ui, sans-serif;
+        letter-spacing: 0.04em; color: #dfe6ff; background: rgba(98, 230, 255, 0.06);
+        border: 1px solid rgba(98, 230, 255, 0.3); border-radius: 5px; outline: none;
+      }
+      #search input:focus { border-color: #62e6ff; box-shadow: 0 0 0 1px rgba(98, 230, 255, 0.35); }
+      #search input::placeholder { color: rgba(143, 216, 240, 0.45); }
+      #search ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: min(320px, 50vh); overflow: auto; }
+      #search li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+      #search li[aria-selected="true"] { background: rgba(98, 230, 255, 0.12); box-shadow: inset 2px 0 0 #62e6ff; }
+      #search .place-name { font-weight: 600; color: #dfe6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #search .place-detail { flex: none; max-width: 55%; font-size: 12px; color: rgba(143, 216, 240, 0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #search .search-status { margin: 6px 2px 0; font-size: 12px; color: rgba(143, 216, 240, 0.6); }
+      #search .search-status:empty { display: none; }
+      #search footer { margin: 8px 2px 0; font-size: 11px; color: rgba(223, 230, 255, 0.45); letter-spacing: 0.04em; }
+      #search kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
       .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
     </style>
   </head>
@@ -160,6 +183,13 @@
     <canvas id="overlay"></canvas>
     <div id="toast" role="status" aria-live="polite"></div>
     <nav id="drawer" aria-label="Layers"></nav>
+    <div id="search" role="search" hidden>
+      <input type="text" role="combobox" aria-label="Go to a place" aria-controls="place-list" aria-expanded="false"
+        aria-autocomplete="list" placeholder="Go to a place, or lat, lon" autocomplete="off" spellcheck="false" />
+      <div class="search-status" role="status" aria-live="polite"></div>
+      <ul id="place-list" role="listbox" aria-label="Places"></ul>
+      <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
+    </div>
     <aside id="sat-tree" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>

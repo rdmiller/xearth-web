@@ -36,6 +36,8 @@ export interface HotkeyContext {
   toggleSatTree(open?: boolean): void;
   /** Pin or unpin the layer dock along the bottom. */
   toggleDrawer(): void;
+  /** The place search box. */
+  openSearch(): void;
   toast(message: string): void;
 }
 
@@ -238,6 +240,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('m', 'markers', 'City markers'),
   layer('l', 'label', 'Label'),
 
+  { keys: ['/'], label: '/', description: 'Go to a place (or double-click the globe)', group: 'View', run: (ctx) => ctx.openSearch() },
   { keys: ['1'], label: '1', description: VIEW_LABELS.fixed, group: 'View', run: (ctx) => setView(ctx, 'fixed') },
   { keys: ['2'], label: '2', description: `${VIEW_LABELS.sunrel} (full day side)`, group: 'View', run: (ctx) => setView(ctx, 'sunrel') },
   { keys: ['3'], label: '3', description: VIEW_LABELS.orbit, group: 'View', run: (ctx) => setView(ctx, 'orbit') },

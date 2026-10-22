@@ -25,6 +25,7 @@ import {
   Radar,
   Rocket,
   Satellite,
+  Search,
   SatelliteDish,
   Snowflake,
   Sparkles,
@@ -47,6 +48,8 @@ export interface DrawerItem {
   state(s: Settings): { on: boolean; tag?: string };
   /** A second, smaller button beside it (the satellite categories panel). */
   extra?: { icon: IconNode; label: string; action: 'satTree' };
+  /** An action, not a layer: no on/off state. */
+  momentary?: boolean;
 }
 
 export interface DrawerGroup {
@@ -106,6 +109,7 @@ export const DRAWER: DrawerGroup[] = [
   {
     title: 'HUD',
     items: [
+      { key: '/', label: 'Find', icon: Search, state: () => ({ on: false }), momentary: true },
       { key: 'm', label: 'Cities', icon: MapPin, state: flag('markers') },
       { key: 'l', label: 'Readout', icon: AlignLeft, state: flag('label') },
       { key: 'd', label: 'FPS', icon: Gauge, state: flag('fps') },
@@ -315,7 +319,8 @@ export class Drawer {
   refresh(s: Settings) {
     for (const b of this.buttons) {
       const st = b.item.state(s);
-      b.el.setAttribute('aria-pressed', String(st.on));
+      if (b.item.momentary) b.el.removeAttribute('aria-pressed');
+      else b.el.setAttribute('aria-pressed', String(st.on));
       b.tag.textContent = st.tag ?? '';
     }
   }

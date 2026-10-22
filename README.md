@@ -66,6 +66,21 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
 
+## Going to a place
+
+- **Search:** press `/` (or the Find button in the dock) and type a place name or
+  coordinates. Coordinates can be decimal (`40.71, -74.01`), with hemispheres (`40.71N
+  74.01W`, either order) or degrees–minutes–seconds (`40°42′51″N 74°0′21″W`). The app's own
+  cities come up instantly; other places come from Open-Meteo's geocoder (GeoNames data,
+  CC BY 4.0, CORS-enabled, no key) after a quarter-second pause in typing, cached per
+  query, each with its region and country, since names repeat. "My location" asks the
+  browser for the viewer's position, only when picked. ↑/↓ choose, Enter goes, Esc closes.
+- **Double-click** (or double-tap) a point on the globe to centre on it.
+- Either way the view glides along the great circle to the place (~0.5 s for a hop, ~1.5 s
+  to the far side; instant with reduced motion), switches to a fixed view and keeps the
+  zoom, then marks the spot with a reticle and its name for 12 seconds. Grabbing the globe
+  stops a glide.
+
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
@@ -103,6 +118,7 @@ style. A test checks that every layer hotkey has a button.
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
+| `/` | go to a place: search by name or coordinates (or double-click the globe) |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
 | `O` | satellites: everything ticked → named only → off |
@@ -136,6 +152,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
+  src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
+  src/search.ts      the place search box (combobox)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
@@ -516,6 +534,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   (catalogue V/50).
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
 - Icons: Lucide (ISC License).
+- Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
 - Aurora, space weather and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
