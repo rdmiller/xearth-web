@@ -8,7 +8,8 @@ import { wrapLon } from './vec';
 import type { ViewMode } from './view';
 
 export const MAG_MIN = 0.2;
-export const MAG_MAX = 8;
+/** As far as the URL allows: deep enough for NASA GIBS imagery at 244 m a pixel (gibs.ts). */
+export const MAG_MAX = 50;
 export const PERSPECTIVE_DIST = 3;
 const PAN_STEP = 5;
 const PAN_STEP_FAST = 15;
@@ -91,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'truecolor';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -218,6 +219,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
+  layer('shift+p', 'truecolor', 'True-colour imagery when zoomed in (NASA GIBS)'),
   {
     keys: ['shift+o'],
     label: 'Shift+O',

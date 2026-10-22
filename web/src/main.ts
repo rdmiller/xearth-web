@@ -26,6 +26,7 @@ import { SatTree } from './satTree';
 import { Drawer } from './drawer';
 import { formatCoordinates, glideAt, glideMs, type Place } from './places';
 import { PlaceSearch } from './search';
+import { chooseRange, GibsDetail, visibleBox, type Detail } from './gibs';
 import {
   decodeNwsAlerts,
   isAlertCategory,
@@ -827,8 +828,40 @@ function issPanelState(sun: Vec3) {
   return issPanel(issLive.values, now.getTime(), live && { altKm: live.altKm, speed: live.speed, deltaKm });
 }
 
+// ---- true-colour detail (NASA GIBS) --------------------------------------------------------
+// Only when zoomed in past the Blue Marble's resolution, only for what's on screen, and only
+// once the view settles; see gibs.ts.
+
+let detail: Detail | null = null;
+const gibs = new GibsDetail((d) => {
+  detail = d;
+  if (d) renderer.setDetail(d.image, d.bounds);
+  else renderer.clearDetail();
+  requestRedraw();
+});
+
+/** Ask for the tiles this view needs (or none), given device px per Earth radius. */
+function syncDetail(date: Date, radiusPx: number) {
+  if (!settings.truecolor) {
+    gibs.want(null, new Date());
+    return;
+  }
+  const degPerPx = 180 / Math.PI / Math.max(radiusPx, 1);
+  // Everything on screen lies within this angle of the centre (the screen's half-diagonal).
+  const r = Math.hypot(globeCanvas.width, globeCanvas.height) / 2 / Math.max(radiusPx, 1);
+  const radiusDeg = r >= 1 ? 90 : (Math.asin(r) * 180) / Math.PI;
+  const at = viewerLatLon(settings, date, resolveTrack);
+  gibs.want(chooseRange(visibleBox(at.lat, at.lon, radiusDeg), degPerPx), new Date());
+}
+
 function weatherLine(): string | undefined {
   const parts: string[] = [];
+  if (settings.truecolor && detail) {
+    const day = new Date(`${detail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const km = (0.5625 / 2 ** detail.level) * 111.32;
+    const res = km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+    parts.push(`true colour ${day} (VIIRS NOAA-20, NASA GIBS, ${res}/px)`);
+  }
   if (settings.radar && radarFrame) parts.push(`radar ${new Date(radarFrame.time * 1000).toISOString().slice(11, 16)}Z (RainViewer)`);
   if (settings.smoke && smoke) parts.push(smokeLine(smoke));
   if (settings.snow && snowIce) parts.push(snowIceLine(snowIce));
@@ -1096,6 +1129,7 @@ function frame(now: number) {
   const bulkDt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (tMs - bulkTime) / 1000));
   const scale = globeCanvas.width / Math.max(globeCanvas.clientWidth, 1);
   const radiusPx = radiusCss() * scale;
+  syncDetail(date, radiusPx);
   const bodies = settings.bodies
     ? bodiesFor(skyBodies(date), camera, radiusPx, globeCanvas.width, globeCanvas.height)
     : { draws: [], markers: [], sunInShot: false };
@@ -1135,6 +1169,7 @@ function frame(now: number) {
     snowIce: settings.snow,
     radar: settings.radar,
     smoke: settings.smoke,
+    detail: settings.truecolor && !!detail,
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);

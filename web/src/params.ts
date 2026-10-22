@@ -52,6 +52,8 @@ export interface Settings extends ViewSettings {
   radar: boolean;
   /** NOAA tsunami bulletins and NWS tsunami alerts. */
   tsunami: boolean;
+  /** NASA GIBS true-colour imagery when zoomed in. */
+  truecolor: boolean;
   /** NASA ISS live telemetry. */
   isslive: IssLiveMode;
   /** NOAA HMS smoke plumes. */
@@ -120,6 +122,7 @@ export function defaults(): Settings {
     radar: true,
     smoke: true,
     tsunami: true,
+    truecolor: true,
     isslive: 'track',
     bodyscale: 1,
     time: null,
@@ -220,6 +223,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     radar: bool(q, 'radar', base.radar),
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
+    truecolor: bool(q, 'truecolor', base.truecolor),
     isslive: issLiveMode(q, base.isslive),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,

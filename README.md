@@ -66,6 +66,29 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
 
+## True-colour imagery when zoomed in
+
+Zoom in past what the monthly Blue Marble can show (about 0.09° a screen pixel) and the day
+side switches to yesterday's real colour: NASA GIBS's daily VIIRS mosaic from NOAA-20
+("corrected reflectance"), down to 244 m a pixel at the 50× maximum zoom. Shift+P (or
+Imagery in the dock) turns it off.
+
+- **Only what's on screen:** GIBS serves EPSG:4326 tiles (plain latitude/longitude, the
+  globe's own layout) with CORS, so the browser fetches them directly. Once the view settles
+  for 0.4 s, it picks the finest level that's no finer than a screen pixel and fetches the
+  tiles covering the screen (at most 48, ~70 KB each, cached), draws them into one image
+  and hands the globe shader its bounds. A drag or a glide doesn't fetch anything until it
+  stops.
+- **In the shader:** the photo replaces the Blue Marble on the day side, fading out at the
+  edges of the fetched area and wherever GIBS has no data (it draws that black: polar
+  night, gaps between passes). The photo has its own clouds — yesterday's — so the live
+  cloud layer, the snow and the sea ice step back where it shows, rather than doubling up.
+- **Which day:** yesterday (UTC), the newest mosaic that's complete everywhere; a tile that
+  comes back empty is retried from the day before. The readout gives the date and the
+  resolution in use. Each place is imaged once a day, around 13:30 local time.
+- Zooming (wheel and +/−) now goes to 50×, as far as the URL always allowed; it used to stop
+  at 8×, where the imagery is ~2 km a pixel.
+
 ## Going to a place
 
 - **Search:** press `/` (or the Find button in the dock) and type a place name or
@@ -118,6 +141,7 @@ style. A test checks that every layer hotkey has a button.
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
+| `Shift+P` | true-colour imagery when zoomed in (NASA GIBS) |
 | `/` | go to a place: search by name or coordinates (or double-click the globe) |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -153,6 +177,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
+  src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
   src/search.ts      the place search box (combobox)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
@@ -231,6 +256,7 @@ docker compose down                 # stop (the data volume is kept)
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
+| `truecolor` | NASA GIBS true-colour imagery when zoomed in | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
@@ -533,6 +559,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
+- True-colour imagery: NASA Global Imagery Browse Services (GIBS), part of NASA's Earth
+  Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20.
 - Icons: Lucide (ISC License).
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via

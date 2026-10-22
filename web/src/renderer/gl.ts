@@ -33,6 +33,8 @@ export interface FrameState {
   radar: boolean;
   /** NOAA HMS smoke plumes. */
   smoke: boolean;
+  /** GIBS true-colour detail (when one has been set). */
+  detail: boolean;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
   fires: { windowH: number; minIntensity: number } | null;
   /** Lightning layer: flashes at most `windowMin` old. */
@@ -64,6 +66,8 @@ export class GlobeRenderer {
   private hasRadar = false;
   private readonly smokeTex: WebGLTexture;
   private hasSmoke = false;
+  private readonly detailTex: WebGLTexture;
+  private detailBox: [number, number, number, number] | null = null;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -87,6 +91,7 @@ export class GlobeRenderer {
     this.snowIceTex = gl.createTexture()!;
     this.radarTex = gl.createTexture()!;
     this.smokeTex = gl.createTexture()!;
+    this.detailTex = gl.createTexture()!;
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -227,6 +232,26 @@ export class GlobeRenderer {
     this.hasSmoke = true;
   }
 
+  /** True-colour detail for a lat/lon box (west, north, lon span, lat span in degrees). */
+  setDetail(image: TexImageSource, box: { lon0: number; lat1: number; lonSpan: number; latSpan: number }) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE10);
+    gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    this.detailBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+  }
+
+  clearDetail() {
+    this.detailBox = null;
+  }
+
   setFires(points: SurfacePoints) {
     this.fireLayer.setPoints(points);
   }
@@ -322,6 +347,11 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
     gl.uniform1i(this.u('uSmoke'), 9);
     gl.uniform1f(this.u('uSmokeOn'), f.smoke && this.hasSmoke ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE10);
+    gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
+    gl.uniform1i(this.u('uDetail'), 10);
+    gl.uniform1f(this.u('uDetailOn'), f.detail && this.detailBox ? 1 : 0);
+    if (this.detailBox) gl.uniform4fv(this.u('uDetailBox'), this.detailBox);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 

@@ -19,6 +19,7 @@ import {
   Gauge,
   Grid3x3,
   Haze,
+  Image as ImageIcon,
   Lightbulb,
   ListTree,
   MapPin,
@@ -66,6 +67,7 @@ export const DRAWER: DrawerGroup[] = [
     title: 'Earth',
     items: [
       { key: 'c', label: 'Clouds', icon: Cloud, state: flag('clouds') },
+      { key: 'shift+p', label: 'Imagery', icon: ImageIcon, state: flag('truecolor') },
       { key: 'n', label: 'Lights', icon: Lightbulb, state: flag('lights') },
       { key: 'i', label: 'Snow', icon: Snowflake, state: flag('snow') },
       { key: 'shift+r', label: 'Radar', icon: Radar, state: flag('radar') },

@@ -1359,7 +1359,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
   ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · Places: GeoNames via Open-Meteo · press H',
+    'Earth: NASA Blue Marble / Black Marble, GIBS (VIIRS) · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · Places: GeoNames via Open-Meteo · press H',
     w - 10,
     h - 8,
   );

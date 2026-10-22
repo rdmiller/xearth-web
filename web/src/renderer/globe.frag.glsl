@@ -33,6 +33,9 @@ uniform sampler2D uRadar;    // RainViewer composite, Web Mercator ±85.05°, pr
 uniform float uRadarOn;
 uniform sampler2D uSmoke;    // HMS smoke density: 0, ⅓, ⅔, 1 = none, light, medium, heavy
 uniform float uSmokeOn;
+uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
+uniform float uDetailOn;
+uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees); lon may run past 180
 
 out vec4 outColor;
 
@@ -83,15 +86,34 @@ void main() {
   vec3 albedoS = uHasDay > 0.5 ? textureLod(uDay, uv, lodFor(uDay, mu, coslat)).rgb : vec3(0.06, 0.16, 0.38);
   vec3 albedo = toLinear(albedoS);
 
+  // Zoomed in: yesterday's VIIRS true colour in place of the Blue Marble. GIBS draws "no
+  // data" black, so dark texels fall back; the box edge fades so the seam doesn't show.
+  float detailA = 0.0;
+  if (uDetailOn > 0.5) {
+    float du = mod(degrees(lon) - uDetailBox.x, 360.0) / uDetailBox.z;
+    float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
+    if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
+      float texPerRad = float(textureSize(uDetail, 0).x) / radians(uDetailBox.z);
+      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      vec3 d = textureLod(uDetail, vec2(du, dv), lod).rgb;
+      float data = smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
+      vec2 edgeDeg = min(vec2(du, dv), 1.0 - vec2(du, dv)) * uDetailBox.zw * vec2(coslat, 1.0);
+      float edge = smoothstep(0.0, 0.04 * min(uDetailBox.z * coslat, uDetailBox.w), min(edgeDeg.x, edgeDeg.y));
+      detailA = data * edge;
+      albedo = mix(albedo, toLinear(d), detailA);
+    }
+  }
+
   // Today's snow and ice over the month's Blue Marble. Snow under forest reads
   // grey from space, so it whitens dark ground less; sea ice is a bluer white.
   float iceC = 0.0;
   if (uSnowIceOn > 0.5) {
     vec2 si = textureLod(uSnowIce, uv, lodFor(uSnowIce, mu, coslat)).rg;
     float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
-    float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum));
+    // (The true-colour photo already shows its own snow and ice.)
+    float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum)) * (1.0 - detailA);
     albedo = mix(albedo, vec3(0.80, 0.83, 0.87), snowCover);
-    iceC = si.g;
+    iceC = si.g * (1.0 - detailA);
     albedo = mix(albedo, vec3(0.70, 0.76, 0.82), iceC * 0.9);
   }
 
@@ -118,6 +140,8 @@ void main() {
   if (uCloudOn > 0.5) {
     float lc = lodFor(uCloudCur, mu, coslat);
     ca = mix(textureLod(uCloudPrev, uv, lc).r, textureLod(uCloudCur, uv, lc).r, uCloudMix);
+    // The true-colour photo has its own (yesterday's) clouds: two sets would read as mush.
+    ca *= 1.0 - 0.9 * detailA;
   }
   vec3 cloudCol = vec3(0.95) * dayW * (0.25 + 0.75 * lambert) * tint + vec3(0.012, 0.015, 0.022) * nightW;
   vec3 col = mix(dayCol + nightCol, cloudCol, ca * 0.92);
