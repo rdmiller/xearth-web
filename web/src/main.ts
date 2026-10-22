@@ -141,7 +141,7 @@ import {
   type SatLabelOverlay,
   type StormOverlay,
 } from './overlay';
-import { FrameStats, GpuTimer } from './perf';
+import { FrameStats, GpuTimer, SlowFrames } from './perf';
 import { publishSeverity } from './tokens';
 import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
@@ -1432,9 +1432,15 @@ let renderMode = '';
 let redrawEvery = 0;
 /** Last readout bottom edge sent to CSS as --readout-bottom (only written when it changes). */
 let lastReadoutBottom = -1;
+/** Too slow for the glass blur: html.lite swaps it for solid panels. */
+const slowFrames = new SlowFrames();
+/** When the last frame drawn back to back (continuous redraws) started, or 0. */
+let lastAnimatedAt = 0;
 
 function frame(now: number) {
   raf = 0;
+  if (redrawEvery === 0 && lastAnimatedAt && slowFrames.add(now - lastAnimatedAt)) document.documentElement.classList.add('lite');
+  lastAnimatedAt = redrawEvery === 0 ? now : 0;
   const t0 = performance.now();
   renderer.resize();
   const date = simTime(now);
@@ -1550,7 +1556,7 @@ function frame(now: number) {
       ? {
           summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
           intervals: stats.recentIntervals(120),
-          mode: renderMode,
+          mode: slowFrames.tripped ? `${renderMode} · solid glass` : renderMode,
           gpuAvailable: gpuTimer.available,
         }
       : undefined,
@@ -1592,6 +1598,7 @@ function requestRedraw() {
 }
 
 document.addEventListener('visibilitychange', () => {
+  lastAnimatedAt = 0; // the gap while hidden isn't a slow frame
   if (!document.hidden) {
     requestRedraw();
     if (settings.clouds) void clouds.check();

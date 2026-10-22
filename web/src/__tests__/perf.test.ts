@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FrameStats } from '../perf';
+import { FrameStats, SlowFrames } from '../perf';
 
 describe('FrameStats', () => {
   it('counts frames in the last second and averages their intervals', () => {
@@ -51,5 +51,22 @@ describe('FrameStats', () => {
     const sum = s.summary(4000, 3100);
     expect(sum.fps).toBeCloseTo(1, 6);
     expect(sum.cpuMs).toBeCloseTo(0.4, 6);
+  });
+});
+
+describe('SlowFrames', () => {
+  it('trips after a sustained run of slow animated frames', () => {
+    const s = new SlowFrames(28, 10, 0.6);
+    for (let k = 0; k < 9; k++) expect(s.add(40)).toBe(false); // window not full yet
+    expect(s.add(40)).toBe(true);
+    expect(s.tripped).toBe(true);
+    expect(s.add(16)).toBe(false); // reports the trip once, and stays tripped
+    expect(s.tripped).toBe(true);
+  });
+
+  it('shrugs off the odd hitch', () => {
+    const s = new SlowFrames(28, 10, 0.6);
+    for (let k = 0; k < 100; k++) s.add(k % 4 === 0 ? 60 : 16.7);
+    expect(s.tripped).toBe(false);
   });
 });

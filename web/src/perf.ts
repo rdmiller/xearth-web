@@ -110,6 +110,42 @@ export class FrameStats {
 }
 
 /**
+ * Whether frames are too slow to afford the glass blur. Fed the interval between
+ * back-to-back animated frames (on-demand redraws are slow on purpose and don't
+ * count); trips once `share` of the last `size` frames took longer than `limitMs`,
+ * and stays tripped, since blur coming and going would flicker. The blur's cost
+ * is in the browser's compositor, which no WebGL timer sees, so frame pacing is
+ * the measure.
+ */
+export class SlowFrames {
+  private readonly ring: Uint8Array;
+  private head = 0;
+  private seen = 0;
+  private slowCount = 0;
+  tripped = false;
+
+  constructor(
+    readonly limitMs = 28,
+    readonly size = 90,
+    readonly share = 0.6,
+  ) {
+    this.ring = new Uint8Array(size);
+  }
+
+  /** Add one frame interval; true on the frame it trips. */
+  add(intervalMs: number): boolean {
+    if (this.tripped) return false;
+    const slow = intervalMs > this.limitMs ? 1 : 0;
+    this.slowCount += slow - this.ring[this.head];
+    this.ring[this.head] = slow;
+    this.head = (this.head + 1) % this.size;
+    this.seen = Math.min(this.seen + 1, this.size);
+    if (this.seen === this.size && this.slowCount >= this.share * this.size) this.tripped = true;
+    return this.tripped;
+  }
+}
+
+/**
  * GPU time per frame via EXT_disjoint_timer_query_webgl2. Results come back a
  * few frames later; `poll` hands each finished one to `onResult` with the
  * slot it was started for. Browsers may not expose the extension (it's often
