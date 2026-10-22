@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DRAWER } from '../drawer';
+import { DRAWER, magnifyFor, revealFor, REVEAL_FULL_PX, REVEAL_START_PX } from '../drawer';
 import { HOTKEYS, hotkeyByKey } from '../hotkeys';
 import { defaults } from '../params';
 
@@ -27,5 +27,23 @@ describe('layer drawer', () => {
 
   it('uses library icons, with initials only where Lucide has nothing (aurora)', () => {
     expect(items.filter((i) => typeof i.icon === 'string').map((i) => i.label)).toEqual(['Aurora']);
+  });
+});
+
+describe('dock proximity', () => {
+  it('fades in between REVEAL_START and REVEAL_FULL px from the bottom', () => {
+    expect(revealFor(REVEAL_START_PX + 50)).toBe(0);
+    expect(revealFor(REVEAL_START_PX)).toBe(0);
+    expect(revealFor((REVEAL_START_PX + REVEAL_FULL_PX) / 2)).toBeCloseTo(0.5);
+    expect(revealFor(REVEAL_FULL_PX)).toBe(1);
+    expect(revealFor(0)).toBe(1);
+  });
+
+  it('magnifies the buttons nearest the pointer, easing out to their neighbours', () => {
+    expect(magnifyFor(0)).toBeCloseTo(1.16);
+    expect(magnifyFor(55)).toBeGreaterThan(1);
+    expect(magnifyFor(55)).toBeLessThan(magnifyFor(20));
+    expect(magnifyFor(-55)).toBeCloseTo(magnifyFor(55));
+    expect(magnifyFor(200)).toBe(1);
   });
 });

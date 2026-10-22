@@ -1,11 +1,14 @@
-// The layer drawer: a strip along the bottom with a toggle for every layer,
-// grouped Earth / Sky / Hazards / Space / HUD. Each button runs the same
-// hotkey as its key, so behaviour, toasts and multi-state cycles (stars,
-// satellites, ISS telemetry) can't drift apart. Icons are Lucide's (ISC);
-// aurora has no Lucide glyph, so it gets initials drawn in the same style.
+// The layer dock: floating buttons along the bottom, one per layer, grouped
+// Earth / Sky / Hazards / Space / HUD. Each button runs the same hotkey as
+// its key, so behaviour, toasts and multi-state cycles (stars, satellites,
+// ISS telemetry) can't drift apart. Icons are Lucide's (ISC); aurora has no
+// Lucide glyph, so it gets initials drawn in the same style.
 //
-// Opened and closed from its tab (or Shift+D); whether it's open is
-// remembered per viewer.
+// No panel: the buttons rise into view as the mouse nears the bottom of the
+// window (the nearest grow a little, like a dock) and sink away when it
+// leaves. A grip handle — the only way in on touch screens — pins them open,
+// as does Shift+D; pinned or not is remembered per viewer. Keyboard focus
+// inside the dock also keeps it shown.
 
 import {
   Activity,
@@ -16,7 +19,6 @@ import {
   Gauge,
   Grid3x3,
   Haze,
-  Layers,
   Lightbulb,
   ListTree,
   MapPin,
@@ -111,7 +113,25 @@ export const DRAWER: DrawerGroup[] = [
   },
 ];
 
-const OPEN_KEY = 'xearth.drawer.open';
+/** The dock starts appearing this far (CSS px) from the bottom edge, and is fully shown at FULL. */
+export const REVEAL_START_PX = 160;
+export const REVEAL_FULL_PX = 90;
+/** Buttons within this many px (horizontally) of the pointer grow, up to MAGNIFY. */
+const MAGNIFY_RADIUS_PX = 110;
+const MAGNIFY = 0.16;
+
+/** How shown the dock is (0–1) with the pointer `fromBottom` px above the bottom edge. */
+export function revealFor(fromBottom: number): number {
+  return Math.max(0, Math.min(1, (REVEAL_START_PX - fromBottom) / (REVEAL_START_PX - REVEAL_FULL_PX)));
+}
+
+/** Dock-style magnification for a button `dx` px (horizontally) from the pointer. */
+export function magnifyFor(dx: number): number {
+  const t = Math.max(0, 1 - Math.abs(dx) / MAGNIFY_RADIUS_PX);
+  return 1 + MAGNIFY * t * t * (3 - 2 * t); // smoothstep, so neighbours ease rather than jump
+}
+
+const PIN_KEY = 'xearth.dock.pinned';
 
 function icon(node: IconNode, size = 20): SVGElement {
   const svg = createElement(node);
@@ -134,13 +154,22 @@ export interface DrawerHandlers {
   openSatTree(): void;
   /** Describe a key for tooltips ("Shift+R"). */
   keyLabel(key: string): string;
-  /** The drawer opened, closed or changed height (CSS px covered at the bottom). */
-  resized(inset: number): void;
+  /**
+   * The dock's footprint changed. `shown`: CSS px it covers at the bottom while visible (for
+   * toasts and panels to sit above); `reserved`: px labels should keep out of — only while
+   * it's pinned, since a passing reveal just floats over the map.
+   */
+  resized(shown: number, reserved: number): void;
 }
 
 export class Drawer {
   private readonly buttons: Button[] = [];
-  private readonly body: HTMLElement;
+  private readonly dock: HTMLElement;
+  private readonly handle: HTMLButtonElement;
+  private pinned = false;
+  private reveal = 0;
+  private pointer: { x: number; y: number } | null = null;
+  private frame = 0;
   /** The satellite categories button, for the panel's aria-expanded. */
   satTreeButton: HTMLButtonElement | undefined;
 
@@ -148,95 +177,139 @@ export class Drawer {
     private readonly root: HTMLElement,
     private readonly handlers: DrawerHandlers,
   ) {
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'drawer-tab';
-    tab.setAttribute('aria-controls', 'drawer-body');
-    tab.append(icon(Layers, 14), Object.assign(document.createElement('span'), { textContent: 'Layers' }));
-    tab.addEventListener('click', () => this.toggle());
+    this.handle = document.createElement('button');
+    this.handle.type = 'button';
+    this.handle.className = 'dock-handle';
+    this.handle.setAttribute('aria-controls', 'dock');
+    this.handle.setAttribute('aria-label', 'Layer buttons (Shift+D)');
+    this.handle.title = 'Pin the layer buttons (Shift+D)';
+    this.handle.append(Object.assign(document.createElement('span'), { className: 'grip' }));
+    this.handle.addEventListener('click', () => this.toggle());
 
-    this.body = document.createElement('div');
-    this.body.id = 'drawer-body';
-    this.body.className = 'drawer-body';
-    this.body.setAttribute('role', 'toolbar');
-    this.body.setAttribute('aria-label', 'Layers');
-    for (const g of DRAWER) this.body.append(this.group(g));
-    root.append(tab, this.body);
+    this.dock = document.createElement('div');
+    this.dock.id = 'dock';
+    this.dock.className = 'dock';
+    this.dock.setAttribute('role', 'toolbar');
+    this.dock.setAttribute('aria-label', 'Layers');
+    for (const g of DRAWER) this.dock.append(this.group(g));
+    root.append(this.dock, this.handle);
 
-    let open = true;
     try {
-      open = localStorage.getItem(OPEN_KEY) !== '0';
+      this.pinned = localStorage.getItem(PIN_KEY) === '1';
     } catch {
-      // Storage blocked: start open.
+      // Storage blocked: start unpinned.
     }
-    this.toggle(open, false);
-    new ResizeObserver(() => this.handlers.resized(this.inset)).observe(root);
+
+    // Mouse (and pen) proximity. Touch has no hover, so it goes through the handle.
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
+      this.pointer = { x: e.clientX, y: e.clientY };
+      this.schedule();
+    });
+    document.documentElement.addEventListener('pointerleave', () => {
+      this.pointer = null;
+      this.schedule();
+    });
+    window.addEventListener('blur', () => {
+      this.pointer = null;
+      this.schedule();
+    });
+    this.dock.addEventListener('focusin', () => this.schedule());
+    this.dock.addEventListener('focusout', () => this.schedule());
+    window.addEventListener('resize', () => this.schedule());
+    this.apply();
   }
 
   private group(g: DrawerGroup): HTMLElement {
     const box = document.createElement('div');
-    box.className = 'drawer-group';
+    box.className = 'dock-group';
     box.setAttribute('role', 'group');
     box.setAttribute('aria-label', g.title);
-    const title = document.createElement('div');
-    title.className = 'drawer-title';
-    title.textContent = g.title;
-    const row = document.createElement('div');
-    row.className = 'drawer-row';
     for (const item of g.items) {
       const el = document.createElement('button');
       el.type = 'button';
-      el.className = 'drawer-btn';
+      el.className = 'dock-btn';
       el.title = `${item.label} (${this.handlers.keyLabel(item.key)})`;
-      const glyph = typeof item.icon === 'string' ? Object.assign(document.createElement('span'), { className: 'initials', textContent: item.icon }) : icon(item.icon);
+      el.setAttribute('aria-label', item.label);
+      const glyph =
+        typeof item.icon === 'string'
+          ? Object.assign(document.createElement('span'), { className: 'initials', textContent: item.icon })
+          : icon(item.icon);
       const caption = Object.assign(document.createElement('span'), { className: 'caption', textContent: item.label });
+      caption.setAttribute('aria-hidden', 'true');
       const tag = Object.assign(document.createElement('span'), { className: 'tag' });
       el.append(glyph, caption, tag);
       el.addEventListener('click', () => this.handlers.run(item.key));
       const cell = document.createElement('div');
-      cell.className = 'drawer-cell';
+      cell.className = 'dock-cell';
       cell.append(el);
       if (item.extra) {
         const extra = document.createElement('button');
         extra.type = 'button';
-        extra.className = 'drawer-extra';
+        extra.className = 'dock-extra';
         extra.title = `${item.extra.label} (Shift+O)`;
         extra.setAttribute('aria-label', item.extra.label);
-        extra.append(icon(item.extra.icon, 14));
         extra.setAttribute('aria-controls', 'sat-tree');
         extra.setAttribute('aria-expanded', 'false');
+        extra.append(icon(item.extra.icon, 12));
         extra.addEventListener('click', () => this.handlers.openSatTree());
         cell.append(extra);
         this.satTreeButton = extra;
       }
-      row.append(cell);
+      box.append(cell);
       this.buttons.push({ item, el, tag });
     }
-    box.append(title, row);
     return box;
   }
 
-  get open() {
-    return this.root.classList.contains('open');
+  private schedule() {
+    this.frame ||= requestAnimationFrame(() => {
+      this.frame = 0;
+      this.apply();
+    });
   }
 
-  /** CSS px of screen the drawer (or just its tab) covers at the bottom. */
-  get inset() {
-    return Math.ceil(this.root.getBoundingClientRect().height);
-  }
+  /** Work out how shown the dock is, and size the buttons near the pointer. */
+  private apply() {
+    const h = window.innerHeight;
+    const near = this.pointer ? revealFor(h - this.pointer.y) : 0;
+    const focused = this.dock.contains(document.activeElement);
+    this.reveal = this.pinned || focused ? 1 : near;
+    const shown = this.reveal > 0.02;
+    this.root.style.setProperty('--reveal', this.reveal.toFixed(3));
+    this.root.classList.toggle('shown', shown);
+    this.root.classList.toggle('pinned', this.pinned);
+    // Hidden buttons can't be clicked or tabbed to by accident; the keyboard way in is Shift+D.
+    this.dock.inert = !shown;
+    this.handle.setAttribute('aria-expanded', String(this.pinned));
 
-  toggle(open = !this.open, save = true) {
-    this.root.classList.toggle('open', open);
-    this.body.hidden = !open;
-    (this.root.querySelector('.drawer-tab') as HTMLElement).setAttribute('aria-expanded', String(open));
-    if (save) {
-      try {
-        localStorage.setItem(OPEN_KEY, open ? '1' : '0');
-      } catch {
-        // Storage blocked: just don't remember.
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for (const b of this.buttons) {
+      let scale = 1;
+      if (this.pointer && !reduce && this.reveal > 0.5) {
+        const r = b.el.getBoundingClientRect();
+        scale = magnifyFor(this.pointer.x - (r.left + r.width / 2));
       }
+      b.el.style.setProperty('--mag', scale.toFixed(3));
     }
-    this.handlers.resized(this.inset);
+
+    const dockTop = Math.ceil(h - this.dock.getBoundingClientRect().top);
+    this.handlers.resized(shown ? dockTop : 0, this.pinned ? dockTop : 0);
+  }
+
+  get open() {
+    return this.pinned;
+  }
+
+  /** Pin the dock open, or unpin it (it then follows the mouse again). */
+  toggle(pin = !this.pinned) {
+    this.pinned = pin;
+    try {
+      localStorage.setItem(PIN_KEY, pin ? '1' : '0');
+    } catch {
+      // Storage blocked: just don't remember.
+    }
+    this.apply();
   }
 
   refresh(s: Settings) {

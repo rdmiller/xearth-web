@@ -921,10 +921,11 @@ const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, 
   toggleLabels: (leaf) => update({ satlabels: toggleLabels(leaf, settings.satlabels) }),
 });
 
-// ---- layer drawer --------------------------------------------------------------------
+// ---- layer dock ----------------------------------------------------------------------
 // Its buttons run the hotkeys, so they behave exactly like the keys (toasts included).
 
 let drawerInset = 0;
+let drawerShown = -1;
 const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
   run(key) {
     const hk = hotkeyByKey(key);
@@ -933,11 +934,16 @@ const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
   },
   openSatTree: () => satTree.toggle(),
   keyLabel: (key) => hotkeyByKey(key)?.label ?? key.toUpperCase(),
-  resized(inset) {
-    if (inset === drawerInset) return;
-    drawerInset = inset;
-    document.documentElement.style.setProperty('--drawer-h', `${inset}px`);
-    // Deferred: the drawer reports its size while this module is still initialising.
+  resized(shown, reserved) {
+    // Toasts and the satellite panel sit above the dock whenever it's showing…
+    if (shown !== drawerShown) {
+      drawerShown = shown;
+      document.documentElement.style.setProperty('--drawer-h', `${shown}px`);
+    }
+    // …but labels on the globe only make room while it's pinned open.
+    if (reserved === drawerInset) return;
+    drawerInset = reserved;
+    // Deferred: the dock reports its size while this module is still initialising.
     queueMicrotask(requestRedraw);
   },
 });

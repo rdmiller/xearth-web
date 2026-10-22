@@ -1,4 +1,4 @@
-// The satellite tree: a panel (bottom left, opened from the layer drawer or Shift+O)
+// The satellite tree: a panel (bottom left, opened from the layer dock or Shift+O)
 // listing every satellite category as a tree of tri-state checkboxes, with a
 // colour swatch, a count, and — for categories small enough — a labels toggle.
 //

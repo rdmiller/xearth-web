@@ -307,7 +307,7 @@ export interface OverlayState {
   issPanel?: IssPanel;
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
   satLabels?: SatLabelOverlay[];
-  /** CSS px covered by the layer drawer at the bottom: the attribution sits above it. */
+  /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
   bottomInset?: number;
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
@@ -1293,7 +1293,8 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     ? { x: 8, y: 8, w: Math.max(...lines.map((line) => ctx.measureText(line).width)) + 26, h: lines.length * 17 + 6 }
     : null;
   ctx.letterSpacing = '0px';
-  // Labels keep clear of the status readout and of the layer drawer along the bottom.
+  // Labels keep clear of the status readout and, while it's pinned, the layer dock.
+  // (Its band starts above the attribution line, which the dock floats over.)
   const inset = s.bottomInset ?? 0;
   const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : [])];
   // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
@@ -1345,7 +1346,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   ctx.fillText(
     'Earth: NASA Blue Marble / Black Marble · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · press H',
     w - 10,
-    h - 8 - (s.bottomInset ?? 0),
+    h - 8,
   );
   ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';

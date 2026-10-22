@@ -34,7 +34,7 @@ export interface HotkeyContext {
   toggleHelp(open?: boolean): void;
   /** The satellite tree panel. */
   toggleSatTree(open?: boolean): void;
-  /** The layer drawer along the bottom. */
+  /** Pin or unpin the layer dock along the bottom. */
   toggleDrawer(): void;
   toast(message: string): void;
 }
@@ -428,7 +428,7 @@ export const HOTKEYS: readonly Hotkey[] = [
       ctx.toast('Checking for new clouds…');
     },
   },
-  { keys: ['shift+d'], label: 'Shift+D', description: 'Layer drawer', group: 'App', run: (ctx) => ctx.toggleDrawer() },
+  { keys: ['shift+d'], label: 'Shift+D', description: 'Pin the layer buttons', group: 'App', run: (ctx) => ctx.toggleDrawer() },
   { keys: ['f'], label: 'F', description: 'Fullscreen', group: 'App', run: (ctx) => ctx.toggleFullscreen() },
   { ...layer('d', 'fps', 'Frame-rate display'), group: 'App' },
   { keys: ['h', '?'], label: 'H', description: 'This help', group: 'App', run: (ctx) => ctx.toggleHelp() },

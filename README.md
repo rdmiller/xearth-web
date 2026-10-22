@@ -57,7 +57,7 @@ global cloud layer refreshed every hour from geostationary satellites.
   their own colour-coded categories; zoom out to see the navigation shells (~20,000 km) and
   the geostationary ring (~36,000 km). All are propagated live with SGP4 from CelesTrak
   elements, hidden behind the Earth, and dimmed in its shadow.
-  - **Satellite panel** (the tree button beside Satellites in the layer drawer, or Shift+O): a tree of every category with
+  - **Satellite panel** (the small button on Satellites in the layer dock, or Shift+O): a tree of every category with
     tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
     small enough to label. Every far constellation (the diamonds) is named by default; the dense low-orbit dots are not. Satellites a few pixels apart share a label ("MTG-I2 · MTG-S1"), and each label tries right, left, below and above before it is left out.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
@@ -66,22 +66,30 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
 
-## Layer drawer
+## Layer dock
 
-Every layer has a toggle in the drawer along the bottom, grouped Earth (clouds, city lights,
+Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
 snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora), Hazards (cyclones,
-fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a button for the
-satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate). Each
-button runs the same action as its hotkey (shown in its tooltip), so cycling layers keep
-their cycles and toasts: stars show PHOTO, satellites NAMED, ISS telemetry TRACK in their
-in-between states. A lit underline marks what's on. The tab above it (or Shift+D) folds the
-drawer away; whether it's open is remembered per browser. While it's open, the toast, the
-satellite panel, the RainViewer credit and the attribution sit above it, and callouts,
-city labels and satellite names keep out of it.
+fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a small button for
+the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate).
+
+- **No panel:** the buttons rise in as the mouse comes within ~160 px of the bottom of the
+  window (fully shown within 90 px) and sink away when it leaves. The nearest ones grow a
+  little, like a dock; a name appears above a button on hover or keyboard focus.
+- **Pinning:** the grip under the buttons (the only way in on a touch screen, where names
+  show under the buttons) or Shift+D pins them open; pinned or not is remembered per browser.
+  Hidden buttons are inert, so they can't be clicked or tabbed to by accident.
+- **One row** whenever the window is wide enough; they wrap only when it isn't.
+- Each button runs the same action as its hotkey (shown in its tooltip), so cycling layers
+  keep their cycles and toasts: stars show PHOTO, satellites NAMED, ISS telemetry TRACK in
+  their in-between states. A cyan glow marks what's on.
+- While the buttons show, toasts and the satellite panel sit above them. Callouts, city
+  labels and satellite names make room only while they're pinned; a passing reveal floats
+  over the map. The attribution line stays at the very bottom, under the grip.
 
 Icons are [Lucide](https://lucide.dev) (ISC), imported one by one so only those used are
 bundled. Lucide has no aurora glyph, so aurora is drawn as initials ("Au") in the same line
-style. A test checks that every layer hotkey has a drawer button.
+style. A test checks that every layer hotkey has a button.
 
 ## Hotkeys
 
@@ -106,7 +114,7 @@ style. A test checks that every layer hotkey has a drawer button.
 | `Space` `.` `,` `T` | pause, faster, slower (into reverse), back to now |
 | `R` `F` `H` | check for new clouds, fullscreen, help |
 | `D` | frame-rate display |
-| `Shift+D` | layer drawer |
+| `Shift+D` | pin the layer buttons |
 
 The table lives in `web/src/hotkeys.ts` and also generates the in-app help, so they can't
 drift apart.
@@ -127,7 +135,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
-  src/drawer.ts      the layer drawer (Lucide icons; buttons run the hotkeys)
+  src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   public/stars.json  Bright Star Catalogue, compacted (rebuild: node scripts/build-stars.mjs)
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
