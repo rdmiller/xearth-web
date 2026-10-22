@@ -162,10 +162,10 @@
         .toast-body { scrollbar-width: thin; scrollbar-color: rgb(var(--hud-cyan-rgb) / 0.35) transparent; }
       }
       .toast-window.folded .toast-body { display: none; }
-      /* Label: value rows, as in the frame-rate window. */
+      /* Label: value rows, as in the frame-rate window: quiet small-caps labels, bright values. */
       .hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
-      .hud-rows dt { color: var(--hud-accent); text-transform: uppercase; }
-      .hud-rows dd { margin: 0; min-width: 0; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hud-rows dt { font-size: 10px; letter-spacing: 0.08em; color: var(--ink-label); text-transform: uppercase; }
+      .hud-rows dd { margin: 0; min-width: 0; color: var(--ink-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #perf .perf-head { display: flex; align-items: baseline; justify-content: space-between; }
       #perf .perf-fps { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: var(--ink-1); }
       #perf .perf-ms { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-3); }

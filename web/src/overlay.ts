@@ -14,8 +14,8 @@ export const UI_FONT = '"HUD Digits", "Chakra Petch", "Segoe UI", system-ui, san
 
 const HUD = {
   accent: '#62e6ff',
-  /** The readout's keys: the accent, quieter than the values beside it. */
-  key: 'rgba(98, 230, 255, 0.62)',
+  /** The readout's keys: small-caps labels in the accent, quieter than the values beside them. */
+  key: 'rgba(98, 230, 255, 0.78)',
   line: 'rgba(98, 230, 255, 0.7)',
   glow: 'rgba(0, 200, 255, 0.55)',
   text: 'rgba(230, 246, 255, 0.94)',
@@ -1330,7 +1330,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
         ctx.fillStyle = HUD.key;
         ctx.fillText(line.key, 24, y);
       }
-      ctx.fillStyle = HUD.dim;
+      ctx.fillStyle = HUD.text;
       ctx.fillText(line.value, valueX, y);
     });
   }
