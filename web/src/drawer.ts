@@ -161,11 +161,13 @@ export interface DrawerHandlers {
   /** Describe a key for tooltips ("Shift+R"). */
   keyLabel(key: string): string;
   /**
-   * The dock's footprint changed. `shown`: CSS px it covers at the bottom while visible (for
-   * toasts and panels to sit above); `reserved`: px labels should keep out of — only while
-   * it's pinned, since a passing reveal just floats over the map.
+   * The dock's footprint changed. `shown`: CSS px it covers at the bottom right now (it rises
+   * and sinks with the pointer — fine for toasts, which nobody clicks); `full`: px it covers
+   * when fully shown, which only changes with the window size — what panels the pointer has
+   * to reach anchor to, so they don't move as it approaches; `reserved`: px labels keep out
+   * of — only while pinned, since a passing reveal just floats over the map.
    */
-  resized(shown: number, reserved: number): void;
+  resized(shown: number, reserved: number, full: number): void;
 }
 
 export class Drawer {
@@ -300,7 +302,9 @@ export class Drawer {
     }
 
     const dockTop = Math.ceil(h - this.dock.getBoundingClientRect().top);
-    this.handlers.resized(shown ? dockTop : 0, this.pinned ? dockTop : 0);
+    // Layout height, which the reveal's transform doesn't change: the dock fully shown.
+    const full = Math.ceil(this.root.offsetHeight + parseFloat(getComputedStyle(this.root).bottom || '0'));
+    this.handlers.resized(shown ? dockTop : 0, this.pinned ? full : 0, full);
   }
 
   get open() {

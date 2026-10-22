@@ -965,6 +965,7 @@ const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, 
 
 let drawerInset = 0;
 let drawerShown = -1;
+let drawerFull = -1;
 const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
   run(key) {
     const hk = hotkeyByKey(key);
@@ -973,11 +974,17 @@ const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
   },
   openSatTree: () => satTree.toggle(),
   keyLabel: (key) => hotkeyByKey(key)?.label ?? key.toUpperCase(),
-  resized(shown, reserved) {
-    // Toasts and the satellite panel sit above the dock whenever it's showing…
+  resized(shown, reserved, full) {
+    // Toasts follow the dock as it rises and sinks…
     if (shown !== drawerShown) {
       drawerShown = shown;
       document.documentElement.style.setProperty('--drawer-h', `${shown}px`);
+    }
+    // …but the satellite panel stays put above where the dock is when fully shown, so it
+    // doesn't move under the pointer as the pointer nears the bottom edge.
+    if (full !== drawerFull) {
+      drawerFull = full;
+      document.documentElement.style.setProperty('--dock-full', `${full}px`);
     }
     // …but labels on the globe only make room while it's pinned open.
     if (reserved === drawerInset) return;
