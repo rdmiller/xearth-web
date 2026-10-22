@@ -3,7 +3,7 @@ import {
   burnedRadiusKm,
   decodeLightning,
   eventDetail,
-  eventLine,
+  eventSummary,
   eventSize,
   eventTitle,
   isEventManifest,
@@ -11,8 +11,7 @@ import {
   isSnowIceManifest,
   labelledEvents,
   lightningIntensity,
-  smokeLine,
-  snowIceLine,
+  smokeSummary,
   type GdacsEvent,
 } from '../hazards';
 import { toLatLon } from '../vec';
@@ -51,11 +50,10 @@ describe('lightning', () => {
 });
 
 describe('snow and ice', () => {
-  it('names both dates in the status line', () => {
+  it('recognises the manifest', () => {
     const m = { generated: '2026-10-21T22:00:00Z', source: 'IMS', image: 'snowice.png', ims: '2026-10-21', seaIceSouth: '2026-10-17' };
     expect(isSnowIceManifest(m)).toBe(true);
-    expect(snowIceLine(m)).toBe('snow & ice 21 Oct (IMS) · Antarctic sea ice 17 Oct');
-    expect(snowIceLine({ ...m, seaIceSouth: undefined })).toBe('snow & ice 21 Oct (IMS)');
+    expect(isSnowIceManifest({ ...m, ims: undefined })).toBe(false);
   });
 });
 
@@ -98,15 +96,15 @@ describe('GDACS events', () => {
   it('summarises the counts', () => {
     const m = { generated: 'x', volcanoDays: 90, counts: { FL: 3, WF: 78, VO: 1 }, events: [] };
     expect(isEventManifest(m)).toBe(true);
-    expect(eventLine(m)).toBe('GDACS 3 floods · 78 wildfires · 1 eruption (90 d)');
+    expect(eventSummary(m)).toBe('3 floods · 78 wildfires · 1 eruption in 90 d');
   });
 });
 
 describe('smoke', () => {
-  it('summarises the analysis day, its end and the heavy plumes', () => {
+  it('summarises the plumes and the heavy ones', () => {
     const m = { generated: 'x', date: '2026-10-21', image: 'smoke.png', plumes: { Light: 166, Medium: 60, Heavy: 8 }, latest: '2026-10-21T20:00:00.000Z' };
-    expect(smokeLine(m)).toBe('smoke 21 Oct to 20:00Z (HMS): 234 plumes, 8 heavy');
-    expect(smokeLine({ ...m, plumes: { Light: 1, Medium: 0, Heavy: 0 }, latest: null })).toBe('smoke 21 Oct (HMS): 1 plume');
+    expect(smokeSummary(m)).toBe('234 plumes · 8 heavy');
+    expect(smokeSummary({ ...m, plumes: { Light: 1, Medium: 0, Heavy: 0 }, latest: null })).toBe('1 plume');
   });
 });
 

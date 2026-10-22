@@ -13,6 +13,8 @@ export const UI_FONT = '"Chakra Petch", "Segoe UI", system-ui, sans-serif';
 
 const HUD = {
   accent: '#62e6ff',
+  /** The readout's keys: the accent, quieter than the values beside it. */
+  key: 'rgba(98, 230, 255, 0.62)',
   line: 'rgba(98, 230, 255, 0.7)',
   glow: 'rgba(0, 200, 255, 0.55)',
   text: 'rgba(230, 246, 255, 0.94)',
@@ -302,7 +304,14 @@ export interface SatelliteOverlay {
   featured: FeaturedOverlay[];
   /** Key of the satellite being followed (view=track), if any. */
   tracking?: string;
+  /** What's shown, "11,149 Starlink · 73 weather", or "loading…" / "unavailable". */
   summary: string;
+}
+
+/** A line of the status readout: what a layer shows (not when it was fetched: that's the feeds window's). */
+export interface ReadoutRow {
+  key: string;
+  value: string;
 }
 
 export interface OverlayState {
@@ -320,8 +329,6 @@ export interface OverlayState {
   satellites?: SatelliteOverlay;
   bodies?: BodyMarker[];
   launches?: LaunchOverlay[];
-  /** One-line summary of the focused launch for the status label. */
-  launchLine?: string;
   storms?: StormOverlay[];
   quakes?: QuakeOverlay[];
   /** GDACS floods, wildfires and eruptions. */
@@ -339,14 +346,8 @@ export interface OverlayState {
   target?: { pos: Vec3; name: string };
   /** Places gone to from the search: labelled like cities, in pink, even with cities off. */
   places?: { name: string; lat: number; lon: number }[];
-  /** One-line summary of the hazard layers for the status label. */
-  hazardLine?: string;
-  /** Lightning and GDACS summary. */
-  surfaceLine?: string;
-  /** Radar, smoke, snow and ice. */
-  weatherLine?: string;
-  /** Kp, X-ray class, solar wind. */
-  spaceLine?: string;
+  /** The readout's rows for the launch and data layers on, in order. */
+  rows?: ReadoutRow[];
   note?: string;
 }
 
@@ -1172,49 +1173,65 @@ function drawSatellites(ctx: CanvasRenderingContext2D, s: OverlayState, w: numbe
 const fmtLat = (v: number) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? 'N' : 'S'}`;
 const fmtLon = (v: number) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? 'E' : 'W'}`;
 
-export function formatAge(from: Date, to: Date): string {
-  const min = Math.round((to.getTime() - from.getTime()) / 60_000);
-  if (min < 1) return 'just now';
-  if (min < 90) return `${min} min ago`;
-  const h = Math.round(min / 60);
-  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+/** The clouds row, only while there are none to show (their times are in the feeds window). */
+export function cloudNote(status: CloudStatus, enabled: boolean): string | undefined {
+  if (!enabled) return undefined;
+  if (status.state === 'idle') return 'loading…';
+  return status.state === 'error' && !status.manifest ? 'unavailable' : undefined;
 }
 
-export function cloudLine(status: CloudStatus, enabled: boolean, now: Date): string {
-  if (!enabled) return 'clouds off';
-  switch (status.state) {
-    case 'idle':
-      return 'clouds loading…';
-    case 'ok': {
-      const t = new Date(status.manifest.t);
-      return `clouds ${t.toISOString().slice(11, 16)}Z (${formatAge(t, now)})`;
+/** Values wider than this (CSS px) wrap, so the readout grows down rather than across the globe. */
+export const READOUT_VALUE_W = 290;
+
+/**
+ * Split a readout value at its " · " separators into lines no wider than `maxW`, filling each
+ * line as far as it goes. A single part wider than that keeps a line of its own.
+ */
+export function wrapValue(value: string, maxW: number, measure: (text: string) => number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const part of value.split(' · ')) {
+    const longer = line ? `${line} · ${part}` : part;
+    if (line && measure(longer) > maxW) {
+      lines.push(line);
+      line = part;
+    } else {
+      line = longer;
     }
-    case 'error':
-      return status.manifest ? `clouds ${status.manifest.t.slice(11, 16)}Z (update failed)` : 'clouds unavailable';
   }
+  if (line) lines.push(line);
+  return lines;
 }
 
-/** The status readout, top left: time, viewpoint, then one line per active layer group. */
-function readoutLines(s: OverlayState): string[] {
-  const d = s.date;
-  const lines = [
-    `${d.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`,
-    `view ${fmtLat(s.viewer.lat)} ${fmtLon(s.viewer.lon)}`,
-    `sun  ${fmtLat(s.sun.lat)} ${fmtLon(s.sun.lon)}`,
-    cloudLine(s.cloudStatus, s.clouds, new Date()),
+/** The status readout, top left: the time, then a row for each kind of thing shown. */
+function readoutRows(s: OverlayState): ReadoutRow[] {
+  const rows: ReadoutRow[] = [
+    { key: 'view', value: `${fmtLat(s.viewer.lat)} ${fmtLon(s.viewer.lon)}` },
+    { key: 'sun', value: `${fmtLat(s.sun.lat)} ${fmtLon(s.sun.lon)}` },
   ];
+  const clouds = cloudNote(s.cloudStatus, s.clouds);
+  if (clouds) rows.push({ key: 'clouds', value: clouds });
   if (s.satellites) {
-    lines.push(s.satellites.summary);
+    if (s.satellites.summary) rows.push({ key: 'satellites', value: s.satellites.summary });
     const tracked = s.satellites.featured.find((f) => f.sat.key === s.satellites?.tracking);
-    if (tracked) lines.push(`tracking ${describeSat(tracked)}`);
+    if (tracked) rows.push({ key: 'tracking', value: describeSat(tracked) });
   }
-  if (s.launchLine) lines.push(s.launchLine);
-  if (s.hazardLine) lines.push(s.hazardLine);
-  if (s.surfaceLine) lines.push(s.surfaceLine);
-  if (s.weatherLine) lines.push(s.weatherLine);
-  if (s.spaceLine) lines.push(s.spaceLine);
-  if (s.note) lines.push(s.note);
-  return lines;
+  rows.push(...(s.rows ?? []));
+  if (s.note) rows.push({ key: 'note', value: s.note });
+  return rows;
+}
+
+/** One drawn line of the readout: the time across both columns, else a key (first line only) and value. */
+interface ReadoutLine {
+  key: string;
+  value: string;
+  head?: boolean;
+}
+
+const ROW_H = 17;
+
+function readoutValueX(ctx: CanvasRenderingContext2D, lines: ReadoutLine[]): number {
+  return 24 + Math.max(0, ...lines.map((l) => ctx.measureText(l.key).width)) + 12;
 }
 
 export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
@@ -1231,9 +1248,23 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   // The status readout is laid out first so callouts can keep clear of it.
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
-  const lines = s.label ? readoutLines(s) : [];
+  // Two columns: keys, then values that wrap at READOUT_VALUE_W.
+  const rows = s.label ? readoutRows(s) : [];
+  const measure = (text: string) => ctx.measureText(text).width;
+  const lines: ReadoutLine[] = rows.length
+    ? [
+        { key: '', value: `${s.date.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`, head: true },
+        ...rows.flatMap((r) => wrapValue(r.value, READOUT_VALUE_W, measure).map((value, i) => ({ key: i ? '' : r.key, value }))),
+      ]
+    : [];
+  const valueX = readoutValueX(ctx, lines);
   const readout: Rect | null = lines.length
-    ? { x: 8, y: 8, w: Math.max(...lines.map((line) => ctx.measureText(line).width)) + 26, h: lines.length * 17 + 6 }
+    ? {
+        x: 8,
+        y: 8,
+        w: Math.max(...lines.map((l) => (l.head ? 24 : valueX) + measure(l.value))) - 8 + 14,
+        h: lines.length * ROW_H + 6,
+      }
     : null;
   ctx.letterSpacing = '0px';
   // Labels keep clear of the status readout and, while it's pinned, the layer dock.
@@ -1272,11 +1303,21 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
     ctx.roundRect(readout.x, readout.y, readout.w, readout.h, 4);
     ctx.fill();
     ctx.fillStyle = HUD.line;
-    ctx.fillRect(14, 14, 1.5, lines.length * 17 - 4);
+    ctx.fillRect(14, 14, 1.5, lines.length * ROW_H - 4);
     // No glow: this text changes every frame (so can't be cached) and sits on black sky.
     lines.forEach((line, i) => {
-      ctx.fillStyle = i === 0 ? HUD.text : HUD.dim;
-      ctx.fillText(line, 24, 14 + i * 17);
+      const y = 14 + i * ROW_H;
+      if (line.head) {
+        ctx.fillStyle = HUD.text;
+        ctx.fillText(line.value, 24, y);
+        return;
+      }
+      if (line.key) {
+        ctx.fillStyle = HUD.key;
+        ctx.fillText(line.key, 24, y);
+      }
+      ctx.fillStyle = HUD.dim;
+      ctx.fillText(line.value, valueX, y);
     });
   }
 

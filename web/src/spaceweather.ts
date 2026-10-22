@@ -83,14 +83,16 @@ export function stormLevel(kp: number): string | undefined {
 
 const minus = (n: number) => (n < 0 ? `−${Math.abs(n)}` : `${n}`);
 
-export function spaceWeatherLine(sw: SpaceWeather): string | undefined {
+/** The readout's space-weather row: geomagnetic, then solar, then solar wind. */
+export function spaceWeatherSummary(sw: SpaceWeather): string | undefined {
   const parts: string[] = [];
   if (sw.kp !== undefined) {
     const g = stormLevel(sw.kp);
     parts.push(`Kp ${sw.kp.toFixed(1)}${g ? ` (${g} storm)` : ''}`);
   }
-  if (sw.xray) parts.push(`X-ray ${sw.xray}${sw.flare ? ` (last flare ${sw.flare.max})` : ''}`);
+  if (sw.xray) parts.push(`X-ray ${sw.xray}`);
+  if (sw.flare) parts.push(`last flare ${sw.flare.max}`);
   if (sw.windKms !== undefined) parts.push(`wind ${sw.windKms} km/s`);
   if (sw.bzNt !== undefined) parts.push(`Bz ${minus(sw.bzNt)} nT`);
-  return parts.length ? `space weather ${parts.join(' · ')}` : undefined;
+  return parts.length ? parts.join(' · ') : undefined;
 }

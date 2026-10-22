@@ -173,14 +173,15 @@ export function nwsRows(a: NwsTsunamiAlert): string[] {
   return [`${a.event.toUpperCase()} · NWS`, clip((areas[0] ?? '').toUpperCase(), 44) + more, `${until}${a.zones.length} ZONES`];
 }
 
-export function tsunamiLine(m: TsunamiManifest | undefined, nws: NwsTsunamiAlert[], now: number): string | undefined {
+/** The readout's tsunami row: NWS alerts in effect, then the warning centres' bulletins. */
+export function tsunamiSummary(m: TsunamiManifest | undefined, nws: NwsTsunamiAlert[], now: number): string | undefined {
   const parts: string[] = [];
-  for (const a of nws) parts.push(`${a.event.toUpperCase()} in effect (NWS)`);
+  for (const a of nws) parts.push(`${a.event.toUpperCase()} in effect`);
   const shown = m?.bulletins.filter((b) => tsunamiShown(b, now)) ?? [];
   const alerts = shown.filter((b) => isAlertCategory(b.category));
-  if (alerts.length) parts.push(`${alerts.length} tsunami alert${alerts.length === 1 ? '' : 's'} (NTWC/PTWC)`);
+  if (alerts.length) parts.push(`${alerts.length} alert${alerts.length === 1 ? '' : 's'}`);
   const statements = shown.length - alerts.length;
-  if (statements) parts.push(`${statements} tsunami statement${statements === 1 ? '' : 's'} (24 h)`);
-  if (!parts.length && m) parts.push('no tsunami alerts');
+  if (statements) parts.push(`${statements} statement${statements === 1 ? '' : 's'} in 24 h`);
+  if (!parts.length && m) parts.push('no alerts');
   return parts.length ? parts.join(' · ') : undefined;
 }

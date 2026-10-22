@@ -8,7 +8,7 @@ import {
   sampleZones,
   TSUNAMI_COLOR,
   tsunamiLabelled,
-  tsunamiLine,
+  tsunamiSummary,
   tsunamiRows,
   tsunamiShown,
   zoneCentroid,
@@ -80,11 +80,11 @@ describe('tsunami bulletins', () => {
   it('summarises NWS alerts first, then the centers', () => {
     const m: TsunamiManifest = { generated: 'x', centers: ['NTWC', 'PTWC'], maxAgeHours: 48, bulletins: [SAND_POINT] };
     expect(isTsunamiManifest(m)).toBe(true);
-    expect(tsunamiLine(m, [], NOW)).toBe('no tsunami alerts');
+    expect(tsunamiSummary(m, [], NOW)).toBe('no alerts');
     const alert = { id: 'a', event: 'Tsunami Warning', headline: '', areaDesc: '', sent: '', expires: null, zones: [] };
     const warn = { ...SAND_POINT, category: 'warning' };
-    expect(tsunamiLine({ ...m, bulletins: [warn] }, [alert], NOW)).toBe('TSUNAMI WARNING in effect (NWS) · 1 tsunami alert (NTWC/PTWC)');
-    expect(tsunamiLine(undefined, [], NOW)).toBeUndefined();
+    expect(tsunamiSummary({ ...m, bulletins: [warn] }, [alert], NOW)).toBe('TSUNAMI WARNING in effect · 1 alert');
+    expect(tsunamiSummary(undefined, [], NOW)).toBeUndefined();
   });
 });
 

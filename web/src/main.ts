@@ -56,7 +56,7 @@ import {
   sampleZones,
   TSUNAMI_COLOR,
   tsunamiLabelled,
-  tsunamiLine,
+  tsunamiSummary,
   tsunamiRows,
   tsunamiShown,
   zoneCentroid,
@@ -64,13 +64,13 @@ import {
   type TsunamiManifest,
 } from './tsunami';
 import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
-import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
+import { fetchSpaceWeather, spaceWeatherSummary, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
   burnedRadiusKm,
   decodeLightning,
   EVENT_COLOR,
   eventDetail,
-  eventLine,
+  eventSummary,
   eventSize,
   eventTitle,
   IMPACT_COLOR,
@@ -80,8 +80,7 @@ import {
   isSmokeManifest,
   isSnowIceManifest,
   labelledEvents,
-  smokeLine,
-  snowIceLine,
+  smokeSummary,
   decodeFires,
   fireMinIntensity,
   firesWithin,
@@ -127,7 +126,6 @@ import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type
 import {
   clearOverlaySprites,
   drawOverlay,
-  formatAge,
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
@@ -135,6 +133,7 @@ import {
   type ZoneOverlay,
   type LaunchOverlay,
   type QuakeOverlay,
+  type ReadoutRow,
   type SatelliteOverlay,
   type SatLabelOverlay,
   type StormOverlay,
@@ -582,12 +581,13 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
     };
   });
   const f = focus;
-  const line = f
-    ? `launch ${shortRocket(f.launch.rocket)} · ${f.launch.mission} · ${formatClock(f.t)} · ${
-        f.phase === 'countdown' ? f.launch.status.name || f.launch.status.abbrev : PHASE_LABEL[f.phase].toLowerCase()
-      }`
-    : undefined;
-  return { overlays, line };
+  const row: ReadoutRow | undefined = f && {
+    key: 'launch',
+    value: `${shortRocket(f.launch.rocket)} · ${f.launch.mission} · ${formatClock(f.t)} · ${
+      f.phase === 'countdown' ? f.launch.status.name || f.launch.status.abbrev : PHASE_LABEL[f.phase].toLowerCase()
+    }`,
+  };
+  return { overlays, row };
 }
 
 // ---- hazards: aurora, cyclones, fires, quakes, lightning, GDACS events, snow/ice -----
@@ -891,17 +891,6 @@ function eventOverlays(): EventOverlay[] {
   return eventCache;
 }
 
-function surfaceLine(): string | undefined {
-  const parts: string[] = [];
-  if (settings.lightning && lightningManifest) {
-    const n = lightningManifest.flashes;
-    const end = lightningManifest.latest?.slice(11, 16);
-    parts.push(`lightning ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} flashes (${lightningManifest.windowMin} min${end ? ` to ${end}Z` : ''}, GOES)`);
-  }
-  if (settings.events && eventManifest) parts.push(eventLine(eventManifest));
-  return parts.length ? parts.join(' · ') : undefined;
-}
-
 /** Tsunami markers change only with their data (and statements' label windows), so built per load. */
 let tsunamiCache: { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[]; at: number } | undefined;
 function tsunamiOverlays(): { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[] } {
@@ -996,37 +985,32 @@ function syncDetail(date: Date, radiusPx: number) {
   gibs.want(chooseRange(visibleBox(at.lat, at.lon, radiusDeg), degPerPx), new Date());
 }
 
-function weatherLine(): string | undefined {
-  const parts: string[] = [];
+/** "106.6k", "940": counts in the readout. */
+const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/**
+ * The readout's rows for the data layers on: what each shows, one row apiece. When it was
+ * fetched, and from where, is the feeds window's job (and the credits line's).
+ */
+function layerRows(): ReadoutRow[] {
+  const rows: ReadoutRow[] = [];
+  const add = (key: string, value: string | undefined) => value && rows.push({ key, value });
   if (settings.truecolor && detail) {
     const day = new Date(`${detail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
     const km = (0.5625 / 2 ** detail.level) * 111.32;
-    const res = km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
-    parts.push(`true colour ${day} (VIIRS NOAA-20, NASA GIBS, ${res}/px)`);
+    add('imagery', `${day} · ${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`);
   }
-  if (settings.radar && radarFrame) parts.push(`radar ${new Date(radarFrame.time * 1000).toISOString().slice(11, 16)}Z (RainViewer)`);
-  if (settings.smoke && smoke) parts.push(smokeLine(smoke));
-  if (settings.snow && snowIce) parts.push(snowIceLine(snowIce));
-  return parts.length ? parts.join(' · ') : undefined;
-}
-
-function hazardLine(): string | undefined {
-  const parts: string[] = [];
-  if (settings.aurora && aurora) parts.push(`aurora ${aurora.forecast.slice(11, 16)}Z (peak ${aurora.peak}%)`);
-  if (settings.storms && stormManifest) {
-    const n = stormManifest.storms.length;
-    parts.push(`${n} tropical cyclone${n === 1 ? '' : 's'}`);
-  }
-  if (settings.fires && firePoints) {
-    const n = firesWithin(firePoints, settings.firehours).detections;
-    parts.push(`fires ${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n} (last ${settings.firehours} h)`);
-  }
-  if (settings.quakes && quakes.length) parts.push(`${quakes.length} quakes M2.5+ (24 h)`);
-  if (settings.tsunami) {
-    const t = tsunamiLine(tsunamiManifest, nwsTsunami, Date.now());
-    if (t) parts.push(t);
-  }
-  return parts.length ? parts.join(' · ') : undefined;
+  if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
+  if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
+  // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
+  if (settings.aurora && spaceWeather) add('space wx', spaceWeatherSummary(spaceWeather));
+  if (settings.storms && stormManifest) add('cyclones', String(stormManifest.storms.length));
+  if (settings.fires && firePoints) add('fires', `${compact(firesWithin(firePoints, settings.firehours).detections)} in ${settings.firehours} h`);
+  if (settings.quakes && quakes.length) add('quakes', `${quakes.length} M2.5+ in 24 h`);
+  if (settings.lightning && lightningManifest) add('lightning', `${compact(lightningManifest.flashes)} flashes in ${lightningManifest.windowMin} min`);
+  if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
+  if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
+  return rows;
 }
 
 /**
@@ -1060,7 +1044,7 @@ const resolveTrack: TrackResolver = (key, date) => {
 
 function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   if (settings.sats === 'off') return undefined;
-  if (!satManifest) return { featured: [], summary: satError ? 'satellites unavailable' : 'satellites loading…' };
+  if (!satManifest) return { featured: [], summary: satError ? 'unavailable' : 'loading…' };
   const featured = FEATURED.flatMap((sat) => {
     if (!leafOn(findNode(sat.key) as SatLeaf, settings)) return [];
     const entry = featuredRecs.get(sat.key);
@@ -1071,14 +1055,9 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
     const track = tracks.track(sat.key, entry.rec, date, period / 2, period / 2, period / ORBIT_STEPS, state.pos);
     return [{ sat, state, track, live: !!live }];
   });
-  const fetched = formatAge(new Date(satManifest.generated), new Date());
-  const shown = bulkSummary(catalog, settings);
-  const bulk = shown ? `${shown} · ` : '';
-  return {
-    featured,
-    tracking: settings.view === 'track' ? settings.track : undefined,
-    summary: `satellites ${bulk}elements fetched ${fetched}${satError ? ' (update failed)' : ''}`,
-  };
+  // The groups shown, or with only the named ones on, their names.
+  const summary = bulkSummary(catalog, settings) || featured.map((f) => f.sat.name).join(' · ');
+  return { featured, tracking: settings.view === 'track' ? settings.track : undefined, summary };
 }
 
 /** Name labels for the categories ticked for labels (a few dozen SGP4 runs a frame at most). */
@@ -1511,20 +1490,16 @@ function frame(now: number) {
     satLabels: satLabels(date),
     bodies: settings.bodies ? bodies.markers : undefined,
     launches: launch.overlays,
-    launchLine: launch.line,
     storms: stormOverlays(),
     quakes: quakeOverlays(),
     events: eventOverlays(),
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
-    hazardLine: hazardLine(),
-    surfaceLine: surfaceLine(),
     bottomInset: drawerInset,
     panels: toasts.rects(),
     target: target && target.until > Date.now() ? target : undefined,
     places: placeLabels,
-    weatherLine: weatherLine(),
-    spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
+    rows: [...(launch.row ? [launch.row] : []), ...layerRows()],
     sun,
     markers: settings.markers,
     label: settings.label,

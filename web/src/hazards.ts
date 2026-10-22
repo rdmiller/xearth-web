@@ -378,10 +378,6 @@ export function isSnowIceManifest(v: unknown): v is SnowIceManifest {
 const shortDate = (iso: string) =>
   new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
-export function snowIceLine(m: SnowIceManifest): string {
-  return `snow & ice ${shortDate(m.ims)} (IMS)${m.seaIceSouth ? ` · Antarctic sea ice ${shortDate(m.seaIceSouth)}` : ''}`;
-}
-
 // ---- smoke (NOAA HMS, via the pipeline) --------------------------------------------------
 
 export interface SmokeManifest {
@@ -400,11 +396,11 @@ export function isSmokeManifest(v: unknown): v is SmokeManifest {
   return !!m && typeof m.generated === 'string' && typeof m.image === 'string' && !!m.plumes;
 }
 
-export function smokeLine(m: SmokeManifest): string {
+/** The readout's smoke row: plumes analysed, and how many are heavy. */
+export function smokeSummary(m: SmokeManifest): string {
   const p = m.plumes;
   const n = p.Light + p.Medium + p.Heavy;
-  const end = m.latest ? ` to ${m.latest.slice(11, 16)}Z` : '';
-  return `smoke ${shortDate(m.date)}${end} (HMS): ${n} plume${n === 1 ? '' : 's'}${p.Heavy ? `, ${p.Heavy} heavy` : ''}`;
+  return `${n} plume${n === 1 ? '' : 's'}${p.Heavy ? ` · ${p.Heavy} heavy` : ''}`;
 }
 
 // ---- GDACS floods, wildfires, volcanoes (via the pipeline) -----------------------------
@@ -497,8 +493,9 @@ export function labelledEvents(events: GdacsEvent[], maxGreenFires = 3): GdacsEv
   return events.filter((e) => e.type !== 'WF' || e.alert !== 'Green' || fires.includes(e));
 }
 
-export function eventLine(m: EventManifest): string {
+/** The readout's GDACS row: events of each kind (eruptions over the manifest's window). */
+export function eventSummary(m: EventManifest): string {
   const c = m.counts;
   const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
-  return `GDACS ${n(c.FL, 'flood', 'floods')} · ${n(c.WF, 'wildfire', 'wildfires')} · ${n(c.VO, 'eruption', 'eruptions')} (${m.volcanoDays} d)`;
+  return `${n(c.FL, 'flood', 'floods')} · ${n(c.WF, 'wildfire', 'wildfires')} · ${n(c.VO, 'eruption', 'eruptions')} in ${m.volcanoDays} d`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchSpaceWeather, parseFlares, parseKp, SPACE_WEATHER_URLS, spaceWeatherLine, stormLevel } from '../spaceweather';
+import { fetchSpaceWeather, parseFlares, parseKp, SPACE_WEATHER_URLS, spaceWeatherSummary, stormLevel } from '../spaceweather';
 
 // Shapes and values as returned by SWPC on 2026-10-21 ~19:20Z.
 const KP = [
@@ -20,7 +20,7 @@ describe('space weather', () => {
     };
     const sw = await fetchSpaceWeather(async (url) => byUrl[url]);
     expect(sw).toMatchObject({ kp: 3.33, xray: 'B9.5', flare: { max: 'C1.3' }, windKms: 453, btNt: 9, bzNt: -3 });
-    expect(spaceWeatherLine(sw)).toBe('space weather Kp 3.3 · X-ray B9.5 (last flare C1.3) · wind 453 km/s · Bz −3 nT');
+    expect(spaceWeatherSummary(sw)).toBe('Kp 3.3 · X-ray B9.5 · last flare C1.3 · wind 453 km/s · Bz −3 nT');
   });
 
   it('keeps what it can when a feed fails', async () => {
@@ -28,8 +28,8 @@ describe('space weather', () => {
       if (url === SPACE_WEATHER_URLS.kp) return KP;
       throw new Error('503');
     });
-    expect(spaceWeatherLine(sw)).toBe('space weather Kp 3.3');
-    expect(spaceWeatherLine({})).toBeUndefined();
+    expect(spaceWeatherSummary(sw)).toBe('Kp 3.3');
+    expect(spaceWeatherSummary({})).toBeUndefined();
   });
 
   it('names geomagnetic storms on the NOAA G scale', () => {
@@ -37,7 +37,7 @@ describe('space weather', () => {
     expect(stormLevel(5)).toBe('G1');
     expect(stormLevel(7.33)).toBe('G3');
     expect(stormLevel(9)).toBe('G5');
-    expect(spaceWeatherLine({ kp: 7.33 })).toBe('space weather Kp 7.3 (G3 storm)');
+    expect(spaceWeatherSummary({ kp: 7.33 })).toBe('Kp 7.3 (G3 storm)');
   });
 
   it('tolerates odd shapes', () => {

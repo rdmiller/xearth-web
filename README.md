@@ -362,7 +362,7 @@ docker compose down                 # stop (the data volume is kept)
   pipeline writes a new one; hashed build assets are immutable for a year, time-stamped cloud
   maps for a week, textures for 30 days. JSON goes out gzipped (the satellite file, ~1.1 MB
   with Starlink, as ~400 KB). `status.json` isn't served.
-- The site works before the first run finishes: layers without data say so in the readout.
+- The site works before the first run finishes: layers without data say so in the data-feeds window.
   Radar, aurora, quakes, space weather, US tsunami alerts and ISS telemetry go from their
   sources straight to the browser either way.
 - On 2026-10-21 a first run took ~3 minutes (clouds ~85 s, fires ~40 s, lightning ~60 s).
@@ -570,7 +570,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   - *Coverage:* GLM sees the Americas, the Atlantic and the eastern Pacific to about ±55°;
     Europe, Africa and Asia have no lightning shown.
   - *Staleness:* the hourly run at :50 covers roughly :20–:50, so what's shown is up to
-    ~90 minutes old by the next run. The status line gives the window's end time.
+    ~90 minutes old by the next run. The data-feeds window gives the newest flash's time.
 - **GDACS events:** floods (GloFAS) and wildfires (GWIS) come from GDACS's list of current
   events. GDACS records an eruption as a single moment that is never "current", so eruptions
   come from a search over the last 90 days, one marker per volcano at its latest eruption.
@@ -679,6 +679,16 @@ on two clocks kept apart on purpose:
 Cards slide in and out as layers are switched on and off, and flash when new data arrives.
 The Sun-image card appears once the Sun has been in frame (that's the only time it's fetched).
 The dashboard ticks once a second while open, and not at all while closed or hidden.
+
+## Status readout
+
+The block at the top left says what's on screen: the time, then a row per kind of thing
+shown (view, Sun, satellites, the one being tracked, the next launch, then a row for each
+data layer on: smoke plumes, aurora peak, space weather, cyclones, fires, quakes, lightning,
+GDACS events, tsunami alerts, imagery date and resolution). It doesn't say when things were
+fetched or where from: that's the data-feeds window (Shift+U) and the credits along the
+bottom. Keys and values sit in two columns. A long value wraps at its " · " separators
+(about 290 px), so the block grows down the side rather than across the globe.
 
 ## Toast windows
 

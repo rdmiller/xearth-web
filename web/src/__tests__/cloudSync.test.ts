@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CloudSync, type CloudManifest } from '../cloudSync';
-import { cloudLine, formatAge } from '../overlay';
+import { cloudNote, wrapValue } from '../overlay';
 
 // Same naming as the pipeline (`clouds-20261021T1500Z.webp`): no colons, which
 // `new URL` would otherwise read as a scheme.
@@ -63,18 +63,26 @@ describe('CloudSync', () => {
   });
 });
 
-describe('cloud status label', () => {
+describe('cloud status in the readout', () => {
   const now = new Date('2026-10-21T16:24:00Z');
-  it('formats ages', () => {
-    expect(formatAge(new Date('2026-10-21T16:23:40Z'), now)).toBe('just now');
-    expect(formatAge(new Date('2026-10-21T15:00:00Z'), now)).toBe('84 min ago');
-    expect(formatAge(new Date('2026-10-21T12:00:00Z'), now)).toBe('4 h ago');
+  it('speaks up only while there are no clouds to show (their times are in the feeds window)', () => {
+    const m = manifest('2026-10-21T15:00:00Z');
+    expect(cloudNote({ state: 'idle' }, true)).toBe('loading…');
+    expect(cloudNote({ state: 'error', message: 'x' }, true)).toBe('unavailable');
+    expect(cloudNote({ state: 'ok', manifest: m, checkedAt: now }, true)).toBeUndefined();
+    expect(cloudNote({ state: 'error', message: 'x', manifest: m }, true)).toBeUndefined(); // still showing the last map
+    expect(cloudNote({ state: 'idle' }, false)).toBeUndefined();
+  });
+});
+
+describe('readout wrapping', () => {
+  const measure = (t: string) => t.length * 10; // 10 px a character
+  it('fills each line up to the width, breaking only at the separators', () => {
+    expect(wrapValue('Kp 4.0 · X-ray B5.8 · wind 463 km/s · Bz 0 nT', 240, measure)).toEqual(['Kp 4.0 · X-ray B5.8', 'wind 463 km/s · Bz 0 nT']);
+    expect(wrapValue('peak 36 %', 200, measure)).toEqual(['peak 36 %']);
   });
 
-  it('describes each state', () => {
-    const m = manifest('2026-10-21T15:00:00Z');
-    expect(cloudLine({ state: 'ok', manifest: m, checkedAt: now }, true, now)).toBe('clouds 15:00Z (84 min ago)');
-    expect(cloudLine({ state: 'error', message: 'x' }, true, now)).toBe('clouds unavailable');
-    expect(cloudLine({ state: 'ok', manifest: m, checkedAt: now }, false, now)).toBe('clouds off');
+  it('gives an over-long part a line of its own rather than cutting it', () => {
+    expect(wrapValue('Long March 6A · Unknown Payload Name Here · T−1d', 100, measure)).toEqual(['Long March 6A', 'Unknown Payload Name Here', 'T−1d']);
   });
 });
