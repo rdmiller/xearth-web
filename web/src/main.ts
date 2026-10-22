@@ -152,7 +152,8 @@ import {
   type SatelliteManifest,
 } from './satellites';
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
-import { dayTextureUrl, loadImage, nightTextureUrl } from './textures';
+import { dayTextureUrl, loadImage, nightTextureUrl, reliefUrl } from './textures';
+import type { SurfaceRequest, SurfaceResponse } from './surfaceWorker';
 import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
 import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
 import { Capacitor } from '@capacitor/core';
@@ -217,14 +218,89 @@ function updateNote() {
   note = missing.size ? 'textures missing — run `pnpm textures`' : undefined;
 }
 
+// Sun-lit terrain: the slope map ships with the app; the day texture is then the Blue
+// Marble without NASA's own (fixed-light) shading. Either one missing — an older texture
+// download, a failed fetch — falls back to the shaded day texture with no relief, so the
+// ground is never shaded twice.
+const RELIEF_EXAGGERATION = 30;
+let reliefState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
+let plainDayMissing = false;
+/** Whether the day texture on the GPU is the plain one. */
+let dayIsPlain = false;
+
+function ensureRelief() {
+  if (!settings.relief || reliefState !== 'idle') return;
+  reliefState = 'loading';
+  fetch(reliefUrl(BASE))
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`${r.status} ${r.url}`);
+      // Data, not a picture: no colour management, or the slopes shift.
+      renderer.setRelief(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
+      reliefState = 'ready';
+    })
+    .catch((err) => {
+      console.warn('relief:', err);
+      reliefState = 'failed';
+    })
+    .finally(() => {
+      dayUrl = ''; // pick the day texture again now that we know
+      requestRedraw();
+    });
+}
+
+/** The plain land + shaded water day texture, built in a worker (made on first use). */
+let surfaceWorker: Worker | undefined;
+let surfaceSeq = 0;
+const surfaceJobs = new Map<number, { resolve: (b: ImageBitmap) => void; reject: (e: Error) => void }>();
+
+function composeSurface(plainUrl: string, shadedUrl: string): Promise<ImageBitmap> {
+  if (!surfaceWorker) {
+    surfaceWorker = new Worker(new URL('./surfaceWorker.ts', import.meta.url), { type: 'module' });
+    surfaceWorker.onmessage = (e: MessageEvent<SurfaceResponse>) => {
+      const job = surfaceJobs.get(e.data.id);
+      surfaceJobs.delete(e.data.id);
+      if ('bitmap' in e.data) job?.resolve(e.data.bitmap);
+      else job?.reject(new Error(e.data.error));
+    };
+  }
+  const abs = (u: string) => new URL(u, location.href).href;
+  const id = ++surfaceSeq;
+  const request: SurfaceRequest = { id, plain: abs(plainUrl), shaded: abs(shadedUrl), relief: abs(reliefUrl(BASE)), maxSize: renderer.maxTextureSize };
+  return new Promise((resolve, reject) => {
+    surfaceJobs.set(id, { resolve, reject });
+    surfaceWorker!.postMessage(request);
+  });
+}
+
+/** Vertical exaggeration for the frame, or 0 while relief is off or can't be shown. */
+function reliefStrength(): number {
+  return settings.relief && reliefState === 'ready' && dayIsPlain ? RELIEF_EXAGGERATION * settings.reliefscale : 0;
+}
+
 async function ensureDayTexture(date: Date) {
-  const url = dayTextureUrl(TEXTURE_BASE, date);
+  ensureRelief();
+  const plain = settings.relief && reliefState === 'ready' && !plainDayMissing;
+  const url = dayTextureUrl(TEXTURE_BASE, date, plain);
   if (url === dayUrl) return;
   dayUrl = url;
   try {
-    renderer.setDay(await loadImage(url, renderer.maxTextureSize));
+    if (plain) {
+      // Plain land, NASA's shaded water (blendLand explains why).
+      const bitmap = await composeSurface(url, dayTextureUrl(TEXTURE_BASE, date));
+      if (dayUrl !== url) return void bitmap.close(); // the month or the setting moved on
+      renderer.setDay(bitmap);
+    } else {
+      renderer.setDay(await loadImage(url, renderer.maxTextureSize));
+    }
+    dayIsPlain = plain;
     missing.delete('day');
   } catch (err) {
+    if (plain) {
+      console.warn('plain day texture missing, using the shaded one (run `pnpm textures`):', err);
+      plainDayMissing = true;
+      dayUrl = '';
+      return ensureDayTexture(date);
+    }
     console.warn('day texture:', err);
     missing.add('day');
   }
@@ -1311,6 +1387,7 @@ function frame(now: number) {
     radar: settings.radar,
     smoke: settings.smoke,
     detail: settings.truecolor && !!detail,
+    relief: reliefStrength(),
     dpr: scale,
   });
   if (settings.fps) gpuTimer.end(slot);

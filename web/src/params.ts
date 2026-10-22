@@ -54,6 +54,10 @@ export interface Settings extends ViewSettings {
   tsunami: boolean;
   /** NASA GIBS true-colour imagery when zoomed in. */
   truecolor: boolean;
+  /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
+  relief: boolean;
+  /** Relief strength: 1 = the default vertical exaggeration. */
+  reliefscale: number;
   /** NASA ISS live telemetry. */
   isslive: IssLiveMode;
   /** NOAA HMS smoke plumes. */
@@ -133,6 +137,8 @@ export function defaults(): Settings {
     smoke: true,
     tsunami: true,
     truecolor: true,
+    relief: true,
+    reliefscale: 1,
     isslive: 'track',
     bodyscale: 1,
     time: null,
@@ -234,6 +240,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
     truecolor: bool(q, 'truecolor', base.truecolor),
+    relief: bool(q, 'relief', base.relief),
+    reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,

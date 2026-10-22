@@ -35,6 +35,8 @@ export interface FrameState {
   smoke: boolean;
   /** GIBS true-colour detail (when one has been set). */
   detail: boolean;
+  /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
+  relief: number;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
   fires: { windowH: number; minIntensity: number } | null;
   /** Lightning layer: flashes at most `windowMin` old. */
@@ -67,6 +69,8 @@ export class GlobeRenderer {
   private readonly smokeTex: WebGLTexture;
   private hasSmoke = false;
   private readonly detailTex: WebGLTexture;
+  private readonly reliefTex: WebGLTexture;
+  private hasRelief = false;
   private detailBox: [number, number, number, number] | null = null;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
@@ -102,6 +106,7 @@ export class GlobeRenderer {
     this.radarTex = empty();
     this.smokeTex = empty();
     this.detailTex = empty();
+    this.reliefTex = empty();
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -205,6 +210,21 @@ export class GlobeRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.hasSnowIce = true;
+  }
+
+  /** Terrain slopes (east in red, north in green, encoded as make-relief.py writes them). */
+  setRelief(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE11);
+    gl.bindTexture(gl.TEXTURE_2D, this.reliefTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasRelief = true;
   }
 
   /**
@@ -362,6 +382,10 @@ export class GlobeRenderer {
     gl.uniform1i(this.u('uDetail'), 10);
     gl.uniform1f(this.u('uDetailOn'), f.detail && this.detailBox ? 1 : 0);
     if (this.detailBox) gl.uniform4fv(this.u('uDetailBox'), this.detailBox);
+    gl.activeTexture(gl.TEXTURE11);
+    gl.bindTexture(gl.TEXTURE_2D, this.reliefTex);
+    gl.uniform1i(this.u('uRelief'), 11);
+    gl.uniform1f(this.u('uReliefK'), this.hasRelief ? f.relief : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 

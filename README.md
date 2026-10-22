@@ -66,6 +66,35 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Everything is a URL parameter**, like xearth's command-line flags, and the common ones have
   hotkeys. Press **H** in the app for the full list.
 
+## Terrain lit by the Sun
+
+Mountains are shaded by the real Sun, not a fixed lamp. At dawn and dusk, ranges facing the
+Sun light up and their far sides fall into shade, and sun-facing ridges catch a little light
+just past the terminator. Near noon the effect is slight, as it is from orbit. Shift+E (or
+Terrain in the dock) switches it off.
+
+- **Slopes:** `public/relief.webp`, built once by `python scripts/make-relief.py` from NOAA
+  NCEI's ETOPO 2022 60″ surface elevation (public domain). The script reads every second
+  sample over OPeNDAP (~230 MB; `--cache F.npy` keeps the result for re-runs) and averages
+  2×2 to the Blue Marble's 5400×2700 grid, about 7.4 km a texel. Each texel holds the east
+  and north slopes, square-root encoded so gentle hills keep their detail, plus the land
+  mask. The sea floor stays flat, since sunlight doesn't show it from space. The file ships
+  with the app.
+- **Shading:** the globe shader tilts each texel's normal by its slope, with a 30× vertical
+  exaggeration (`reliefscale` scales it; a 7 km average flattens every real mountain), eased
+  off on the steepest slopes so ranges don't break into hard facets. Only the ground uses
+  the tilted normal; clouds, smoke and city lights don't.
+- **Day texture:** with relief on, the globe's land comes from the Blue Marble without
+  NASA's painted-on shading (`textures/surface-MM.jpg`), so mountains aren't lit twice.
+  Water comes from the shaded version (`day-MM.jpg`), because the plain one paints the open
+  ocean a flat navy. ETOPO's land mask, in the slope map's blue channel and softened over a
+  texel at the coast, splits the two. A web worker blends them once per month, which takes
+  about half a second. NASA has no plain June image, so June uses July's. With relief off,
+  or if a file is missing, the globe goes back to `day-MM.jpg` alone, which the cloud job
+  also keeps as its clear-sky reference.
+- **Zoomed in:** where the true-colour imagery shows, the relief fades out, because the
+  photo already has the real shadows from the satellite's pass.
+
 ## True-colour imagery when zoomed in
 
 Zoom in past what the monthly Blue Marble can show (about 0.09° a screen pixel) and the day
@@ -160,6 +189,7 @@ style. A test checks that every layer hotkey has a button.
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
 | `Shift+P` | true-colour imagery when zoomed in (NASA GIBS) |
+| `Shift+E` | terrain lit by the Sun (ETOPO 2022) |
 | `/` | go to a place: search by name or coordinates (or double-click the globe) |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
 | `6` `7` `8` | track the ISS, Tiangong, SAT GUS (Mark Rober) |
@@ -347,6 +377,8 @@ docker compose down                 # stop (the data volume is kept)
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
 | `truecolor` | NASA GIBS true-colour imagery when zoomed in | 1 |
+| `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
+| `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
@@ -650,6 +682,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Stars: Yale Bright Star Catalogue, 5th revised ed. (Hoffleit & Warren 1991), via CDS
   (catalogue V/50).
 - Moon: CGI Moon Kit colour map (LRO LROC/LOLA), NASA's Scientific Visualization Studio.
+- Terrain: NOAA National Centers for Environmental Information, ETOPO 2022 15 Arc-Second Global
+  Relief Model (60″ surface elevation), doi:10.25921/fd45-gt74.
 - True-colour imagery: NASA Global Imagery Browse Services (GIBS), part of NASA's Earth
   Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20.
 - Icons: Lucide (ISC License).

@@ -87,7 +87,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: web/public/textures
-          key: nasa-textures-v1
+          key: nasa-textures-v2
       - name: NASA textures (the cloud job uses Blue Marble as its clear-sky reference)
         run: node web/scripts/fetch-textures.mjs
       - name: Build cloud map from the newest GMGSI files (IR + visible by day)

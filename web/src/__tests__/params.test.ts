@@ -89,3 +89,21 @@ describe('timezoneLongitude', () => {
     expect(timezoneLongitude(-540)).toBe(135); // UTC+9
   });
 });
+
+describe('relief settings', () => {
+  it('is on at the default strength unless the URL says otherwise', () => {
+    expect(parseSettings('').relief).toBe(true);
+    expect(parseSettings('').reliefscale).toBe(1);
+    expect(parseSettings('?relief=0').relief).toBe(false);
+    expect(parseSettings('?reliefscale=2.5').reliefscale).toBe(2.5);
+    expect(parseSettings('?reliefscale=99').reliefscale).toBe(5);
+    expect(parseSettings('?reliefscale=0').reliefscale).toBe(0.1);
+  });
+
+  it('round-trips through the URL', () => {
+    const s = { ...defaults(), relief: false, reliefscale: 2 };
+    const back = parseSettings(toQuery(s));
+    expect(back.relief).toBe(false);
+    expect(back.reliefscale).toBe(2);
+  });
+});

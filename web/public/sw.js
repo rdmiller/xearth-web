@@ -5,6 +5,7 @@
 //   assets/ icons/ fonts         cache first (content-hashed or fixed)
 //   stars.json manifest          cache first
 //   textures/                    cache first (fixed NASA images, ~1–4 MB each)
+//   relief.webp                  cache first (terrain slopes; rename it if it's ever rebuilt)
 //   everything else              straight to the network: every layer's latest.json and
 //                                images, and all the third-party feeds
 //
@@ -12,7 +13,7 @@
 
 const CACHE = 'xearth-shell-v1';
 const SCOPE = new URL(self.registration.scope).pathname;
-const CACHE_FIRST = /^(assets\/|icons\/|textures\/|stars\.json$|manifest\.webmanifest$)/;
+const CACHE_FIRST = /^(assets\/|icons\/|textures\/|relief\.webp$|stars\.json$|manifest\.webmanifest$)/;
 
 self.addEventListener('install', () => self.skipWaiting());
 

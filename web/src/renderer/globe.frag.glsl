@@ -36,12 +36,20 @@ uniform float uSmokeOn;
 uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
 uniform float uDetailOn;
 uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees); lon may run past 180
+uniform sampler2D uRelief;   // terrain slopes, east (r) and north (g), from ETOPO 2022 (make-relief.py)
+uniform float uReliefK;      // vertical exaggeration; 0 = off (the day texture then has NASA's shading)
 
 out vec4 outColor;
 
 const float PI = 3.14159265359;
 
 vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
+
+// make-relief.py stores each slope as 127.5 + 127·sign(g)·sqrt(|g| / 0.5).
+vec2 decodeSlope(vec2 t) {
+  vec2 e = (t * 255.0 - 127.5) / 127.0;
+  return sign(e) * e * e * 0.5;
+}
 
 // Analytic mip level: texels per screen pixel at this point. Avoids dFdx,
 // which misbehaves across the longitude seam and at the limb.
@@ -117,11 +125,26 @@ void main() {
     albedo = mix(albedo, vec3(0.70, 0.76, 0.82), iceC * 0.9);
   }
 
+  // Terrain lit by the real Sun: the slopes tilt the ground's normal, exaggerated (a 7 km
+  // texel flattens every mountain) and eased off for the steepest so ranges don't turn to
+  // black-and-white facets. At a low Sun, slopes facing it light up and the far sides fall
+  // into shade; sun-facing ridges catch a little light just past the terminator. Where the
+  // true-colour photo shows, its own (real) shadows take over.
+  vec3 ng = n;
+  if (uReliefK > 0.0) {
+    vec2 g = decodeSlope(textureLod(uRelief, uv, lodFor(uRelief, mu, coslat)).rg) * uReliefK * (1.0 - detailA);
+    g /= 1.0 + length(g) / 3.0;
+    vec3 east = normalize(vec3(-n.y, n.x, 0.0) + vec3(1e-6, 0.0, 0.0));
+    vec3 north = cross(n, east);
+    ng = normalize(n - g.x * east - g.y * north);
+  }
+
   float k = dot(n, uSun);
-  float dayW = smoothstep(-0.105, 0.06, k);       // fades out by the end of civil twilight
+  float kg = dot(ng, uSun);
+  float dayW = smoothstep(-0.105, 0.06, k + clamp(kg - k, -0.03, 0.03)); // fades out by the end of civil twilight
   float lambert = clamp(k, 0.0, 1.0);
   vec3 tint = mix(vec3(1.0, 0.62, 0.38), vec3(1.0), smoothstep(0.0, 0.25, k));
-  vec3 dayCol = albedo * dayW * (0.35 + 0.65 * lambert) * tint * 1.1;
+  vec3 dayCol = albedo * dayW * (0.35 + 0.65 * clamp(kg, 0.0, 1.0)) * tint * 1.1;
 
   // Smoke: a grey-brown haze over the sunlit ground (HMS maps it by day only),
   // under the clouds. Heavy smoke hides about half of what's below.

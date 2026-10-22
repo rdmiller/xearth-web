@@ -21,6 +21,7 @@ import {
   Haze,
   Image as ImageIcon,
   Lightbulb,
+  Mountain,
   ListTree,
   MapPin,
   Radar,
@@ -68,6 +69,7 @@ export const DRAWER: DrawerGroup[] = [
     items: [
       { key: 'c', label: 'Clouds', icon: Cloud, state: flag('clouds') },
       { key: 'shift+p', label: 'Imagery', icon: ImageIcon, state: flag('truecolor') },
+      { key: 'shift+e', label: 'Terrain', icon: Mountain, state: flag('relief') },
       { key: 'n', label: 'Lights', icon: Lightbulb, state: flag('lights') },
       { key: 'i', label: 'Snow', icon: Snowflake, state: flag('snow') },
       { key: 'shift+r', label: 'Radar', icon: Radar, state: flag('radar') },
