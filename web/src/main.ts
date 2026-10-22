@@ -626,6 +626,20 @@ const announced = new Set<string>();
 let radarFrame: RadarFrame | undefined;
 let radarZoomShown = 0;
 const radarCredit = document.getElementById('radar-credit') as HTMLElement;
+const credits = document.getElementById('credits') as HTMLElement;
+// The footer's "All credits" opens the help panel, where the full list is (H does the same).
+credits.querySelector('button')?.addEventListener('click', () => {
+  help.hidden = !help.hidden;
+});
+
+/** Screen boxes of visible DOM text over the globe, for canvas labels to keep clear of. */
+function domRects(...els: HTMLElement[]): { x: number; y: number; w: number; h: number }[] {
+  return els.flatMap((el) => {
+    if (el.hidden) return [];
+    const r = el.getBoundingClientRect();
+    return r.width ? [{ x: r.left, y: r.top, w: r.width, h: r.height }] : [];
+  });
+}
 let spaceWeather: SpaceWeather | undefined;
 
 // The SUVI Sun image (~1 MB) is fetched only while the Sun is actually in frame.
@@ -1508,7 +1522,7 @@ function frame(now: number) {
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
     bottomInset: drawerInset,
-    panels: toasts.rects(),
+    panels: [...toasts.rects(), ...domRects(credits, radarCredit)],
     target: target && target.until > Date.now() ? target : undefined,
     places: placeLabels,
     rows: [...(launch.row ? [launch.row] : []), ...layerRows()],

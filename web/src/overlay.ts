@@ -1,4 +1,4 @@
-// 2D layer over the globe: city markers, the status label, and attribution.
+// 2D layer over the globe: city markers and the status label. (Data credits are a DOM footer.)
 // Styled as a spacecraft HUD: Chakra Petch (bundled via @fontsource), small
 // letter-spaced caps, cyan hairlines with a soft glow.
 
@@ -1283,7 +1283,6 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
     : null;
   ctx.letterSpacing = '0px';
   // Labels keep clear of the status readout and, while it's pinned, the layer dock.
-  // (Its band starts above the attribution line, which the dock floats over.)
   const inset = s.bottomInset ?? 0;
   const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : []), ...(s.panels ?? [])];
   // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
@@ -1335,18 +1334,6 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
       ctx.fillText(line.value, valueX, y);
     });
   }
-
-  ctx.font = `500 10px ${UI_FONT}`;
-  ctx.letterSpacing = '0.06em';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  ctx.fillStyle = 'rgba(170, 205, 235, 0.5)';
-  ctx.fillText(
-    'Earth: NASA Blue Marble / Black Marble, GIBS (VIIRS) · Moon: NASA SVS / LRO · Clouds: NOAA/NESDIS GMGSI · Satellites: CelesTrak · Launches: The Space Devs, SpaceX via CelesTrak · Aurora, Sun image, space weather: NOAA SWPC · Storms, floods, wildfires, eruptions: GDACS, NHC · Fires: NASA FIRMS · Quakes: USGS · Lightning: NOAA GOES GLM · Snow & ice: NOAA IMS, NSIDC · Smoke: NOAA HMS · Tsunami: NOAA NTWC/PTWC, NWS · ISS telemetry: NASA ISSLive · Places: GeoNames via Open-Meteo · press H',
-    w - 10,
-    h - 8,
-  );
-  ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';
   return readout ? Math.ceil(readout.y + readout.h) : 0;
 }

@@ -92,6 +92,19 @@
         color: var(--ink-3); text-decoration: none;
       }
       #radar-credit:hover { color: var(--hud-accent); text-decoration: underline; }
+      /* Data credits: one short line under the dock; the full list is in the help panel. */
+      #credits {
+        position: fixed; right: 10px; bottom: 5px; z-index: 1; max-width: calc(100vw - 20px); font-size: 10px; letter-spacing: 0.06em;
+        color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #credits button {
+        padding: 0; font: inherit; letter-spacing: inherit; color: var(--ink-3); background: none; border: 0; cursor: pointer;
+        text-decoration: underline; text-decoration-color: var(--glass-edge); text-underline-offset: 2px;
+      }
+      #credits button:hover { color: var(--hud-accent); }
+      @media (max-width: 600px) { #credits .sources { display: none; } }
+      #help ul.credits { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--ink-3); }
+      #help ul.credits b { font-weight: 600; color: var(--ink-2); }
       /* Toast windows (toasts.ts): every panel down the right edge (frame rate, ISS telemetry,
          data feeds, a searched place) in one column from the top of the window to the dock,
          all one width and one style. When they don't fit, those that may shrink give up height
@@ -459,6 +472,7 @@
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
+    <footer id="credits"><span class="sources">Data: NASA · NOAA · USGS · GDACS · CelesTrak · The Space Devs · Open-Meteo · </span><button type="button" aria-controls="help">All credits</button></footer>
     <aside id="help" hidden>
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
@@ -471,6 +485,25 @@
         GDACS impact — low, medium, high: the humanitarian impact expected (hazard, people exposed,
         vulnerability), not the event's size.
       </p>
+      <h3>Data</h3>
+      <ul class="credits">
+        <li><b>Earth</b> NASA Blue Marble / Black Marble, GIBS (VIIRS)</li>
+        <li><b>Moon</b> NASA SVS / LRO</li>
+        <li><b>Clouds</b> NOAA/NESDIS GMGSI</li>
+        <li><b>Satellites</b> CelesTrak</li>
+        <li><b>Launches</b> The Space Devs, SpaceX via CelesTrak</li>
+        <li><b>Aurora, Sun image, space weather</b> NOAA SWPC</li>
+        <li><b>Storms, floods, wildfires, eruptions</b> GDACS, NHC</li>
+        <li><b>Fires</b> NASA FIRMS</li>
+        <li><b>Quakes</b> USGS</li>
+        <li><b>Lightning</b> NOAA GOES GLM</li>
+        <li><b>Snow &amp; ice</b> NOAA IMS, NSIDC</li>
+        <li><b>Smoke</b> NOAA HMS</li>
+        <li><b>Radar</b> RainViewer</li>
+        <li><b>Tsunami</b> NOAA NTWC/PTWC, NWS</li>
+        <li><b>ISS telemetry</b> NASA ISSLive</li>
+        <li><b>Places</b> GeoNames via Open-Meteo</li>
+      </ul>
       <h3>URL parameters</h3>
       <table>
         <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code> · <code>track</code></td></tr>
