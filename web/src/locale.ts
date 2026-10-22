@@ -4,7 +4,7 @@
 // app's own hazard layers have nearby — storms, quakes, GDACS events, lightning, fires and
 // tsunami bulletins.
 
-import { eventTitle, impactLabel, stormTitle, type EventManifest, type FireManifest, type LightningManifest, type Quake, type StormManifest } from './hazards';
+import { eventTitle, impactLevel, stormTitle, type EventManifest, type FireManifest, type LightningManifest, type Quake, type StormManifest } from './hazards';
 import type { TsunamiManifest } from './tsunami';
 import { DEG } from './vec';
 
@@ -183,6 +183,8 @@ export interface LocalAlert {
   level: AlertLevel;
   title: string;
   detail: string;
+  /** GDACS impact level 1–3, shown as a meter. */
+  impact?: number;
 }
 
 const LEVEL_ORDER: Record<AlertLevel, number> = { warning: 0, watch: 1, advisory: 2, info: 3 };
@@ -286,7 +288,12 @@ export function nearbyHazards(lat: number, lon: number, src: NearbySources, now:
     const d = at(s.pos[1], s.pos[0]);
     if (d.km <= NEARBY_KM.storm) {
       const cls = (s.nhc?.classification || s.cls || '').toUpperCase();
-      out.push({ level: cls === 'HU' || cls === 'MH' || d.km < 300 ? 'warning' : 'watch', title: titleCase(stormTitle(s)), detail: where(d.km, d.bearing, imperial) });
+      out.push({
+        level: cls === 'HU' || cls === 'MH' || d.km < 300 ? 'warning' : 'watch',
+        title: titleCase(stormTitle(s)),
+        detail: where(d.km, d.bearing, imperial),
+        impact: impactLevel(s.alert) || undefined,
+      });
     }
   }
 
@@ -312,7 +319,12 @@ export function nearbyHazards(lat: number, lon: number, src: NearbySources, now:
     const d = at(e.pos[1], e.pos[0]);
     if (d.km > (e.type === 'VO' ? NEARBY_KM.volcano : NEARBY_KM.event)) continue;
     const alert = e.alert.toLowerCase();
-    out.push({ level: alert === 'red' ? 'warning' : alert === 'orange' ? 'advisory' : 'info', title: titleCase(eventTitle(e)), detail: `${titleCase(impactLabel(e.alert))} · ${where(d.km, d.bearing, imperial)}` });
+    out.push({
+      level: alert === 'red' ? 'warning' : alert === 'orange' ? 'advisory' : 'info',
+      title: titleCase(eventTitle(e)),
+      detail: where(d.km, d.bearing, imperial),
+      impact: impactLevel(e.alert) || undefined,
+    });
   }
 
   const lightning = src.lightning;

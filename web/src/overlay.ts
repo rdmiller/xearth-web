@@ -388,7 +388,29 @@ const LAUNCH_COLOR = '#ff9f43';
 const STATUS_COLOR: Record<string, string> = { go: '#7dffa8', hold: '#ff5c7a', success: HUD.accent };
 const LABEL_ROW = 15;
 
-type Row = { text: string; color: string }[];
+/** A run of text in one colour — or, with `meter`, the impact meter (that many of 3 bars lit). */
+type Part = { text: string; color: string; meter?: number };
+type Row = Part[];
+
+/** The impact meter: three rising bars after a small gap, sized to sit in a label row. */
+const METER_GAP = 6;
+const METER_W = METER_GAP + 13;
+const METER_OFF = 'rgba(175, 215, 240, 0.22)';
+
+const partWidth = (ctx: CanvasRenderingContext2D, p: Part) => (p.meter ? METER_W : ctx.measureText(p.text).width);
+
+/** Bars 3 px wide, 2 px apart, 4/7/10 px tall, bottoms on the row's lower edge. `y`: row middle. */
+function drawMeter(ctx: CanvasRenderingContext2D, x: number, y: number, level: number, color: string) {
+  for (let i = 0; i < 3; i++) {
+    const bh = 4 + i * 3;
+    ctx.fillStyle = i < level ? color : METER_OFF;
+    ctx.fillRect(x + METER_GAP + i * 5, y + 5 - bh, 3, bh);
+  }
+}
+
+/** The meter for an impact level, as a label part (nothing for an unknown level). */
+const impactPart = (level: number | undefined, color: string | undefined): Part[] =>
+  level && color ? [{ text: '', color, meter: level }] : [];
 
 /** A stacked label to place beside a point on the globe. */
 interface CalloutRequest {
@@ -431,7 +453,7 @@ function placeCallouts(
     if (!anchor.visible) continue;
     const ax = w / 2 + anchor.x * s.radiusPx;
     const ay = h / 2 - anchor.y * s.radiusPx;
-    const width = Math.max(...r.rows.map((row) => row.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0)));
+    const width = Math.max(...r.rows.map((row) => row.reduce((sum, part) => sum + partWidth(ctx, part), 0)));
     const blockH = (r.rows.length - 1) * LABEL_ROW;
     const candidates = [
       { x: ax + r.gap, y: ay - blockH / 2 },
@@ -473,9 +495,12 @@ function drawCallouts(ctx: CanvasRenderingContext2D, callouts: Callout[]) {
     c.rows.forEach((row, i) => {
       let x = c.x;
       for (const part of row) {
-        ctx.fillStyle = part.color;
-        ctx.fillText(part.text, x, c.y + i * LABEL_ROW);
-        x += ctx.measureText(part.text).width;
+        if (part.meter) drawMeter(ctx, x, c.y + i * LABEL_ROW, part.meter, part.color);
+        else {
+          ctx.fillStyle = part.color;
+          ctx.fillText(part.text, x, c.y + i * LABEL_ROW);
+        }
+        x += partWidth(ctx, part);
       }
     });
   }
@@ -513,6 +538,9 @@ export interface StormOverlay {
   title: string;
   detail: string;
   color: string;
+  /** GDACS impact level 1–3 and its colour, drawn as a meter after the detail. */
+  impact?: number;
+  impactColor?: string;
   pos: Vec3;
   southern: boolean;
   /** Track segments; forecast ones are dashed. */
@@ -582,7 +610,10 @@ function drawStorms(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
 function stormRequests(s: OverlayState): CalloutRequest[] {
   return (s.storms ?? []).map((st) => ({
     anchor: st.pos,
-    rows: [[{ text: st.title, color: st.color }], ...(st.detail ? [[{ text: st.detail, color: HUD.dim }]] : [])],
+    rows: [
+      [{ text: st.title, color: st.color }],
+      ...(st.detail || st.impact ? [[{ text: st.detail, color: HUD.dim }, ...impactPart(st.impact, st.impactColor)]] : []),
+    ],
     gap: 14,
   }));
 }
@@ -903,8 +934,8 @@ export interface EventOverlay {
   size: number;
   /** Wildfires: burned area as a circle, km (drawn once it outgrows the marker). */
   areaRadiusKm?: number;
-  /** Labelled ones: title, detail, impact level ("LOW IMPACT"…, drawn in its GDACS colour). */
-  rows?: { title: string; detail: string; impact: string; impactColor: string };
+  /** Labelled ones: title, detail, and the GDACS impact level 1–3 (a meter in its colour). */
+  rows?: { title: string; detail: string; impact: number; impactColor: string };
 }
 
 /** Flood: two waves; wildfire: a flame; eruption: a cone with a plume dot. Cached per look. */
@@ -987,10 +1018,7 @@ function eventRequests(s: OverlayState): CalloutRequest[] {
       anchor: e.pos,
       rows: [
         [{ text: e.rows!.title, color: e.color }],
-        [
-          { text: e.rows!.detail, color: HUD.dim },
-          { text: ` · ${e.rows!.impact}`, color: e.rows!.impactColor },
-        ],
+        [{ text: e.rows!.detail, color: HUD.dim }, ...impactPart(e.rows!.impact, e.rows!.impactColor)],
       ],
       gap: e.size + 6,
       optional: true,

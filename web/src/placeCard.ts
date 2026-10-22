@@ -3,6 +3,7 @@
 // read (held open while the pointer or focus is on it), with ×, or with Escape.
 
 import { createElement, Sunrise, X, type IconNode } from 'lucide';
+import { IMPACT_COLOR, IMPACT_WORD } from './hazards';
 import { formatCoordinates, type Place } from './places';
 import { conditionsLine, detailLine, localClock, offsetLabel, sortAlerts, sunLine, type LocalAlert, type LocalWeather } from './locale';
 
@@ -30,6 +31,33 @@ function icon(node: IconNode, size = 14): SVGElement {
   svg.setAttribute('height', String(size));
   svg.setAttribute('stroke-width', '1.8');
   svg.setAttribute('aria-hidden', 'true');
+  return svg;
+}
+
+/** The impact meter, as on the globe: that many of three rising bars lit in GDACS's colour. */
+export function impactMeter(level: number): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'meter');
+  svg.setAttribute('viewBox', '0 0 13 10');
+  svg.setAttribute('width', '13');
+  svg.setAttribute('height', '10');
+  svg.setAttribute('role', 'img');
+  const word = `${IMPACT_WORD[level] ?? 'Unknown'} impact`;
+  svg.setAttribute('aria-label', word);
+  const title = document.createElementNS(NS, 'title');
+  title.textContent = `${word} (GDACS)`;
+  svg.append(title);
+  for (let i = 0; i < 3; i++) {
+    const bar = document.createElementNS(NS, 'rect');
+    const bh = 4 + i * 3;
+    bar.setAttribute('x', String(i * 5));
+    bar.setAttribute('y', String(10 - bh));
+    bar.setAttribute('width', '3');
+    bar.setAttribute('height', String(bh));
+    bar.setAttribute('fill', i < level ? IMPACT_COLOR[level] : 'rgba(175, 215, 240, 0.22)');
+    svg.append(bar);
+  }
   return svg;
 }
 
@@ -139,7 +167,9 @@ export class PlaceCard {
       list.setAttribute('aria-label', 'Alerts');
       for (const a of alerts) {
         const li = el('li', `alert ${a.level}`);
-        li.append(el('span', 'alert-title', a.title), el('span', 'alert-detail', a.detail));
+        const title = el('span', 'alert-title', a.title);
+        if (a.impact) title.append(impactMeter(a.impact));
+        li.append(title, el('span', 'alert-detail', a.detail));
         list.append(li);
       }
       rows.push(list);

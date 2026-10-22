@@ -112,8 +112,10 @@ describe('smoke', () => {
 
 describe('GDACS impact levels', () => {
   it('reads alert colours as impact', async () => {
-    const { impactLabel } = await import('../hazards');
-    expect(['Green', 'Orange', 'Red', 'red'].map(impactLabel)).toEqual(['LOW IMPACT', 'MEDIUM IMPACT', 'HIGH IMPACT', 'HIGH IMPACT']);
-    expect(impactLabel('Unknown')).toBe('UNKNOWN');
+    const { impactLevel, IMPACT_COLOR } = await import('../hazards');
+    expect(['Green', 'Orange', 'Red', 'red', ' Orange '].map(impactLevel)).toEqual([1, 2, 3, 3, 2]);
+    expect(impactLevel('Unknown')).toBe(0);
+    expect(impactLevel(null)).toBe(0);
+    expect(IMPACT_COLOR[3]).toBe('#ff4d4d');
   });
 });

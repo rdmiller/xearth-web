@@ -61,7 +61,6 @@ import {
 import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
 import { fetchSpaceWeather, spaceWeatherLine, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
-  ALERT_COLOR,
   burnedRadiusKm,
   decodeLightning,
   EVENT_COLOR,
@@ -69,7 +68,8 @@ import {
   eventLine,
   eventSize,
   eventTitle,
-  impactLabel,
+  IMPACT_COLOR,
+  impactLevel,
   isEventManifest,
   isLightningManifest,
   isSmokeManifest,
@@ -710,6 +710,8 @@ function stormOverlays(): StormOverlay[] {
   stormCache ??= stormManifest.storms.map((st) => ({
     title: stormTitle(st),
     detail: stormDetail(st),
+    impact: impactLevel(st.alert),
+    impactColor: IMPACT_COLOR[impactLevel(st.alert)],
     color: stormColor(stormClass(st)),
     pos: fromLatLon(st.pos[1], st.pos[0]),
     southern: st.pos[1] < 0,
@@ -762,7 +764,7 @@ function eventOverlays(): EventOverlay[] {
       size: eventSize(e.alert),
       areaRadiusKm: e.areaHa ? burnedRadiusKm(e.areaHa) : undefined,
       rows: labelled.has(e.id)
-        ? { title: eventTitle(e), detail: eventDetail(e, now), impact: impactLabel(e.alert), impactColor: ALERT_COLOR[e.alert] ?? '#c8d6e5' }
+        ? { title: eventTitle(e), detail: eventDetail(e, now), impact: impactLevel(e.alert), impactColor: IMPACT_COLOR[impactLevel(e.alert)] }
         : undefined,
     }));
   }

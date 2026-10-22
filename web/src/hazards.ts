@@ -131,8 +131,8 @@ export function stormDetail(s: Storm): string {
     return parts.join(' · ');
   }
   const parts = [];
+  // (The GDACS impact level is drawn beside this as a meter.)
   if (s.peakWindKmh) parts.push(`PEAK ${s.peakWindKmh} KM/H`);
-  if (s.alert) parts.push(impactLabel(s.alert));
   return parts.join(' · ');
 }
 
@@ -445,13 +445,17 @@ export const ALERT_COLOR: Record<string, string> = { Green: '#6fdc8c', Orange: '
 
 /**
  * GDACS alert levels grade expected humanitarian impact (hazard × exposed population ×
- * vulnerability), not the size of the event, so they're shown as impact: Green → LOW IMPACT
- * (international help unlikely to be needed), Orange → MEDIUM (may be), Red → HIGH (likely).
+ * vulnerability), not the size of the event, so they're shown as an impact meter — one, two
+ * or three bars lit in the alert's colour: Green → low (international help unlikely to be
+ * needed), Orange → medium (may be), Red → high (likely). 0: not a GDACS level.
  */
-export function impactLabel(alert: string): string {
-  const level = { green: 'LOW', orange: 'MEDIUM', red: 'HIGH' }[alert.trim().toLowerCase()];
-  return level ? `${level} IMPACT` : alert.toUpperCase();
+export function impactLevel(alert: string | null | undefined): 0 | 1 | 2 | 3 {
+  return ({ green: 1, orange: 2, red: 3 } as Record<string, 1 | 2 | 3>)[(alert ?? '').trim().toLowerCase()] ?? 0;
 }
+
+/** Colour of each impact level, as GDACS draws it. */
+export const IMPACT_COLOR = ['#c8d6e5', ALERT_COLOR.Green, ALERT_COLOR.Orange, ALERT_COLOR.Red] as const;
+export const IMPACT_WORD = ['Unknown', 'Low', 'Medium', 'High'] as const;
 const EVENT_WORD: Record<GdacsType, string> = { FL: 'FLOOD', WF: 'WILDFIRE', VO: 'ERUPTION' };
 
 /** Radius (km) of a circle with the burned area. 1 ha = 0.01 km². */

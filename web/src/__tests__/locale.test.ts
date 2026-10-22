@@ -206,7 +206,9 @@ describe('nearbyHazards', () => {
     ]);
     expect(alerts[0]).toMatchObject({ level: 'warning' });
     expect(alerts[2].detail).toMatch(/^\d+ km NW · 3 h ago$/);
-    expect(alerts[3].detail).toMatch(/^Medium Impact · \d+ km WNW$/);
+    expect(alerts[3].detail).toMatch(/^\d+ km WNW$/);
+    expect(alerts[3].impact).toBe(2);
+    expect(alerts[0].impact).toBe(3);
     expect(alerts[4].detail).toBe('5 flashes within 50 km in the last 15 min');
     expect(alerts[5].detail).toBe('3 satellite detections within 25 km');
     expect(nearbyHazards(lat, lon, { storms, quakes, events, lightning, fires, tsunami }, now, true)[4].detail).toMatch(/within 30 mi/);

@@ -23,6 +23,7 @@
       }
       #help h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #62e6ff; }
       #help h3 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #8fd8f0; }
+      #help .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: rgba(175, 215, 240, 0.85); }
       #help table { border-collapse: collapse; width: 100%; }
       #help td { padding: 1px 8px 1px 0; vertical-align: top; }
       #help code { font: 12px ui-monospace, Consolas, monospace; color: #fff; }
@@ -71,7 +72,8 @@
       #place-card .alert.watch { --alert: #ff9f43; }
       #place-card .alert.advisory { --alert: #ffd84d; }
       #place-card .alert.info { --alert: #62e6ff; }
-      #place-card .alert-title { font-weight: 600; color: var(--alert); }
+      #place-card .alert-title { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--alert); }
+      .meter { flex: none; }
       #place-card .alert-detail { font-size: 12px; color: rgba(175, 215, 240, 0.8); }
       #place-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 11px; }
       #place-card .unlabel { padding: 2px 8px; font: 600 11px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
@@ -243,6 +245,14 @@
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
       <div id="help-keys"></div>
+      <h3>Symbols</h3>
+      <p class="legend">
+        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#6fdc8c"/><rect x="5" y="3" width="3" height="7" fill="rgba(175,215,240,.22)"/><rect x="10" y="0" width="3" height="10" fill="rgba(175,215,240,.22)"/></svg>
+        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#ff9f43"/><rect x="5" y="3" width="3" height="7" fill="#ff9f43"/><rect x="10" y="0" width="3" height="10" fill="rgba(175,215,240,.22)"/></svg>
+        <svg class="meter" viewBox="0 0 13 10" width="13" height="10" aria-hidden="true"><rect x="0" y="6" width="3" height="4" fill="#ff4d4d"/><rect x="5" y="3" width="3" height="7" fill="#ff4d4d"/><rect x="10" y="0" width="3" height="10" fill="#ff4d4d"/></svg>
+        GDACS impact — low, medium, high: the humanitarian impact expected (hazard, people exposed,
+        vulnerability), not the event's size.
+      </p>
       <h3>URL parameters</h3>
       <table>
         <tr><td><code>view</code></td><td><code>fixed</code> · <code>sunrel</code> · <code>orbit</code> · <code>moon</code> · <code>track</code></td></tr>
