@@ -16,6 +16,8 @@ type Option = Place | typeof MY_LOCATION;
 
 export interface SearchHandlers {
   go(place: Place): void;
+  /** Labelled places, listed (most recent first) before anything's typed. */
+  recent(): Place[];
   /** For "My location" failing, a geocoder outage. */
   toast(message: string): void;
 }
@@ -70,7 +72,10 @@ export class PlaceSearch {
     const base: Option[] = [];
     if (coords) base.push({ name: formatCoordinates(coords.lat, coords.lon), detail: 'Coordinates', ...coords });
     base.push(...local);
-    if ('geolocation' in navigator && !text.trim()) base.unshift(MY_LOCATION);
+    if (!text.trim()) {
+      base.push(...this.handlers.recent().map((p) => ({ ...p, detail: p.detail || 'Labelled place' })));
+      if ('geolocation' in navigator) base.unshift(MY_LOCATION);
+    }
     this.render(base, '');
     const q = text.trim();
     if (coords || q.length < 2) return;

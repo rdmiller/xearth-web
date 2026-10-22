@@ -22,6 +22,26 @@ const HUD = {
   halo: 'rgba(0, 6, 14, 0.9)',
 };
 
+/** How a city-style label looks: the app's cities in cyan, places the viewer went to in pink
+ * (a colour no layer uses — GPS has the gold). */
+interface LabelLook {
+  key: string;
+  accent: string;
+  line: string;
+  glow: string;
+  text: string;
+}
+
+const CITY_LOOK: LabelLook = { key: 'city', accent: HUD.accent, line: HUD.line, glow: HUD.glow, text: HUD.text };
+export const PLACE_COLOR = '#ff7ad9';
+const PLACE_LOOK: LabelLook = {
+  key: 'place',
+  accent: PLACE_COLOR,
+  line: 'rgba(255, 122, 217, 0.75)',
+  glow: 'rgba(255, 60, 200, 0.6)',
+  text: 'rgba(255, 196, 238, 0.97)',
+};
+
 export interface Rect {
   x: number;
   y: number;
@@ -79,13 +99,21 @@ const smoothstep = (a: number, b: number, v: number) => {
 };
 
 function drawCities(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number, reserved: Rect[] = []) {
-  const visible = CITIES.flatMap(([name, lat, lon]) => {
+  const at = (name: string, lat: number, lon: number, look: LabelLook) => {
     const p = fromLatLon(lat, lon);
     const q = project(s.camera, p);
     // Fade out toward the limb, where labels would crowd a foreshortened sliver.
     const alpha = q.visible ? smoothstep(0.08, 0.35, facing(s.camera, p)) : 0;
-    return alpha > 0.02 ? [{ name: name.toUpperCase(), x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, alpha }] : [];
-  });
+    return alpha > 0.02 ? [{ name: name.toUpperCase(), x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, alpha, look }] : [];
+  };
+  // The viewer's own places first, so they get the first pick of label room; a city they
+  // went to is drawn as their place, not twice.
+  const places = s.places ?? [];
+  const mine = places.flatMap((p) => at(p.name, p.lat, p.lon, PLACE_LOOK));
+  const cities = s.markers
+    ? CITIES.filter(([, lat, lon]) => !places.some((p) => Math.abs(p.lat - lat) < 0.3 && Math.abs(p.lon - lon) < 0.3)).flatMap(([name, lat, lon]) => at(name, lat, lon, CITY_LOOK))
+    : [];
+  const visible = [...mine, ...cities];
 
   ctx.font = `500 11px ${UI_FONT}`;
   ctx.letterSpacing = '0.1em';
@@ -97,7 +125,7 @@ function drawCities(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
   for (const c of visible) {
     const textW = ctx.measureText(c.name).width;
     const side = placeCallout(c.x, c.y, textW, taken, { w, h });
-    const sp = citySprite(c.name, textW, side, dpr);
+    const sp = citySprite(c.name, textW, side, dpr, c.look);
     ctx.globalAlpha = c.alpha;
     stamp(ctx, sp, c.x, c.y, dpr);
   }
@@ -162,7 +190,7 @@ function stamp(ctx: CanvasRenderingContext2D, s: Sprite, x: number, y: number, d
   ctx.drawImage(s.canvas, px, py, s.w, s.h);
 }
 
-function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: number): Sprite {
+function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: number, look: LabelLook = CITY_LOOK): Sprite {
   const marker: Rect = { x: -5, y: -5, w: 10, h: 10 };
   const r = side ? calloutRect(0, 0, textW, side) : null;
   const bounds = r
@@ -173,11 +201,11 @@ function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: 
         h: Math.max(marker.y + marker.h, r.y + r.h) - Math.min(marker.y, r.y),
       }
     : marker;
-  return sprite(`city|${name}|${side ?? 'none'}`, dpr, bounds, (c) => {
+  return sprite(`${look.key}|${name}|${side ?? 'none'}`, dpr, bounds, (c) => {
     // Marker: a hollow diamond with a pinpoint centre, glowing faintly.
-    c.shadowColor = HUD.glow;
+    c.shadowColor = look.glow;
     c.shadowBlur = 6;
-    c.strokeStyle = HUD.accent;
+    c.strokeStyle = look.accent;
     c.lineWidth = 1.3;
     c.beginPath();
     c.moveTo(0, -3.5);
@@ -186,7 +214,7 @@ function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: 
     c.lineTo(-3.5, 0);
     c.closePath();
     c.stroke();
-    c.fillStyle = HUD.accent;
+    c.fillStyle = look.accent;
     c.fillRect(-0.75, -0.75, 1.5, 1.5);
     if (!r || !side) return;
 
@@ -195,7 +223,7 @@ function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: 
     const lineY = -ELBOW - 2;
     c.shadowBlur = 3;
     c.lineWidth = 1;
-    c.strokeStyle = HUD.line;
+    c.strokeStyle = look.line;
     c.beginPath();
     c.moveTo(dir * 3, -3);
     c.lineTo(elbowX, lineY);
@@ -207,7 +235,7 @@ function citySprite(name: string, textW: number, side: CalloutSide | null, dpr: 
     c.textBaseline = 'alphabetic';
     c.shadowColor = HUD.halo;
     c.shadowBlur = 4;
-    c.fillStyle = HUD.text;
+    c.fillStyle = look.text;
     c.fillText(name, r.x + PAD, lineY - 3);
   });
 }
@@ -311,6 +339,8 @@ export interface OverlayState {
   bottomInset?: number;
   /** Where the view just went (search or double-click): a reticle and the name, for a while. */
   target?: { pos: Vec3; name: string };
+  /** Places gone to from the search: labelled like cities, in pink, even with cities off. */
+  places?: { name: string; lat: number; lon: number }[];
   /** One-line summary of the hazard layers for the status label. */
   hazardLine?: string;
   /** Lightning and GDACS summary. */
@@ -624,7 +654,8 @@ function drawTarget(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
 }
 
 function targetRequests(s: OverlayState): CalloutRequest[] {
-  return s.target ? [{ anchor: s.target.pos, rows: [[{ text: s.target.name, color: HUD.accent }]], gap: 14 }] : [];
+  // A labelled place already shows its name; the reticle alone marks it.
+  return s.target?.name ? [{ anchor: s.target.pos, rows: [[{ text: s.target.name, color: HUD.accent }]], gap: 14 }] : [];
 }
 
 // ---- tsunami ---------------------------------------------------------------------------
@@ -1325,7 +1356,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   drawTsunami(ctx, s, w, h, dpr);
   drawTarget(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
-  if (s.markers) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
+  if (s.markers || s.places?.length) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawSatellites(ctx, s, w, h, dpr);
   drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawLaunches(ctx, s, w, h, dpr);

@@ -103,6 +103,24 @@ Imagery in the dock) turns it off.
   to the far side; instant with reduced motion), switches to a fixed view and keeps the
   zoom, then marks the spot with a reticle and its name for 12 seconds. Grabbing the globe
   stops a glide.
+- **Labels:** a place picked from the search keeps a pink, city-style label on the globe
+  (shown even with city labels off). The most recent dozen are kept in the browser and
+  listed in the search before anything is typed. "Remove label" on the place card drops one.
+- **Place card:** a search also opens a card at the bottom right. It closes itself after
+  20 s (30 s with alerts), stays open while the pointer or focus is on it, and closes with
+  × or Esc. Each part fills in as it arrives, and each request gives up after 12 s:
+  - Local time and UTC offset.
+  - Current weather, today's high and low, UV, and sunrise, sunset and daylight, or polar
+    night or midnight sun (Open-Meteo forecast, CC BY 4.0, no key).
+  - Alerts:
+    - NWS active alerts for the point, US and territories only.
+    - Air quality, when it's worse than moderate (Open-Meteo air quality, US AQI over 100).
+    - Hazards from the app's own layers near the place: tropical cyclones within 800 km,
+      tsunami bulletins within 1,000 km, the strongest M4.5+ quake within 300 km in the
+      last day (or any within 50 km), GDACS floods and fires within 300 km and eruptions
+      within 150 km, GOES lightning within 50 km, and VIIRS fire detections within 25 km.
+      A layer that's switched off is fetched once for the card and cached for 10 minutes.
+  - Units follow the browser's locale: °F and mph for the US, °C and km/h elsewhere.
 
 ## Layer dock
 

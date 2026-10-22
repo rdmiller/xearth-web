@@ -24,7 +24,21 @@ import {
 } from './satcategories';
 import { SatTree } from './satTree';
 import { Drawer } from './drawer';
-import { formatCoordinates, glideAt, glideMs, type Place } from './places';
+import { addLabelled, decodeLabelled, formatCoordinates, glideAt, glideMs, isLabelled, LABELLED_KEY, removeLabelled, type Place } from './places';
+import { PlaceCard, type PlaceReport } from './placeCard';
+import {
+  airQualityUrl,
+  aqiAlert,
+  decodeForecast,
+  decodeNwsPointAlerts,
+  forecastUrl,
+  inNwsArea,
+  nearbyHazards,
+  nwsPointAlertsUrl,
+  prefersImperial,
+  type LocalAlert,
+  type NearbySources,
+} from './locale';
 import { PlaceSearch } from './search';
 import { chooseRange, GibsDetail, visibleBox, type Detail } from './gibs';
 import {
@@ -84,6 +98,7 @@ import {
   USGS_QUAKES_URL,
   type AuroraGrid,
   type EventManifest,
+  type FireManifest,
   type FirePoints,
   type LightningManifest,
   type Quake,
@@ -492,6 +507,7 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
 let aurora: AuroraGrid | undefined;
 let stormManifest: StormManifest | undefined;
 let firePoints: FirePoints | undefined;
+let fireManifest: FireManifest | undefined;
 let quakes: Quake[] = [];
 let lightningManifest: LightningManifest | undefined;
 let eventManifest: EventManifest | undefined;
@@ -569,6 +585,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void> }>
     load: async () => {
       const m = await fetchJson(pipelineFile(settings.firesrc));
       if (!isFireManifest(m)) throw new Error('fires/latest.json is not a fire manifest');
+      fireManifest = m;
       firePoints = decodeFires(m);
       renderer.setFires(firePoints);
     },
@@ -1003,13 +1020,14 @@ const TARGET_MS = 12_000;
 let target: { pos: Vec3; name: string; until: number } | undefined;
 let glideFrame = 0;
 
-function goTo(place: Place) {
+/** `label`: the name beside the reticle ('' for a labelled place, which shows its own). */
+function goTo(place: Place, label = place.name.toUpperCase()) {
   cancelAnimationFrame(glideFrame);
   const from = viewerLatLon(settings, simTime(), resolveTrack);
   const to = { lat: place.lat, lon: place.lon };
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ms = reduce ? 0 : glideMs(fromLatLon(from.lat, from.lon), fromLatLon(to.lat, to.lon));
-  target = { pos: fromLatLon(to.lat, to.lon), name: place.name.toUpperCase(), until: Date.now() + TARGET_MS };
+  target = { pos: fromLatLon(to.lat, to.lon), name: label, until: Date.now() + TARGET_MS };
   setTimeout(requestRedraw, TARGET_MS + 50);
   const start = performance.now();
   const step = () => {
@@ -1021,7 +1039,118 @@ function goTo(place: Place) {
   step();
 }
 
-const search = new PlaceSearch(document.getElementById('search') as HTMLElement, { go: goTo, toast });
+// ---- places from the search: a label, and a card with the weather and alerts there --------
+
+function readLabelled(): Place[] {
+  try {
+    return decodeLabelled(localStorage.getItem(LABELLED_KEY));
+  } catch {
+    return [];
+  }
+}
+
+let labelled = readLabelled();
+let placeLabels = labelled.map(({ name, lat, lon }) => ({ name, lat, lon }));
+
+function setLabelled(list: Place[]) {
+  labelled = list;
+  placeLabels = list.map(({ name, lat, lon }) => ({ name, lat, lon }));
+  try {
+    localStorage.setItem(LABELLED_KEY, JSON.stringify(list));
+  } catch {
+    // Private browsing or storage blocked: the labels last for this visit.
+  }
+  requestRedraw();
+}
+
+const imperial = prefersImperial(navigator.language || 'en');
+const placeCard = new PlaceCard(document.getElementById('place-card') as HTMLElement, {
+  unlabel: (place) => setLabelled(removeLabelled(labelled, place)),
+});
+
+/** Pipeline and USGS files fetched for a place card when their layer isn't loading them. */
+const onDemand = new Map<string, { at: number; value: Promise<unknown> }>();
+const ON_DEMAND_MS = 10 * 60_000;
+
+function onDemandJson(url: string): Promise<unknown> {
+  const hit = onDemand.get(url);
+  if (hit && Date.now() - hit.at < ON_DEMAND_MS) return hit.value;
+  const value = fetchJson(url);
+  value.catch(() => onDemand.delete(url));
+  onDemand.set(url, { at: Date.now(), value });
+  return value;
+}
+
+/** A layer's data: what it already holds while it's on, else fetched for the card. */
+async function layerData<T>(on: boolean, have: T | undefined, url: string, check: (v: unknown) => v is T): Promise<T | undefined> {
+  if (on && have) return have;
+  const v = await onDemandJson(url);
+  return check(v) ? v : undefined;
+}
+
+async function nearbySources(): Promise<NearbySources> {
+  const [storms, events, quakeList, lightning, fires, tsunami] = await Promise.allSettled([
+    layerData(settings.storms, stormManifest, pipelineFile(settings.stormsrc), isStormManifest),
+    layerData(settings.events, eventManifest, pipelineFile(settings.eventsrc), isEventManifest),
+    settings.quakes && quakes.length ? Promise.resolve(quakes) : onDemandJson(USGS_QUAKES_URL).then((f) => (isQuakeFeed(f) ? decodeQuakes(f) : [])),
+    layerData(settings.lightning, lightningManifest, pipelineFile(settings.lightningsrc), isLightningManifest),
+    layerData(settings.fires, fireManifest, pipelineFile(settings.firesrc), isFireManifest),
+    layerData(settings.tsunami, tsunamiManifest, pipelineFile(settings.tsunamisrc), isTsunamiManifest),
+  ]);
+  const value = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : undefined);
+  return { storms: value(storms), events: value(events), quakes: value(quakeList), lightning: value(lightning), fires: value(fires), tsunami: value(tsunami) };
+}
+
+/** A place card's own requests give up after this, so it never sits on "Checking…". */
+const PLACE_FETCH_MS = 12_000;
+
+async function getJson(url: string, init?: RequestInit): Promise<unknown> {
+  const r = await fetch(url, { ...init, signal: AbortSignal.timeout(PLACE_FETCH_MS) });
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+}
+
+/** Alerts for a place: NWS (US), air quality, and the hazard layers' data nearby. */
+async function placeAlerts(place: Place): Promise<Required<Pick<PlaceReport, 'alerts' | 'checked'>>> {
+  const { lat, lon } = place;
+  const nws = inNwsArea(lat, lon);
+  const [air, nwsAlerts, nearby] = await Promise.allSettled([
+    getJson(airQualityUrl(lat, lon)).then(aqiAlert),
+    nws ? getJson(nwsPointAlertsUrl(lat, lon), { headers: { Accept: 'application/geo+json' } }).then(decodeNwsPointAlerts) : Promise.resolve([]),
+    nearbySources().then((src) => nearbyHazards(lat, lon, src, Date.now(), imperial)),
+  ]);
+  const alerts: LocalAlert[] = [];
+  const checked: string[] = [];
+  if (nws && nwsAlerts.status === 'fulfilled') {
+    alerts.push(...nwsAlerts.value);
+    checked.push('NWS');
+  }
+  if (air.status === 'fulfilled') {
+    if (air.value) alerts.push(air.value);
+    checked.push('air quality');
+  }
+  if (nearby.status === 'fulfilled') {
+    alerts.push(...nearby.value);
+    checked.push('nearby hazards');
+  }
+  for (const r of [air, nwsAlerts, nearby]) if (r.status === 'rejected') console.warn('place card:', r.reason);
+  return { alerts, checked };
+}
+
+/** A place picked in the search: go there, label it, and show what it's like there. */
+function goToSearched(place: Place) {
+  setLabelled(addLabelled(labelled, place));
+  goTo(place, '');
+  placeCard.show(place, isLabelled(labelled, place));
+  // Weather and alerts fill in as each arrives.
+  getJson(forecastUrl(place.lat, place.lon))
+    .then(decodeForecast)
+    .catch((err) => (console.warn('place card:', err), null))
+    .then((weather) => placeCard.fill(place, { weather }, imperial));
+  void placeAlerts(place).then((part) => placeCard.fill(place, part, imperial));
+}
+
+const search = new PlaceSearch(document.getElementById('search') as HTMLElement, { go: goToSearched, recent: () => labelled, toast });
 
 // Double-click (or double-tap) a point on the globe to centre on it.
 overlayCanvas.addEventListener('dblclick', (e) => {
@@ -1205,6 +1334,7 @@ function frame(now: number) {
     surfaceLine: surfaceLine(),
     bottomInset: drawerInset,
     target: target && target.until > Date.now() ? target : undefined,
+    places: placeLabels,
     weatherLine: weatherLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
     perf: settings.fps

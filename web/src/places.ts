@@ -112,6 +112,42 @@ export function mergePlaces(local: Place[], remote: Place[]): Place[] {
   return [...local, ...remote.filter((r) => !local.some((l) => near(l, r)))];
 }
 
+// ---- labelled places -----------------------------------------------------------------------
+// Every place gone to from the search keeps a label on the globe (drawn like a city, in its
+// own colour) until it's removed — the most recent dozen, kept in the browser.
+
+export const LABELLED_KEY = 'xearth.places';
+export const MAX_LABELLED = 12;
+
+/** Within ~1 km: the same place, whatever it was called. */
+const samePlace = (a: Place, b: Place) => Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lon - b.lon) < 0.01;
+
+export function addLabelled(list: readonly Place[], place: Place, max = MAX_LABELLED): Place[] {
+  return [place, ...list.filter((p) => !samePlace(p, place))].slice(0, max);
+}
+
+export function removeLabelled(list: readonly Place[], place: Place): Place[] {
+  return list.filter((p) => !samePlace(p, place));
+}
+
+export function isLabelled(list: readonly Place[], place: Place): boolean {
+  return list.some((p) => samePlace(p, place));
+}
+
+/** The stored list; anything malformed is dropped. */
+export function decodeLabelled(text: string | null): Place[] {
+  try {
+    const v: unknown = JSON.parse(text ?? '[]');
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((p): p is Place => !!p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)
+      .map(({ name, detail, lat, lon }) => ({ name, detail: typeof detail === 'string' ? detail : '', lat, lon }))
+      .slice(0, MAX_LABELLED);
+  } catch {
+    return [];
+  }
+}
+
 // ---- the glide -----------------------------------------------------------------------------
 
 /** How long to glide between two points: quick for a hop, ~1.5 s for the far side of the world. */

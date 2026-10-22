@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { decodeGeocoder, formatCoordinates, glideAt, glideMs, mergePlaces, parseCoordinates, searchCities } from '../places';
+import {
+  addLabelled,
+  decodeGeocoder,
+  decodeLabelled,
+  formatCoordinates,
+  glideAt,
+  glideMs,
+  isLabelled,
+  MAX_LABELLED,
+  mergePlaces,
+  parseCoordinates,
+  removeLabelled,
+  searchCities,
+} from '../places';
 import { cameraFor, pinchMag, project, unproject } from '../view';
 import { defaults } from '../params';
 import { fromLatLon } from '../vec';
@@ -108,5 +121,33 @@ describe('pinch zoom', () => {
     expect(pinchMag(2, 100, 50, 0.2, 50)).toBe(1);
     expect(pinchMag(40, 100, 400, 0.2, 50)).toBe(50);
     expect(pinchMag(1, 0, 10, 0.2, 50)).toBe(10); // a zero starting spread doesn't divide by zero
+  });
+});
+
+describe('labelled places', () => {
+  const paris = { name: 'Paris', detail: 'Île-de-France, France', lat: 48.8566, lon: 2.3522 };
+  const lima = { name: 'Lima', detail: 'Peru', lat: -12.0464, lon: -77.0428 };
+
+  it('keeps the most recent first, once each', () => {
+    let list = addLabelled([], paris);
+    list = addLabelled(list, lima);
+    list = addLabelled(list, { ...paris, name: 'Paris, again', lat: 48.857 });
+    expect(list.map((p) => p.name)).toEqual(['Paris, again', 'Lima']);
+    expect(isLabelled(list, paris)).toBe(true);
+    expect(removeLabelled(list, paris).map((p) => p.name)).toEqual(['Lima']);
+  });
+
+  it('keeps at most a dozen', () => {
+    let list: ReturnType<typeof addLabelled> = [];
+    for (let i = 0; i < 20; i++) list = addLabelled(list, { name: `P${i}`, detail: '', lat: i, lon: i });
+    expect(list).toHaveLength(MAX_LABELLED);
+    expect(list[0].name).toBe('P19');
+  });
+
+  it('reads back what was stored, dropping anything malformed', () => {
+    expect(decodeLabelled(JSON.stringify([paris, { name: 'x' }, { name: 'y', lat: 95, lon: 0 }, lima]))).toEqual([paris, lima]);
+    expect(decodeLabelled('not json')).toEqual([]);
+    expect(decodeLabelled(null)).toEqual([]);
+    expect(decodeLabelled('{"a":1}')).toEqual([]);
   });
 });

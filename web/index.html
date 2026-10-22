@@ -42,6 +42,45 @@
         color: rgba(170, 205, 235, 0.7); text-decoration: none;
       }
       #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
+      /* Place card: after a search, the weather and alerts there. Same glass as the panels,
+         with the pink of the place's label; above the dock's full height, so it stays put. */
+      #place-card {
+        position: fixed; right: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 4; width: min(360px, calc(100vw - 24px));
+        max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; box-sizing: border-box; padding: 10px 12px 9px 14px;
+        border-radius: 8px; background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(98, 230, 255, 0.28);
+        box-shadow: inset 2px 0 0 #ff7ad9, 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px; color: #dfe6ff;
+        animation: card-in 0.2s ease-out;
+      }
+      @keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
+      @media (prefers-reduced-motion: reduce) { #place-card { animation: none; } }
+      #place-card[hidden] { display: none; }
+      #place-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      #place-card h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #ff7ad9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #place-card .close { display: grid; place-items: center; padding: 2px; color: #8fd8f0; background: none; border: 0; border-radius: 4px; cursor: pointer; }
+      #place-card .close:hover { color: #fff; }
+      #place-card p { margin: 0; }
+      #place-card .sub { margin: 2px 0 8px; font-size: 12px; color: rgba(143, 216, 240, 0.7); }
+      #place-card .conditions { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: #f2f7ff; }
+      #place-card .detail, #place-card .loading, #place-card .no-alerts { margin-top: 3px; font-size: 12px; color: rgba(175, 215, 240, 0.8); }
+      #place-card .sun { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #ffe2a0; }
+      #place-card .sun svg { flex: none; color: #ffc94d; }
+      #place-card .no-alerts { margin-top: 8px; color: rgba(111, 220, 140, 0.85); }
+      #place-card ul.alerts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+      #place-card .alert { display: grid; padding: 4px 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 2px 0 0 var(--alert); }
+      #place-card .alert.warning { --alert: #ff4d4d; }
+      #place-card .alert.watch { --alert: #ff9f43; }
+      #place-card .alert.advisory { --alert: #ffd84d; }
+      #place-card .alert.info { --alert: #62e6ff; }
+      #place-card .alert-title { font-weight: 600; color: var(--alert); }
+      #place-card .alert-detail { font-size: 12px; color: rgba(175, 215, 240, 0.8); }
+      #place-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 11px; }
+      #place-card .unlabel { padding: 2px 8px; font: 600 11px "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
+        color: #ff7ad9; background: none; border: 1px solid rgba(255, 122, 217, 0.45); border-radius: 4px; cursor: pointer; }
+      #place-card .unlabel:hover { background: rgba(255, 122, 217, 0.12); }
+      #place-card .unlabel[hidden] { display: none; }
+      #place-card .credit { margin-left: auto; color: rgba(143, 216, 240, 0.55); text-decoration: none; }
+      #place-card .credit:hover { color: #62e6ff; text-decoration: underline; }
+      #place-card button:focus-visible, #place-card a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
       /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
       #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
       #sat-tree {
@@ -193,6 +232,7 @@
       <ul id="place-list" role="listbox" aria-label="Places"></ul>
       <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
     </div>
+    <aside id="place-card" aria-label="Place" aria-live="polite" hidden></aside>
     <aside id="sat-tree" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>
