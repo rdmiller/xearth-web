@@ -10,29 +10,78 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <title>xearth web</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #000; color: #dfe6ff; overflow: hidden; }
-      body { font: 500 14px/1.45 "HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif; letter-spacing: 0.02em; }
+      /* Design tokens: every colour, ink, surface, type stack, radius and timing the HUD uses. */
+      :root {
+        color-scheme: dark;
+        /* Accent: the HUD cyan, and its softer tint for headings, carets and idle icons. */
+        --hud-cyan-rgb: 98 230 255;
+        --hud-accent: rgb(var(--hud-cyan-rgb));
+        --hud-accent-soft: #8fd8f0;
+        --hud-place: #ff7ad9;
+        /* Inks, brightest first: values and headlines, body, secondary, meta (footers, hints). */
+        --ink-1: #f2f7ff;
+        --ink-2: #dfe6ff;
+        --ink-3: rgb(175 215 240 / 0.78);
+        --ink-4: rgb(175 215 240 / 0.62);
+        --ink-label: rgb(var(--hud-cyan-rgb) / 0.78);
+        --ink-on-accent: #04101a;
+        /* Status, for UI state (marks, chips, tones). Data layers have their own scales. */
+        --ok: #7dffa8;
+        --warn: #ffc857;
+        --bad: #ff6b6b;
+        --bad-ink: #ff9a9a;
+        /* Surfaces: a panel's fill, its edge, rules and tracks inside it. */
+        --glass-rgb: 6 11 22;
+        --glass-fill: rgb(var(--glass-rgb) / 0.72);
+        --glass-fill-solid: rgb(var(--glass-rgb) / 0.92);
+        --glass-edge: rgb(var(--hud-cyan-rgb) / 0.28);
+        --glass-edge-hi: rgb(var(--hud-cyan-rgb) / 0.55);
+        --glass-rule: rgb(var(--hud-cyan-rgb) / 0.12);
+        --glass-track: rgb(var(--hud-cyan-rgb) / 0.14);
+        --glass-hover: rgb(var(--hud-cyan-rgb) / 0.1);
+        --glass-select: rgb(var(--hud-cyan-rgb) / 0.12);
+        --shadow-panel: 0 0 24px rgb(0 200 255 / 0.08);
+        --glow-sm: 0 0 6px rgb(var(--hud-cyan-rgb) / 0.45);
+        /* Type. */
+        --font-ui: "HUD Digits", "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+        --font-mono: ui-monospace, Consolas, monospace;
+        /* Shape. */
+        --r-xs: 2px;
+        --r-sm: 3px;
+        --r-md: 4px;
+        --r-lg: 8px;
+        --r-dock: 11px;
+        /* Motion. */
+        --dur-fast: 90ms;
+        --dur-ui: 120ms;
+        --dur-panel: 200ms;
+        --dur-data: 600ms;
+        --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+        --ease-in: cubic-bezier(0.4, 0, 1, 1);
+      }
+      html, body { margin: 0; height: 100%; background: #000; color: var(--ink-2); overflow: hidden; }
+      body { font: 500 14px/1.45 var(--font-ui); letter-spacing: 0.02em; }
       canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       #overlay { touch-action: none; cursor: grab; }
       #overlay:active { cursor: grabbing; }
       #help {
         position: fixed; right: 16px; top: 16px; z-index: 5; max-width: min(420px, calc(100vw - 32px));
         max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
-        padding: 14px 16px; border-radius: 8px; background: rgba(8, 12, 24, 0.88);
-        border: 1px solid rgba(98, 230, 255, 0.28); box-shadow: 0 0 24px rgba(0, 200, 255, 0.08);
+        padding: 14px 16px; border-radius: var(--r-lg); background: var(--glass-fill-solid);
+        border: 1px solid var(--glass-edge); box-shadow: var(--shadow-panel);
       }
-      #help h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #62e6ff; }
-      #help h3 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #8fd8f0; }
-      #help .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: rgba(175, 215, 240, 0.85); }
+      #help h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent); }
+      #help h3 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent-soft); }
+      #help .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--ink-3); }
       #help table { border-collapse: collapse; width: 100%; }
       #help td { padding: 1px 8px 1px 0; vertical-align: top; }
-      #help code { font: 12px ui-monospace, Consolas, monospace; color: #fff; }
-      #help kbd { font: 600 12px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; letter-spacing: 0.06em; }
+      #help code { font: 12px var(--font-mono); color: #fff; }
+      #help kbd { font: 600 12px var(--font-ui); color: var(--hud-accent); letter-spacing: 0.06em; }
       #help td:first-child { width: 4.5em; white-space: nowrap; }
       #toast {
         position: fixed; left: 50%; bottom: calc(var(--drawer-h, 0px) + 18px); transform: translate(-50%, 8px); z-index: 3;
-        padding: 6px 14px; border-radius: 6px; background: rgba(8, 12, 24, 0.85);
-        border: 1px solid rgba(98, 230, 255, 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
+        padding: 6px 14px; border-radius: 6px; background: var(--glass-fill-solid);
+        border: 1px solid rgb(var(--hud-cyan-rgb) / 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
         font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;
         opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
       }
@@ -40,9 +89,9 @@
       @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
       #radar-credit {
         position: fixed; right: 10px; bottom: 24px; z-index: 1; font-size: 10px; letter-spacing: 0.06em;
-        color: rgba(170, 205, 235, 0.7); text-decoration: none;
+        color: var(--ink-3); text-decoration: none;
       }
-      #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
+      #radar-credit:hover { color: var(--hud-accent); text-decoration: underline; }
       /* Toast windows (toasts.ts): every panel down the right edge (frame rate, ISS telemetry,
          data feeds, a searched place) in one column from the top of the window to the dock,
          all one width and one style. When they don't fit, those that may shrink give up height
@@ -52,37 +101,37 @@
         width: min(320px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none;
       }
       .toast-window {
-        --accent: #62e6ff;
+        --accent: var(--hud-accent);
         flex: 0 var(--shrink, 1) auto; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
-        border-radius: 8px; background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(98, 230, 255, 0.28);
-        box-shadow: inset 2px 0 0 var(--accent), 0 0 24px rgba(0, 200, 255, 0.08);
-        font-size: 13px; color: #dfe6ff; pointer-events: auto;
+        border-radius: var(--r-lg); background: var(--glass-fill-solid); border: 1px solid var(--glass-edge);
+        box-shadow: inset 2px 0 0 var(--accent), var(--shadow-panel);
+        font-size: 13px; color: var(--ink-2); pointer-events: auto;
       }
       .toast-window[hidden] { display: none; }
-      .toast-window.in { animation: toast-in 0.2s ease-out; }
-      .toast-window.out { animation: toast-out 0.18s ease-in forwards; }
+      .toast-window.in { animation: toast-in var(--dur-panel) var(--ease-out); }
+      .toast-window.out { animation: toast-out var(--dur-panel) var(--ease-in) forwards; }
       @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
       @keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
       .toast-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 4px 0 14px; }
       .toast-title {
-        flex: 1; min-width: 0; padding: 7px 0 6px; text-align: left; font: 600 12px "HUD Digits", "Chakra Petch", system-ui, sans-serif;
+        flex: 1; min-width: 0; padding: 7px 0 6px; text-align: left; font: 600 12px var(--font-ui);
         letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); background: none; border: 0; cursor: pointer;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .toast-status {
         flex: 0 1 auto; min-width: 0; max-width: 50%; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-        color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .toast-status:empty { display: none; }
-      .toast-status[data-tone="ok"] { color: #7dffa8; }
-      .toast-status[data-tone="warn"] { color: #ffc857; }
-      .toast-status[data-tone="bad"] { color: #ff6b6b; }
+      .toast-status[data-tone="ok"] { color: var(--ok); }
+      .toast-status[data-tone="warn"] { color: var(--warn); }
+      .toast-status[data-tone="bad"] { color: var(--bad); }
       .toast-close {
-        flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: 4px;
-        font: 600 16px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer;
+        flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: var(--r-md);
+        font: 600 16px/1 var(--font-ui); color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer;
       }
-      .toast-close:hover { color: #fff; background: rgba(98, 230, 255, 0.1); }
-      .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      .toast-close:hover { color: #fff; background: rgb(var(--hud-cyan-rgb) / 0.1); }
+      .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; }
       /* A window's scroll bar, when it has one: a slim cyan rail on no track, inset from the
          rounded corners, widening and brightening under the pointer. (Chromium and Safari draw
@@ -90,67 +139,67 @@
       .toast-body::-webkit-scrollbar { width: 9px; }
       .toast-body::-webkit-scrollbar-track { background: transparent; margin: 2px 0 8px; }
       .toast-body::-webkit-scrollbar-thumb {
-        border: 3px solid transparent; border-radius: 5px; background: rgba(98, 230, 255, 0.3) padding-box;
+        border: 3px solid transparent; border-radius: var(--r-md); background: rgb(var(--hud-cyan-rgb) / 0.3) padding-box;
       }
-      .toast-body::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgba(98, 230, 255, 0.6); }
-      .toast-body::-webkit-scrollbar-thumb:active { background-color: #62e6ff; }
+      .toast-body::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgb(var(--hud-cyan-rgb) / 0.6); }
+      .toast-body::-webkit-scrollbar-thumb:active { background-color: var(--hud-accent); }
       .toast-body::-webkit-scrollbar-button, .toast-body::-webkit-scrollbar-corner { display: none; background: transparent; }
       /* Firefox styles only colour and width: the same rail, as near as it gets. */
       @supports not selector(::-webkit-scrollbar) {
-        .toast-body { scrollbar-width: thin; scrollbar-color: rgba(98, 230, 255, 0.35) transparent; }
+        .toast-body { scrollbar-width: thin; scrollbar-color: rgb(var(--hud-cyan-rgb) / 0.35) transparent; }
       }
       .toast-window.folded .toast-body { display: none; }
       /* Label: value rows, as in the frame-rate window. */
       .hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
-      .hud-rows dt { color: #62e6ff; text-transform: uppercase; }
-      .hud-rows dd { margin: 0; min-width: 0; color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hud-rows dt { color: var(--hud-accent); text-transform: uppercase; }
+      .hud-rows dd { margin: 0; min-width: 0; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #perf .perf-head { display: flex; align-items: baseline; justify-content: space-between; }
-      #perf .perf-fps { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: rgba(230, 246, 255, 0.94); }
-      #perf .perf-ms { font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); }
+      #perf .perf-fps { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: var(--ink-1); }
+      #perf .perf-ms { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
       #perf .perf-spark { position: static; display: block; width: 100%; height: 34px; margin: 4px 0 6px; }
       /* ISS telemetry (issView.ts): stat tiles with sparklines, meters, dials. Marks carry the
          colour (cyan, or amber/red for a caution); text stays in the panel's inks. */
       #iss .iss-content { display: grid; gap: 9px; transition: opacity 0.3s; }
       #iss .iss-content.los { opacity: 0.55; }
-      #iss .iss-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #8fd8f0; white-space: nowrap; }
+      #iss .iss-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hud-accent-soft); white-space: nowrap; }
       #iss .iss-label .greek { text-transform: none; }
       #iss .iss-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-      #iss .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); }
+      #iss .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
       #iss .iss-chips { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
       #iss .iss-chip {
-        flex: none; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-        color: #dfe6ff; background: rgba(98, 230, 255, 0.1); border: 1px solid rgba(98, 230, 255, 0.22); white-space: nowrap;
+        flex: none; padding: 1px 5px; border-radius: var(--r-sm); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--ink-2); background: rgb(var(--hud-cyan-rgb) / 0.1); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22); white-space: nowrap;
       }
-      #iss .iss-chip[data-tone="warn"] { color: #ffc857; border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
+      #iss .iss-chip[data-tone="warn"] { color: var(--warn); border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
       #iss .iss-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       #iss .iss-tile { min-width: 0; }
       #iss .iss-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-      #iss .iss-delta { font-size: 10px; color: rgba(175, 215, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #iss .iss-value { margin: 1px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: #f2f7ff; white-space: nowrap; }
+      #iss .iss-delta { font-size: 10px; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #iss .iss-value { margin: 1px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-1); white-space: nowrap; }
       #iss .iss-spark { display: block; width: 100%; height: 26px; overflow: visible; cursor: crosshair; touch-action: none; }
-      #iss .spark-line { fill: none; stroke: rgba(175, 215, 240, 0.55); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-      #iss .spark-dot { fill: #62e6ff; stroke: rgba(8, 12, 24, 0.92); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-      #iss .spark-cross { stroke: rgba(98, 230, 255, 0.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
-      #iss .iss-note { font-size: 10px; letter-spacing: 0.03em; color: rgba(175, 215, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #iss .spark-line { fill: none; stroke: var(--ink-4); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+      #iss .spark-dot { fill: var(--hud-accent); stroke: var(--glass-fill-solid); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+      #iss .spark-cross { stroke: rgb(var(--hud-cyan-rgb) / 0.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
+      #iss .iss-note { font-size: 10px; letter-spacing: 0.03em; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #iss .iss-note:empty { display: none; }
       #iss .iss-meters { display: grid; gap: 4px; }
-      #iss .iss-meter { --sev: #62e6ff; display: grid; grid-template-columns: 64px 1fr 66px; align-items: center; gap: 8px; }
-      #iss .iss-meter[data-sev="warn"] { --sev: #ffc857; }
-      #iss .iss-meter[data-sev="bad"] { --sev: #ff6b6b; }
-      #iss .meter-track { position: relative; height: 6px; border-radius: 3px; background: rgba(98, 230, 255, 0.1); overflow: hidden; }
+      #iss .iss-meter { --sev: var(--hud-accent); display: grid; grid-template-columns: 64px 1fr 66px; align-items: center; gap: 8px; }
+      #iss .iss-meter[data-sev="warn"] { --sev: var(--warn); }
+      #iss .iss-meter[data-sev="bad"] { --sev: var(--bad); }
+      #iss .meter-track { position: relative; height: 6px; border-radius: var(--r-sm); background: rgb(var(--hud-cyan-rgb) / 0.1); overflow: hidden; }
       /* The normal band: a lighter stretch of the same track. */
-      #iss .meter-band { position: absolute; top: 0; bottom: 0; background: rgba(98, 230, 255, 0.16); }
-      #iss .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--sev); transition: width 0.6s ease-out; }
-      #iss .iss-meter-value { font-size: 11px; font-variant-numeric: tabular-nums; color: #dfe6ff; text-align: right; white-space: nowrap; }
+      #iss .meter-band { position: absolute; top: 0; bottom: 0; background: rgb(var(--hud-cyan-rgb) / 0.16); }
+      #iss .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-sm); background: var(--sev); transition: width var(--dur-data) ease-out; }
+      #iss .iss-meter-value { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; white-space: nowrap; }
       #iss .iss-meter[data-sev="warn"] .iss-meter-value::after, #iss .iss-meter[data-sev="bad"] .iss-meter-value::after { content: ' !'; color: var(--sev); font-weight: 600; }
       #iss .iss-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
       #iss .iss-dial { display: grid; justify-items: center; gap: 0; min-width: 0; }
       #iss .iss-dial svg { display: block; }
-      #iss .dial-track { fill: none; stroke: rgba(98, 230, 255, 0.18); stroke-width: 3; }
-      #iss .dial-tick { stroke: rgba(98, 230, 255, 0.45); stroke-width: 1.2; }
-      #iss .dial-needle { transform-box: view-box; stroke: #62e6ff; stroke-width: 2; stroke-linecap: round; transition: transform 0.6s ease-out; }
-      #iss .dial-hub { fill: #62e6ff; }
-      #iss .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #f2f7ff; }
+      #iss .dial-track { fill: none; stroke: rgb(var(--hud-cyan-rgb) / 0.18); stroke-width: 3; }
+      #iss .dial-tick { stroke: rgb(var(--hud-cyan-rgb) / 0.45); stroke-width: 1.2; }
+      #iss .dial-needle { transform-box: view-box; stroke: var(--hud-accent); stroke-width: 2; stroke-linecap: round; transition: transform var(--dur-data) ease-out; }
+      #iss .dial-hub { fill: var(--hud-accent); }
+      #iss .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); }
       @media (prefers-reduced-motion: reduce) { #iss .meter-fill, #iss .dial-needle, #iss .iss-content { transition: none; } }
       /* Phones: the column spans the width and fills the room between the readout (whose
          height overlay.ts reports as --readout-bottom) and the dock, stacked from the bottom.
@@ -165,62 +214,62 @@
       @media (prefers-reduced-motion: reduce) { .toast-window.in, .toast-window.out { animation: none; } }
       /* Place card: after a search, the weather and alerts there; a toast window in its label's pink. */
       #place-card p { margin: 0; }
-      #place-card .sub { margin: 0 0 8px; font-size: 12px; color: rgba(143, 216, 240, 0.7); }
-      #place-card .conditions { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: #f2f7ff; }
-      #place-card .detail, #place-card .loading, #place-card .no-alerts { margin-top: 3px; font-size: 12px; color: rgba(175, 215, 240, 0.8); }
+      #place-card .sub { margin: 0 0 8px; font-size: 12px; color: var(--ink-3); }
+      #place-card .conditions { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: var(--ink-1); }
+      #place-card .detail, #place-card .loading, #place-card .no-alerts { margin-top: 3px; font-size: 12px; color: var(--ink-3); }
       #place-card .sun { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #ffe2a0; }
       #place-card .sun svg { flex: none; color: #ffc94d; }
-      #place-card .no-alerts { margin-top: 8px; color: rgba(111, 220, 140, 0.85); }
+      #place-card .no-alerts { margin-top: 8px; color: var(--ok); }
       #place-card ul.alerts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
-      #place-card .alert { display: grid; padding: 4px 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 2px 0 0 var(--alert); }
+      #place-card .alert { display: grid; padding: 4px 8px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.04); box-shadow: inset 2px 0 0 var(--alert); }
       #place-card .alert.warning { --alert: #ff4d4d; }
       #place-card .alert.watch { --alert: #ff9f43; }
       #place-card .alert.advisory { --alert: #ffd84d; }
-      #place-card .alert.info { --alert: #62e6ff; }
+      #place-card .alert.info { --alert: var(--hud-accent); }
       #place-card .alert-title { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--alert); }
       .meter { flex: none; }
-      #place-card .alert-detail { font-size: 12px; color: rgba(175, 215, 240, 0.8); }
+      #place-card .alert-detail { font-size: 12px; color: var(--ink-3); }
       #place-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 11px; }
-      #place-card .unlabel { padding: 2px 8px; font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
-        color: #ff7ad9; background: none; border: 1px solid rgba(255, 122, 217, 0.45); border-radius: 4px; cursor: pointer; }
+      #place-card .unlabel { padding: 2px 8px; font: 600 11px var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--hud-place); background: none; border: 1px solid rgba(255, 122, 217, 0.45); border-radius: var(--r-md); cursor: pointer; }
       #place-card .unlabel:hover { background: rgba(255, 122, 217, 0.12); }
       #place-card .unlabel[hidden] { display: none; }
-      #place-card .credit { margin-left: auto; color: rgba(143, 216, 240, 0.55); text-decoration: none; }
-      #place-card .credit:hover { color: #62e6ff; text-decoration: underline; }
+      #place-card .credit { margin-left: auto; color: var(--ink-4); text-decoration: none; }
+      #place-card .credit:hover { color: var(--hud-accent); text-decoration: underline; }
       /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
-      #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       #sat-tree {
         position: fixed; left: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 3; width: min(320px, calc(100vw - 24px));
         max-height: calc(100vh - var(--dock-full, 0px) - 120px); overflow: auto; box-sizing: border-box; padding: 12px 12px 10px 10px;
-        border-radius: 8px; background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.28);
-        box-shadow: 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px;
+        border-radius: var(--r-lg); background: var(--glass-fill-solid); border: 1px solid var(--glass-edge);
+        box-shadow: var(--shadow-panel); font-size: 13px;
       }
       #sat-tree header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
-      #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #62e6ff; }
-      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent); }
+      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 var(--font-ui); color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
       #sat-tree ul { list-style: none; margin: 0; padding: 0; }
-      #sat-tree ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid rgba(98, 230, 255, 0.14); }
+      #sat-tree ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid var(--glass-track); }
       #sat-tree li.collapsed > ul { display: none; }
       #sat-tree .row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
-      #sat-tree .caret { flex: none; width: 16px; height: 16px; padding: 0; font-size: 10px; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
+      #sat-tree .caret { flex: none; width: 16px; height: 16px; padding: 0; font-size: 10px; color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
       #sat-tree .caret::before { content: '▾'; }
       #sat-tree li.collapsed > .row .caret::before { content: '▸'; }
       #sat-tree .caret:disabled { cursor: default; }
       #sat-tree .caret:disabled::before { content: ''; }
       #sat-tree label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
-      #sat-tree input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: #62e6ff; cursor: pointer; }
+      #sat-tree input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--hud-accent); cursor: pointer; }
       #sat-tree .swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
       #sat-tree .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #sat-tree li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8fd8f0; }
-      #sat-tree .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(223, 230, 255, 0.55); }
+      #sat-tree li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent-soft); }
+      #sat-tree .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-4); }
       #sat-tree .labels, #sat-tree .labels-spacer { flex: none; width: 28px; }
       #sat-tree .labels {
-        padding: 1px 0; font: 600 10px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.04em;
-        color: rgba(143, 216, 240, 0.65); background: none; border: 1px solid rgba(98, 230, 255, 0.22); border-radius: 4px; cursor: pointer;
+        padding: 1px 0; font: 600 10px var(--font-ui); letter-spacing: 0.04em;
+        color: var(--ink-3); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22); border-radius: var(--r-md); cursor: pointer;
       }
-      #sat-tree .labels[aria-pressed="true"] { color: #04101a; background: #62e6ff; border-color: #62e6ff; }
-      #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); }
-      #sat-tree kbd { font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
+      #sat-tree .labels[aria-pressed="true"] { color: var(--ink-on-accent); background: var(--hud-accent); border-color: var(--hud-accent); }
+      #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: var(--ink-4); }
+      #sat-tree kbd { font: 600 11px var(--font-ui); color: var(--hud-accent); }
       /* Layer dock: floating glass buttons that rise in as the mouse nears the bottom; a grip pins them. */
       #drawer {
         position: fixed; left: 50%; bottom: 20px; z-index: 2; transform: translateX(-50%);
@@ -232,69 +281,69 @@
       #drawer .dock {
         display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 10px 22px; padding: 14px 8px 2px;
         opacity: var(--reveal, 0); transform: translateY(calc((1 - var(--reveal, 0)) * 28px));
-        transition: opacity 90ms linear, transform 90ms ease-out; pointer-events: none;
+        transition: opacity var(--dur-fast) linear, transform var(--dur-fast) ease-out; pointer-events: none;
       }
       #drawer.shown .dock { pointer-events: auto; }
       #drawer .dock-group { position: relative; display: flex; gap: 7px; }
       #drawer .dock-group + .dock-group::before {
         content: ''; position: absolute; left: -12.5px; top: 50%; width: 3px; height: 3px; border-radius: 50%;
-        background: rgba(98, 230, 255, 0.5); transform: translateY(-50%);
+        background: rgb(var(--hud-cyan-rgb) / 0.5); transform: translateY(-50%);
       }
       #drawer .dock-cell { position: relative; }
       #drawer .dock-btn {
-        position: relative; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border-radius: 11px;
-        color: rgba(143, 216, 240, 0.5); background: rgba(8, 12, 24, 0.72); border: 1px solid rgba(98, 230, 255, 0.22);
+        position: relative; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border-radius: var(--r-dock);
+        color: rgba(143, 216, 240, 0.5); background: var(--glass-fill); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); backdrop-filter: blur(6px); cursor: pointer;
         transform: scale(var(--mag, 1)); transform-origin: 50% 100%;
-        transition: transform 80ms ease-out, color 120ms, border-color 120ms, box-shadow 120ms;
+        transition: transform 80ms ease-out, color var(--dur-ui), border-color var(--dur-ui), box-shadow var(--dur-ui);
       }
-      #drawer .dock-btn:hover { color: rgba(143, 216, 240, 0.95); border-color: rgba(98, 230, 255, 0.5); }
+      #drawer .dock-btn:hover { color: rgba(143, 216, 240, 0.95); border-color: rgb(var(--hud-cyan-rgb) / 0.5); }
       #drawer .dock-btn[aria-pressed="true"] {
-        color: #62e6ff; border-color: rgba(98, 230, 255, 0.55);
-        box-shadow: 0 0 12px rgba(98, 230, 255, 0.28), 0 2px 10px rgba(0, 0, 0, 0.45);
+        color: var(--hud-accent); border-color: var(--glass-edge-hi);
+        box-shadow: 0 0 12px var(--glass-edge), 0 2px 10px rgba(0, 0, 0, 0.45);
       }
       #drawer .dock-btn[aria-pressed="true"] svg,
-      #drawer .dock-btn[aria-pressed="true"] .initials { filter: drop-shadow(0 0 4px rgba(98, 230, 255, 0.6)); }
+      #drawer .dock-btn[aria-pressed="true"] .initials { filter: drop-shadow(0 0 4px rgb(var(--hud-cyan-rgb) / 0.6)); }
       #drawer .initials {
         display: grid; place-items: center; width: 20px; height: 20px; box-sizing: border-box; border: 1.6px solid currentColor;
-        border-radius: 6px; font: 600 10px/1 "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.02em;
+        border-radius: 6px; font: 600 10px/1 var(--font-ui); letter-spacing: 0.02em;
       }
       /* Names: a HUD tag above the button on hover / keyboard focus; always shown, below, on touch screens. */
       #drawer .caption {
         position: absolute; bottom: calc(100% + 9px); left: 50%; transform: translateX(-50%); padding: 3px 7px; white-space: nowrap;
-        font: 600 10px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase;
-        color: #dfe6ff; background: rgba(4, 10, 20, 0.9); border: 1px solid rgba(98, 230, 255, 0.3); border-radius: 4px;
+        font: 600 10px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--ink-2); background: var(--glass-fill-solid); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.3); border-radius: var(--r-md);
         opacity: 0; pointer-events: none; transition: opacity 100ms;
       }
       #drawer .dock-btn:hover .caption, #drawer .dock-btn:focus-visible .caption { opacity: 1; }
       #drawer .tag {
-        position: absolute; top: -7px; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: 3px;
-        font: 600 7px "HUD Digits", "Chakra Petch", system-ui, sans-serif; letter-spacing: 0.06em; color: #ffc857; background: rgba(4, 10, 20, 0.92);
+        position: absolute; top: -7px; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: var(--r-sm);
+        font: 600 7px var(--font-ui); letter-spacing: 0.06em; color: var(--warn); background: var(--glass-fill-solid);
       }
       #drawer .tag:empty { display: none; }
       #drawer .dock-extra {
         position: absolute; right: -6px; bottom: -3px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0;
-        color: #8fd8f0; background: rgba(8, 12, 24, 0.94); border: 1px solid rgba(98, 230, 255, 0.35); border-radius: 6px; cursor: pointer;
+        color: var(--hud-accent-soft); background: var(--glass-fill-solid); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.35); border-radius: 6px; cursor: pointer;
       }
-      #drawer .dock-extra:hover { color: #62e6ff; border-color: rgba(98, 230, 255, 0.7); }
+      #drawer .dock-extra:hover { color: var(--hud-accent); border-color: rgb(var(--hud-cyan-rgb) / 0.7); }
       #drawer .dock-handle {
         display: grid; place-items: center; width: 64px; height: 18px; margin-top: 8px; padding: 0;
         background: none; border: 0; cursor: pointer; pointer-events: auto;
       }
       #drawer .grip {
-        width: 36px; height: 4px; border-radius: 2px; background: rgba(98, 230, 255, 0.32);
-        box-shadow: 0 0 6px rgba(98, 230, 255, 0.2); transition: width 120ms, background 120ms;
+        width: 36px; height: 4px; border-radius: var(--r-xs); background: rgb(var(--hud-cyan-rgb) / 0.32);
+        box-shadow: 0 0 6px rgb(var(--hud-cyan-rgb) / 0.2); transition: width var(--dur-ui), background var(--dur-ui);
       }
-      #drawer .dock-handle:hover .grip, #drawer.pinned .grip { width: 46px; background: #62e6ff; }
-      #drawer button:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      #drawer .dock-handle:hover .grip, #drawer.pinned .grip { width: 46px; background: var(--hud-accent); }
+      #drawer button:focus-visible { outline: 1px solid var(--hud-accent); outline-offset: 2px; }
       @media (pointer: coarse) {
         #drawer .dock { padding-bottom: 16px; }
         #drawer .caption {
           top: calc(100% + 3px); bottom: auto; padding: 0; font-size: 8px; letter-spacing: 0.06em;
-          color: rgba(143, 216, 240, 0.75); background: none; border: 0; opacity: 1;
+          color: var(--ink-3); background: none; border: 0; opacity: 1;
         }
         #drawer .dock-handle { width: 96px; height: 30px; }
-        #drawer .grip { width: 52px; height: 5px; background: rgba(98, 230, 255, 0.55); }
+        #drawer .grip { width: 52px; height: 5px; background: var(--glass-edge-hi); }
       }
       /* Phones: one row that scrolls sideways (snapping to buttons) instead of wrapping into
          rows that cover half the globe. Dock blur is dropped: 25 small blur regions over the
@@ -310,34 +359,34 @@
         #drawer .dock-group { flex: none; gap: 6px; }
         #drawer .dock-group + .dock-group::before { left: -10.5px; }
         #drawer .dock-cell { scroll-snap-align: center; }
-        #drawer .dock-btn { width: 40px; height: 40px; backdrop-filter: none; background: rgba(8, 12, 24, 0.86); }
+        #drawer .dock-btn { width: 40px; height: 40px; backdrop-filter: none; background: var(--glass-fill-solid); }
         #search input { font-size: 16px; } /* below 16px, iOS zooms the page on focus */
       }
       @media (prefers-reduced-motion: reduce) {
         #drawer .dock { transform: none; }
-        #drawer .dock-btn { transition: color 120ms, border-color 120ms; }
+        #drawer .dock-btn { transition: color var(--dur-ui), border-color var(--dur-ui); }
       }
       /* Feeds dashboard (feedBoard.ts): a row per data source on screen. The ring drains to the
          next check; the bar fills (green → amber → red) as the data ages. */
       #feeds .feed-list { list-style: none; margin: 0; padding: 0; }
-      #feeds .feed-empty { display: block; font-size: 12px; color: rgba(175, 215, 240, 0.7); }
+      #feeds .feed-empty { display: block; font-size: 12px; color: var(--ink-3); }
       #feeds .feed-empty[hidden] { display: none; }
       #feeds .feed { --fresh: rgba(175, 215, 240, 0.35); display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-      #feeds .feed + .feed { border-top: 1px solid rgba(98, 230, 255, 0.1); }
-      #feeds .feed[data-fresh="fresh"] { --fresh: #6fdc8c; }
-      #feeds .feed[data-fresh="late"] { --fresh: #ffc857; }
+      #feeds .feed + .feed { border-top: 1px solid rgb(var(--hud-cyan-rgb) / 0.1); }
+      #feeds .feed[data-fresh="fresh"] { --fresh: var(--ok); }
+      #feeds .feed[data-fresh="late"] { --fresh: var(--warn); }
       #feeds .feed[data-fresh="stale"] { --fresh: #ff4d4d; }
       #feeds .feed.in { animation: feed-in 0.22s ease-out; }
       #feeds .feed.out { animation: feed-out 0.2s ease-in forwards; }
       #feeds .feed.pulse { animation: feed-pulse 1.4s ease-out; }
       @keyframes feed-in { from { opacity: 0; transform: translateX(16px); } }
       @keyframes feed-out { to { opacity: 0; transform: translateX(16px); } }
-      @keyframes feed-pulse { from { background: rgba(98, 230, 255, 0.18); } }
+      @keyframes feed-pulse { from { background: rgb(var(--hud-cyan-rgb) / 0.18); } }
       #feeds .ring { position: relative; flex: none; width: 36px; height: 36px; }
       #feeds .ring svg { display: block; transform: rotate(-90deg); }
       #feeds .ring circle { fill: none; stroke-width: 3; }
-      #feeds .ring .track { stroke: rgba(98, 230, 255, 0.14); }
-      #feeds .ring .arc { stroke: #62e6ff; stroke-linecap: round; transition: stroke-dashoffset 0.9s linear; filter: drop-shadow(0 0 3px rgba(98, 230, 255, 0.5)); }
+      #feeds .ring .track { stroke: var(--glass-track); }
+      #feeds .ring .arc { stroke: var(--hud-accent); stroke-linecap: round; transition: stroke-dashoffset 0.9s linear; filter: drop-shadow(0 0 3px rgb(var(--hud-cyan-rgb) / 0.5)); }
       #feeds .feed.error .ring .arc { stroke: #ff4d4d; filter: none; }
       #feeds .feed.busy .ring svg { animation: feed-spin 1s linear infinite; }
       #feeds .feed.busy .ring .arc { stroke-dashoffset: 70 !important; transition: none; }
@@ -346,21 +395,21 @@
       @keyframes feed-live { 50% { opacity: 0.35; } }
       #feeds .ring-text {
         position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 600;
-        letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: #dfe6ff;
+        letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--ink-2);
       }
-      #feeds .feed.live .ring-text { font-size: 8px; letter-spacing: 0.08em; color: #62e6ff; }
+      #feeds .feed.live .ring-text { font-size: 8px; letter-spacing: 0.08em; color: var(--hud-accent); }
       #feeds .body { flex: 1; min-width: 0; display: grid; gap: 2px; }
       #feeds .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-      #feeds .name { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #f2f7ff; white-space: nowrap; }
-      #feeds .src { font-size: 10px; letter-spacing: 0.04em; color: rgba(143, 216, 240, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .name { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-1); white-space: nowrap; }
+      #feeds .src { font-size: 10px; letter-spacing: 0.04em; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #feeds .age { display: flex; align-items: center; gap: 7px; }
-      #feeds .bar { position: relative; flex: none; width: 52px; height: 4px; border-radius: 2px; background: rgba(175, 215, 240, 0.14); overflow: hidden; }
-      #feeds .fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--fresh); transition: width 0.9s linear; }
+      #feeds .bar { position: relative; flex: none; width: 52px; height: 4px; border-radius: var(--r-xs); background: rgba(175, 215, 240, 0.14); overflow: hidden; }
+      #feeds .fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--r-xs); background: var(--fresh); transition: width 0.9s linear; }
       /* The usual age: past this mark the data is late. */
-      #feeds .tick { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(4, 10, 20, 0.9); }
-      #feeds .age-text { font-size: 11px; font-variant-numeric: tabular-nums; color: #dfe6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #feeds .next { font-size: 11px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #feeds .feed.error .next { color: #ff9a9a; }
+      #feeds .tick { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--glass-fill-solid); }
+      #feeds .age-text { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .next { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #feeds .feed.error .next { color: var(--bad-ink); }
       @media (prefers-reduced-motion: reduce) {
         #feeds .feed.in, #feeds .feed.out, #feeds .feed.pulse, #feeds .feed.busy .ring svg, #feeds .feed.live .ring .arc { animation: none; }
         #feeds .ring .arc, #feeds .fill { transition: none; }
@@ -369,26 +418,26 @@
       #search {
         position: fixed; left: 50%; top: max(14px, 11vh); z-index: 4; transform: translateX(-50%);
         width: min(440px, calc(100vw - 24px)); box-sizing: border-box; padding: 10px;
-        background: rgba(8, 12, 24, 0.95); border: 1px solid rgba(98, 230, 255, 0.35); border-radius: 8px;
+        background: var(--glass-fill-solid); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.35); border-radius: var(--r-lg);
         box-shadow: 0 0 28px rgba(0, 200, 255, 0.12), 0 6px 24px rgba(0, 0, 0, 0.5);
       }
       #search input {
-        width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px "HUD Digits", "Chakra Petch", system-ui, sans-serif;
-        letter-spacing: 0.04em; color: #dfe6ff; background: rgba(98, 230, 255, 0.06);
-        border: 1px solid rgba(98, 230, 255, 0.3); border-radius: 5px; outline: none;
+        width: 100%; box-sizing: border-box; padding: 8px 10px; font: 500 14px var(--font-ui);
+        letter-spacing: 0.04em; color: var(--ink-2); background: rgb(var(--hud-cyan-rgb) / 0.06);
+        border: 1px solid rgb(var(--hud-cyan-rgb) / 0.3); border-radius: var(--r-md); outline: none;
       }
-      #search input:focus { border-color: #62e6ff; box-shadow: 0 0 0 1px rgba(98, 230, 255, 0.35); }
-      #search input::placeholder { color: rgba(143, 216, 240, 0.45); }
+      #search input:focus { border-color: var(--hud-accent); box-shadow: 0 0 0 1px rgb(var(--hud-cyan-rgb) / 0.35); }
+      #search input::placeholder { color: var(--ink-4); }
       #search ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: min(320px, 50vh); overflow: auto; }
-      #search li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
-      #search li[aria-selected="true"] { background: rgba(98, 230, 255, 0.12); box-shadow: inset 2px 0 0 #62e6ff; }
-      #search .place-name { font-weight: 600; color: #dfe6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #search .place-detail { flex: none; max-width: 55%; font-size: 12px; color: rgba(143, 216, 240, 0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #search .search-status { margin: 6px 2px 0; font-size: 12px; color: rgba(143, 216, 240, 0.6); }
+      #search li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: var(--r-md); cursor: pointer; }
+      #search li[aria-selected="true"] { background: rgb(var(--hud-cyan-rgb) / 0.12); box-shadow: inset 2px 0 0 var(--hud-accent); }
+      #search .place-name { font-weight: 600; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #search .place-detail { flex: none; max-width: 55%; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #search .search-status { margin: 6px 2px 0; font-size: 12px; color: var(--ink-4); }
       #search .search-status:empty { display: none; }
-      #search footer { margin: 8px 2px 0; font-size: 11px; color: rgba(223, 230, 255, 0.45); letter-spacing: 0.04em; }
-      #search kbd { font: 600 11px "HUD Digits", "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
-      .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: #ff9a9a; }
+      #search footer { margin: 8px 2px 0; font-size: 11px; color: var(--ink-4); letter-spacing: 0.04em; }
+      #search kbd { font: 600 11px var(--font-ui); color: var(--hud-accent); }
+      .fatal { position: fixed; inset: 40% 16px auto; text-align: center; color: var(--bad-ink); }
     </style>
   </head>
   <body>
