@@ -11,6 +11,8 @@ import { describeCadence, redrawInterval } from './cadence';
 import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issPanel } from './isslive';
 import { FeedLog, type FeedState } from './feeds';
 import { FeedBoard, type FeedRow } from './feedBoard';
+import { IssPanelView, PerfPanel } from './hudPanels';
+import { ToastManager } from './toasts';
 import {
   BULK_LEAVES,
   bulkCatalog,
@@ -1175,7 +1177,26 @@ function feedRows(): FeedRow[] {
   return rows;
 }
 
-const feedBoard = new FeedBoard(document.getElementById('feeds') as HTMLElement, feedRows, () => update({ feeds: false }));
+// ---- toast windows --------------------------------------------------------------------
+// Every window down the right edge, in one column, in this order (see toasts.ts).
+
+const toasts = new ToastManager(document.getElementById('toasts') as HTMLElement);
+// Labels on the globe keep clear of the windows, so they move when one opens or closes.
+toasts.onChange = () => queueMicrotask(requestRedraw);
+const perfPanel = new PerfPanel(toasts.add({ id: 'perf', title: 'Frame rate', order: 0, shrink: 0, onClose: () => update({ fps: false }) }));
+const issPanelView = new IssPanelView(
+  toasts.add({ id: 'iss', title: 'ISS · NASA live telemetry', order: 1, shrink: 0, onClose: () => update({ isslive: 'off' }) }),
+);
+const feedBoard = new FeedBoard(toasts.add({ id: 'feeds', title: 'Data feeds', order: 2, onClose: () => update({ feeds: false }) }), feedRows);
+const placeToast = toasts.add({
+  id: 'place-card',
+  title: 'Place',
+  order: 3,
+  accent: '#ff7ad9',
+  shrink: 0,
+  maxShare: 0.5,
+  onClose: () => placeCard.hide(),
+});
 
 // ---- going to a place ------------------------------------------------------------------
 // From the search box or a double-click: glide along the great circle to it (a fixed
@@ -1229,7 +1250,7 @@ function setLabelled(list: Place[]) {
 }
 
 const imperial = prefersImperial(navigator.language || 'en');
-const placeCard = new PlaceCard(document.getElementById('place-card') as HTMLElement, {
+const placeCard = new PlaceCard(placeToast, {
   unlabel: (place) => setLabelled(removeLabelled(labelled, place)),
 });
 
@@ -1389,19 +1410,6 @@ function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, 
   return { draws, markers, sunInShot };
 }
 
-/** The right-hand column (feeds dashboard, place card) and how far down the HUD's panels reach. */
-const rightStack = document.getElementById('right-stack') as HTMLElement;
-let hudRightTop = 0;
-
-/** Screen boxes of the page panels showing in the right-hand column, for labels to avoid. */
-function rightPanels(): { x: number; y: number; w: number; h: number }[] {
-  return [...rightStack.children].flatMap((el) => {
-    if ((el as HTMLElement).hidden) return [];
-    const r = el.getBoundingClientRect();
-    return r.height ? [{ x: r.left, y: r.top, w: r.width, h: r.height }] : [];
-  });
-}
-
 function radiusCss() {
   return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * 0.9 * settings.mag;
 }
@@ -1493,7 +1501,7 @@ function frame(now: number) {
   if (settings.fps) gpuTimer.end(slot);
   const t2 = performance.now();
 
-  const hud = drawOverlay(overlayCanvas, {
+  drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
@@ -1508,23 +1516,14 @@ function frame(now: number) {
     events: eventOverlays(),
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
-    issPanel: issPanelState(sunDir),
     hazardLine: hazardLine(),
     surfaceLine: surfaceLine(),
     bottomInset: drawerInset,
-    panels: rightPanels(),
+    panels: toasts.rects(),
     target: target && target.until > Date.now() ? target : undefined,
     places: placeLabels,
     weatherLine: weatherLine(),
     spaceLine: settings.aurora && spaceWeather ? spaceWeatherLine(spaceWeather) : undefined,
-    perf: settings.fps
-      ? {
-          summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
-          intervals: stats.recentIntervals(120),
-          mode: renderMode,
-          gpuAvailable: gpuTimer.available,
-        }
-      : undefined,
     sun,
     markers: settings.markers,
     label: settings.label,
@@ -1533,12 +1532,18 @@ function frame(now: number) {
     clock: clockLabel(),
     note,
   });
+  issPanelView.update(issPanelState(sunDir));
+  perfPanel.update(
+    settings.fps
+      ? {
+          summary: stats.summary(now, Math.max(1000, redrawEvery * 3000 + 100)),
+          intervals: stats.recentIntervals(120),
+          mode: renderMode,
+          gpuAvailable: gpuTimer.available,
+        }
+      : undefined,
+  );
   const t3 = performance.now();
-  // The right-hand column of page panels starts below the HUD's own panels on that side.
-  if (hud.rightTop !== hudRightTop) {
-    hudRightTop = hud.rightTop;
-    document.documentElement.style.setProperty('--hud-right', `${hudRightTop}px`);
-  }
 
   if (settings.fps) {
     stats.record(now, { sim: t1 - t0, gl: t2 - t1, overlay: t3 - t2 });

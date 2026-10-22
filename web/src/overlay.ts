@@ -4,8 +4,6 @@
 
 import { CITIES } from './cities';
 import type { CloudStatus } from './cloudSync';
-import type { PerfSummary } from './perf';
-import type { IssPanel } from './isslive';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
 import { project, type Camera } from './view';
@@ -331,13 +329,11 @@ export interface OverlayState {
   /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
   tsunami?: TsunamiOverlay[];
   tsunamiZones?: ZoneOverlay[];
-  /** NASA ISS live telemetry panel. */
-  issPanel?: IssPanel;
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
   satLabels?: SatLabelOverlay[];
   /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
   bottomInset?: number;
-  /** Page panels over the globe (the feeds dashboard): labels keep out of these too. */
+  /** Toast windows over the globe (toasts.ts): labels keep out of these too. */
   panels?: Rect[];
   /** Where the view just went (search or double-click): a reticle and the name, for a while. */
   target?: { pos: Vec3; name: string };
@@ -351,7 +347,6 @@ export interface OverlayState {
   weatherLine?: string;
   /** Kp, X-ray class, solar wind. */
   spaceLine?: string;
-  perf?: PerfOverlay;
   note?: string;
 }
 
@@ -890,42 +885,6 @@ function drawSatLabels(ctx: CanvasRenderingContext2D, s: OverlayState, w: number
   for (const l of placed) stamp(ctx, satLabelSprite(l.text, l.color, l.side, width(l.text), dpr), l.x, l.y, dpr);
 }
 
-// ---- ISS live telemetry -----------------------------------------------------------------
-
-/** Top right (below the frame-rate panel when that's shown): title, signal chip, rows. Returns its bottom edge. */
-function drawIssPanel(ctx: CanvasRenderingContext2D, p: IssPanel, w: number, top: number): number {
-  ctx.save();
-  ctx.font = `500 11px ${UI_FONT}`;
-  ctx.letterSpacing = '0.06em';
-  ctx.textBaseline = 'top';
-  const title = 'ISS · NASA LIVE TELEMETRY';
-  const width = Math.max(ctx.measureText(title).width + 90, ...p.rows.map((r) => ctx.measureText(r).width)) + 20;
-  const x = w - width - 14;
-  const height = 26 + p.rows.length * 15 + 6;
-  ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
-  ctx.strokeStyle = 'rgba(98, 230, 255, 0.28)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x, top, width, height, 6);
-  ctx.fill();
-  ctx.stroke();
-  ctx.font = `600 11px ${UI_FONT}`;
-  ctx.fillStyle = HUD.accent;
-  ctx.fillText(title, x + 10, top + 8);
-  // Signal chip: green while the stream is live, amber with the age when it isn't.
-  ctx.textAlign = 'right';
-  ctx.fillStyle = p.aos ? '#7dffa8' : '#ffc857';
-  ctx.fillText(`${p.aos ? '●' : '○'} ${p.status}`, x + width - 10, top + 8);
-  ctx.textAlign = 'left';
-  ctx.font = `500 11px ${UI_FONT}`;
-  p.rows.forEach((row, i) => {
-    ctx.fillStyle = HUD.dim;
-    ctx.fillText(row, x + 10, top + 26 + i * 15);
-  });
-  ctx.restore();
-  ctx.letterSpacing = '0px';
-  return top + height;
-}
 
 // ---- GDACS floods, wildfires, eruptions ------------------------------------------------
 
@@ -1155,101 +1114,6 @@ function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
   ctx.textAlign = 'left';
 }
 
-export interface PerfOverlay {
-  summary: PerfSummary;
-  /** Recent frame intervals, ms, oldest first. */
-  intervals: number[];
-  /** How redraws are being scheduled ("continuous" or "on demand · every 1 s"). */
-  mode: string;
-  gpuAvailable: boolean;
-}
-
-const FRAME_60 = 1000 / 60;
-
-/** Bottom edge of the frame-rate panel (it's a fixed size). */
-const PERF_BOTTOM = 148;
-
-function drawPerf(ctx: CanvasRenderingContext2D, p: PerfOverlay, w: number) {
-  const panelW = 236;
-  const x = w - panelW - 14;
-  let y = 14;
-  const s = p.summary;
-  const continuous = p.mode === 'continuous';
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(4, 10, 20, 0.72)';
-  ctx.strokeStyle = 'rgba(98, 230, 255, 0.28)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x - 10, y - 8, panelW + 20, PERF_BOTTOM - (y - 8), 6);
-  ctx.fill();
-  ctx.stroke();
-
-  // Headline: frames per second and the mean frame time.
-  ctx.textBaseline = 'top';
-  ctx.letterSpacing = '0.06em';
-  ctx.font = `600 20px ${UI_FONT}`;
-  ctx.fillStyle = HUD.text;
-  ctx.fillText(`${s.fps < 10 ? s.fps.toFixed(1) : Math.round(s.fps)} FPS`, x, y);
-  ctx.font = `500 12px ${UI_FONT}`;
-  ctx.textAlign = 'right';
-  ctx.fillStyle = HUD.dim;
-  ctx.fillText(s.frameMs ? `${s.frameMs.toFixed(1)} ms` : '—', x + panelW, y + 6);
-  ctx.textAlign = 'left';
-  y += 28;
-
-  // Sparkline of frame intervals, 0–50 ms, with 60 and 30 fps guides.
-  const gh = 34;
-  const scaleY = (ms: number) => y + gh - (Math.min(ms, 50) / 50) * gh;
-  ctx.strokeStyle = 'rgba(98, 230, 255, 0.18)';
-  ctx.setLineDash([2, 3]);
-  for (const ms of [FRAME_60, FRAME_60 * 2]) {
-    ctx.beginPath();
-    ctx.moveTo(x, scaleY(ms));
-    ctx.lineTo(x + panelW, scaleY(ms));
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  const bars = p.intervals.slice(-120);
-  const bw = panelW / 120;
-  bars.forEach((ms, i) => {
-    // Long gaps are deliberate when redrawing on demand, so don't colour them as hitches.
-    ctx.fillStyle = !continuous
-      ? 'rgba(175, 215, 240, 0.35)'
-      : ms <= FRAME_60 * 1.25
-        ? HUD.accent
-        : ms <= FRAME_60 * 2.1
-          ? '#ffc857'
-          : '#ff5c7a';
-    const top = scaleY(ms);
-    ctx.fillRect(x + panelW - (bars.length - i) * bw, top, Math.max(bw - 0.4, 0.6), y + gh - top);
-  });
-  y += gh + 8;
-
-  ctx.font = `500 11px ${UI_FONT}`;
-  ctx.letterSpacing = '0.04em';
-  const lines: [string, string][] = [
-    ['worst', continuous ? `${s.worstMs.toFixed(1)} ms · ${s.slow} slow` : '— (not animating)'],
-    [
-      'cpu',
-      `${s.cpuMs.toFixed(1)} ms  ` +
-        Object.entries(s.sections)
-          .map(([k, v]) => `${k} ${v.toFixed(1)}`)
-          .join(' · '),
-    ],
-    ['gpu', s.gpuMs !== null ? `${s.gpuMs.toFixed(1)} ms` : p.gpuAvailable ? 'measuring…' : 'n/a (no timer queries)'],
-    ['redraw', p.mode],
-  ];
-  for (const [k, v] of lines) {
-    ctx.fillStyle = HUD.accent;
-    ctx.fillText(k.toUpperCase(), x, y);
-    ctx.fillStyle = HUD.dim;
-    ctx.fillText(v, x + 52, y);
-    y += 15;
-  }
-  ctx.restore();
-}
-
 export function describeSat(f: FeaturedOverlay): string {
   const s = f.state;
   return `${f.sat.name} · ${Math.round(s.altKm)} km · ${s.speed.toFixed(2)} km/s · ${s.sunlit ? 'sunlit' : 'in shadow'}`;
@@ -1353,11 +1217,7 @@ function readoutLines(s: OverlayState): string[] {
   return lines;
 }
 
-/**
- * Draws the HUD. Returns how far down (CSS px) its top-right panels reach, 0 when there are
- * none, so page panels on that side can start below them.
- */
-export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): { rightTop: number } {
+export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -1400,9 +1260,6 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): { right
   drawLaunches(ctx, s, w, h, dpr);
   drawCallouts(ctx, callouts);
   drawBodies(ctx, s, w, h);
-  if (s.perf) drawPerf(ctx, s.perf, w);
-  let rightTop = s.perf ? PERF_BOTTOM : 0;
-  if (s.issPanel) rightTop = drawIssPanel(ctx, s.issPanel, w, s.perf ? 170 : 8);
 
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
@@ -1435,5 +1292,4 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): { right
   );
   ctx.textAlign = 'left';
   ctx.letterSpacing = '0px';
-  return { rightTop };
 }

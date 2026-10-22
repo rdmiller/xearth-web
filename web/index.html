@@ -43,33 +43,68 @@
         color: rgba(170, 205, 235, 0.7); text-decoration: none;
       }
       #radar-credit:hover { color: #62e6ff; text-decoration: underline; }
-      /* The right-hand column: the feeds dashboard at the top, the place card at the bottom. It
-         starts below the HUD's own panels on that side (frame rate, ISS telemetry: --hud-right,
-         set as they're drawn) and ends above the dock's full height, so nothing on the right
-         overlaps; when both are open, the dashboard gives way and scrolls. */
-      #right-stack {
-        position: fixed; right: 12px; top: calc(var(--hud-right, 0px) + 12px); bottom: calc(var(--dock-full, 0px) + 12px); z-index: 4;
-        width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
-        pointer-events: none;
+      /* Toast windows (toasts.ts): every panel down the right edge (frame rate, ISS telemetry,
+         data feeds, a searched place) in one column from the top of the window to the dock,
+         all one width and one style. When they don't fit, those that may shrink give up height
+         first and scroll; a click on a title folds that window to its header. */
+      #toasts {
+        position: fixed; right: 12px; top: 12px; bottom: calc(var(--dock-full, 0px) + 12px); z-index: 4;
+        width: min(320px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none;
       }
-      #right-stack > * { pointer-events: auto; }
-      /* Place card: after a search, the weather and alerts there. Same glass as the panels,
-         with the pink of the place's label; kept to the foot of the column, so it stays put. */
-      #place-card {
-        flex: 0 1 auto; min-height: 0; margin-top: auto; width: 100%; overflow: auto; box-sizing: border-box; padding: 10px 12px 9px 14px;
+      .toast-window {
+        --accent: #62e6ff;
+        flex: 0 var(--shrink, 1) auto; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
         border-radius: 8px; background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(98, 230, 255, 0.28);
-        box-shadow: inset 2px 0 0 #ff7ad9, 0 0 24px rgba(0, 200, 255, 0.08); font-size: 13px; color: #dfe6ff;
-        animation: card-in 0.2s ease-out;
+        box-shadow: inset 2px 0 0 var(--accent), 0 0 24px rgba(0, 200, 255, 0.08);
+        font-size: 13px; color: #dfe6ff; pointer-events: auto;
       }
-      @keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
-      @media (prefers-reduced-motion: reduce) { #place-card { animation: none; } }
-      #place-card[hidden] { display: none; }
-      #place-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      #place-card h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #ff7ad9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #place-card .close { display: grid; place-items: center; padding: 2px; color: #8fd8f0; background: none; border: 0; border-radius: 4px; cursor: pointer; }
-      #place-card .close:hover { color: #fff; }
+      .toast-window[hidden] { display: none; }
+      .toast-window.in { animation: toast-in 0.2s ease-out; }
+      .toast-window.out { animation: toast-out 0.18s ease-in forwards; }
+      @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
+      @keyframes toast-out { to { opacity: 0; transform: translateX(16px); } }
+      .toast-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 4px 0 14px; }
+      .toast-title {
+        flex: 1; min-width: 0; padding: 7px 0 6px; text-align: left; font: 600 12px "Chakra Petch", system-ui, sans-serif;
+        letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); background: none; border: 0; cursor: pointer;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .toast-status {
+        flex: 0 1 auto; min-width: 0; max-width: 50%; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .toast-status:empty { display: none; }
+      .toast-status[data-tone="ok"] { color: #7dffa8; }
+      .toast-status[data-tone="warn"] { color: #ffc857; }
+      .toast-status[data-tone="bad"] { color: #ff6b6b; }
+      .toast-close {
+        flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: 4px;
+        font: 600 16px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer;
+      }
+      .toast-close:hover { color: #fff; background: rgba(98, 230, 255, 0.1); }
+      .toast-window button:focus-visible, .toast-window a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
+      .toast-body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 12px 10px 14px; scrollbar-width: thin; }
+      .toast-window.folded .toast-body { display: none; }
+      /* Label: value rows, as in the frame-rate window. */
+      .hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+      .hud-rows dt { color: #62e6ff; text-transform: uppercase; }
+      .hud-rows dd { margin: 0; min-width: 0; color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #perf .perf-head { display: flex; align-items: baseline; justify-content: space-between; }
+      #perf .perf-fps { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: rgba(230, 246, 255, 0.94); }
+      #perf .perf-ms { font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); }
+      #perf .perf-spark { position: static; display: block; width: 100%; height: 34px; margin: 4px 0 6px; }
+      #iss .iss-row {
+        font-size: 11px; line-height: 15px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      /* Phones: the column spans the width and sits at the bottom, clear of the readout. */
+      @media (max-width: 600px) {
+        #toasts { left: 12px; width: auto; top: auto; max-height: 55vh; justify-content: flex-end; }
+      }
+      @media (prefers-reduced-motion: reduce) { .toast-window.in, .toast-window.out { animation: none; } }
+      /* Place card: after a search, the weather and alerts there; a toast window in its label's pink. */
       #place-card p { margin: 0; }
-      #place-card .sub { margin: 2px 0 8px; font-size: 12px; color: rgba(143, 216, 240, 0.7); }
+      #place-card .sub { margin: 0 0 8px; font-size: 12px; color: rgba(143, 216, 240, 0.7); }
       #place-card .conditions { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: #f2f7ff; }
       #place-card .detail, #place-card .loading, #place-card .no-alerts { margin-top: 3px; font-size: 12px; color: rgba(175, 215, 240, 0.8); }
       #place-card .sun { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #ffe2a0; }
@@ -91,7 +126,6 @@
       #place-card .unlabel[hidden] { display: none; }
       #place-card .credit { margin-left: auto; color: rgba(143, 216, 240, 0.55); text-decoration: none; }
       #place-card .credit:hover { color: #62e6ff; text-decoration: underline; }
-      #place-card button:focus-visible, #place-card a:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
       /* Satellite tree: same panel language as #help — dark glass, cyan rule, Chakra Petch. */
       #sat-tree button:focus-visible, #sat-tree input:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
       #sat-tree {
@@ -205,42 +239,22 @@
         #drawer .dock { transform: none; }
         #drawer .dock-btn { transition: color 120ms, border-color 120ms; }
       }
-      /* Feeds dashboard: toast cards at the top of the right-hand column, one per data source on
-         screen. The ring drains to the next check; the bar fills (green → amber → red) as the data ages. */
-      #feeds {
-        flex: 0 1 auto; min-height: 0; width: 272px; overflow: auto; box-sizing: border-box;
-        display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin;
-      }
-      /* Both open: the place card keeps to the lower part, so the dashboard always has room. */
-      #feeds:not([hidden]) ~ #place-card { max-height: 55%; }
-      #feeds[hidden] { display: none; }
-      #feeds header {
-        display: flex; align-items: center; justify-content: space-between; padding: 3px 4px 3px 10px; border-radius: 6px;
-        background: rgba(8, 12, 24, 0.85); border: 1px solid rgba(98, 230, 255, 0.35); box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
-      }
-      #feeds h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #62e6ff; }
-      #feeds .close { padding: 2px 6px; font: 600 15px/1 "Chakra Petch", system-ui, sans-serif; color: #8fd8f0; background: none; border: 0; cursor: pointer; }
-      #feeds .close:hover { color: #fff; }
-      #feeds .close:focus-visible { outline: 1px solid #62e6ff; outline-offset: 2px; }
-      #feeds ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-      #feeds.empty ul::before { content: 'No data layers on'; padding: 8px 10px; font-size: 12px; color: rgba(175, 215, 240, 0.7);
-        border-radius: 6px; background: rgba(8, 12, 24, 0.85); border: 1px solid rgba(98, 230, 255, 0.2); }
-      #feeds .feed {
-        --fresh: rgba(175, 215, 240, 0.35);
-        display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 7px; border-radius: 6px;
-        background: rgba(8, 12, 24, 0.94); border: 1px solid rgba(98, 230, 255, 0.28);
-        box-shadow: inset 2px 0 0 var(--fresh), 0 0 18px rgba(0, 200, 255, 0.08);
-      }
+      /* Feeds dashboard (feedBoard.ts): a row per data source on screen. The ring drains to the
+         next check; the bar fills (green → amber → red) as the data ages. */
+      #feeds .feed-list { list-style: none; margin: 0; padding: 0; }
+      #feeds .feed-empty { display: block; font-size: 12px; color: rgba(175, 215, 240, 0.7); }
+      #feeds .feed-empty[hidden] { display: none; }
+      #feeds .feed { --fresh: rgba(175, 215, 240, 0.35); display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+      #feeds .feed + .feed { border-top: 1px solid rgba(98, 230, 255, 0.1); }
       #feeds .feed[data-fresh="fresh"] { --fresh: #6fdc8c; }
       #feeds .feed[data-fresh="late"] { --fresh: #ffc857; }
       #feeds .feed[data-fresh="stale"] { --fresh: #ff4d4d; }
-      #feeds .feed.error { border-color: rgba(255, 77, 77, 0.55); }
       #feeds .feed.in { animation: feed-in 0.22s ease-out; }
       #feeds .feed.out { animation: feed-out 0.2s ease-in forwards; }
       #feeds .feed.pulse { animation: feed-pulse 1.4s ease-out; }
       @keyframes feed-in { from { opacity: 0; transform: translateX(16px); } }
       @keyframes feed-out { to { opacity: 0; transform: translateX(16px); } }
-      @keyframes feed-pulse { from { border-color: #62e6ff; box-shadow: inset 2px 0 0 var(--fresh), 0 0 22px rgba(98, 230, 255, 0.55); } }
+      @keyframes feed-pulse { from { background: rgba(98, 230, 255, 0.18); } }
       #feeds .ring { position: relative; flex: none; width: 36px; height: 36px; }
       #feeds .ring svg { display: block; transform: rotate(-90deg); }
       #feeds .ring circle { fill: none; stroke-width: 3; }
@@ -269,13 +283,6 @@
       #feeds .age-text { font-size: 11px; font-variant-numeric: tabular-nums; color: #dfe6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #feeds .next { font-size: 11px; font-variant-numeric: tabular-nums; color: rgba(175, 215, 240, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #feeds .feed.error .next { color: #ff9a9a; }
-      #feeds footer { padding: 0 4px; font-size: 11px; letter-spacing: 0.04em; color: rgba(223, 230, 255, 0.5); text-align: right; }
-      #feeds kbd { font: 600 11px "Chakra Petch", system-ui, sans-serif; color: #62e6ff; }
-      /* Phones: the column spans the width and sits at the bottom, clear of the readout. */
-      @media (max-width: 600px) {
-        #right-stack { left: 12px; width: auto; align-items: stretch; justify-content: flex-end; }
-        #feeds { width: auto; max-height: 40vh; }
-      }
       @media (prefers-reduced-motion: reduce) {
         #feeds .feed.in, #feeds .feed.out, #feeds .feed.pulse, #feeds .feed.busy .ring svg, #feeds .feed.live .ring .arc { animation: none; }
         #feeds .ring .arc, #feeds .fill { transition: none; }
@@ -318,14 +325,7 @@
       <ul id="place-list" role="listbox" aria-label="Places"></ul>
       <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
     </div>
-    <div id="right-stack">
-      <aside id="feeds" aria-label="Data feeds" hidden>
-        <header><h2>Data feeds</h2><button class="close" type="button" aria-label="Close">×</button></header>
-        <ul aria-label="Data sources"></ul>
-        <footer>bar: data age · ring: next check · <kbd>Shift+U</kbd></footer>
-      </aside>
-      <aside id="place-card" aria-label="Place" aria-live="polite" hidden></aside>
-    </div>
+    <div id="toasts" role="region" aria-label="Panels"></div>
     <aside id="sat-tree" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>

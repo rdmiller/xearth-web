@@ -1,11 +1,13 @@
 // The card shown after going to a place from the search: its local time, weather, sunrise
-// and sunset, and any alerts there. A toast that stays a while — it closes itself after a
-// read (held open while the pointer or focus is on it), with ×, or with Escape.
+// and sunset, and any alerts there. A toast window (toasts.ts) that stays a while — it
+// closes itself after a read (held open while the pointer or focus is on it), with ×, or
+// with Escape.
 
-import { createElement, Sunrise, X, type IconNode } from 'lucide';
+import { createElement, Sunrise, type IconNode } from 'lucide';
 import { IMPACT_COLOR, IMPACT_WORD } from './hazards';
 import { formatCoordinates, type Place } from './places';
 import { conditionsLine, detailLine, localClock, offsetLabel, sortAlerts, sunLine, type LocalAlert, type LocalWeather } from './locale';
+import type { Toast } from './toasts';
 
 const SHOW_MS = 20_000;
 /** With alerts to read, a little longer. */
@@ -71,23 +73,16 @@ export class PlaceCard {
   private holdMs = SHOW_MS;
   private held = false;
   private readonly body: HTMLElement;
-  private readonly title: HTMLElement;
   private readonly sub: HTMLElement;
   private readonly unlabelButton: HTMLButtonElement;
 
+  /** `toast`: its window, whose × should call hide(). */
   constructor(
-    private readonly root: HTMLElement,
+    private readonly toast: Toast,
     private readonly handlers: PlaceCardHandlers,
   ) {
-    root.hidden = true;
-    const header = el('header', '');
-    this.title = el('h2', '');
-    const close = el('button', 'close');
-    close.type = 'button';
-    close.setAttribute('aria-label', 'Close');
-    close.append(icon(X, 15));
-    close.addEventListener('click', () => this.hide());
-    header.append(this.title, close);
+    const root = toast.el;
+    root.setAttribute('aria-live', 'polite');
     this.sub = el('p', 'sub');
     this.body = el('div', 'body');
     const footer = el('footer', '');
@@ -102,7 +97,7 @@ export class PlaceCard {
     credit.target = '_blank';
     credit.rel = 'noopener';
     footer.append(this.unlabelButton, credit);
-    root.append(header, this.sub, this.body, footer);
+    toast.body.append(this.sub, this.body, footer);
 
     // Held open while being read.
     const hold = (on: boolean) => {
@@ -115,30 +110,30 @@ export class PlaceCard {
     root.addEventListener('focusin', () => hold(true));
     root.addEventListener('focusout', (e) => hold(root.contains(e.relatedTarget as Node) || root.matches(':hover')));
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !root.hidden && !(e.target as Element | null)?.closest?.('input')) this.hide();
+      if (e.key === 'Escape' && this.shown && !(e.target as Element | null)?.closest?.('input')) this.hide();
     });
   }
 
   get shown() {
-    return !this.root.hidden;
+    return this.toast.shown;
   }
 
   /** Open for a place while its report loads. */
   show(place: Place, labelled: boolean) {
     this.place = place;
-    this.title.textContent = place.name;
+    this.toast.setTitle(place.name);
     this.sub.textContent = place.detail || formatCoordinates(place.lat, place.lon);
     this.unlabelButton.hidden = !labelled;
     this.report = {};
     this.body.replaceChildren(el('p', 'loading', 'Checking the weather and alerts…'));
-    this.root.hidden = false;
+    this.toast.show(true);
     this.holdMs = SHOW_MS;
     this.arm();
   }
 
   /** Part of the report for `place`, if the card is still showing it. */
   fill(place: Place, part: PlaceReport, imperial: boolean, now = Date.now()) {
-    if (place !== this.place || this.root.hidden) return;
+    if (place !== this.place || !this.shown) return;
     const report = (this.report = { ...this.report, ...part });
     const w = report.weather;
     const where = place.detail || formatCoordinates(place.lat, place.lon);
@@ -185,13 +180,13 @@ export class PlaceCard {
 
   hide() {
     clearTimeout(this.timer);
-    this.root.hidden = true;
+    this.toast.show(false);
     this.place = undefined;
     this.held = false;
   }
 
   private arm() {
     clearTimeout(this.timer);
-    if (!this.held && !this.root.hidden) this.timer = setTimeout(() => this.hide(), this.holdMs);
+    if (!this.held && this.shown) this.timer = setTimeout(() => this.hide(), this.holdMs);
   }
 }

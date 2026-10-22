@@ -672,11 +672,24 @@ Cards slide in and out as layers are switched on and off, and flash when new dat
 The Sun-image card appears once the Sun has been in frame (that's the only time it's fetched).
 The dashboard ticks once a second while open, and not at all while closed or hidden.
 
-It shares the right-hand side with the HUD's other panels instead of covering them. The
-frame-rate and ISS telemetry panels stay at the top. The dashboard starts just below
-whichever of them are showing, and moves up when they close. A searched place's card stays
-at the foot of the same column, above the dock. When both are open, the dashboard shrinks
-and scrolls. Globe labels keep clear of the column, as they do for the readout.
+## Toast windows
+
+The panels down the right edge share one look and one place. A toast manager
+(`src/toasts.ts`) gives frame rate, ISS telemetry, data feeds and a searched place's card the
+same window: one width (320 px), the same glass, and a header with the title, a status chip
+(the ISS signal, the feeds summary) and ×. It stacks them in that order in one column from
+the top of the window to the dock, so they never overlap.
+
+- **Space:** when the windows don't fit, the data feeds give up height first and scroll.
+  Frame rate and ISS keep their height. A place's card keeps up to half the column, since
+  it's what was just asked for.
+- **Truncation:** long titles, chips and rows end in an ellipsis (the full text is in the
+  tooltip) rather than wrapping.
+- **Folding:** a click on a window's title folds it to its header; another click unfolds it.
+- **Closing:** × does what the hotkey would: it turns the frame rate or ISS telemetry off,
+  closes the feeds dashboard, or dismisses the place.
+- **Labels:** globe labels keep clear of the windows, as they do of the readout, and move
+  as windows open, close and fold.
 
 ## Frame rate
 

@@ -1,8 +1,8 @@
-// The feeds dashboard: a column of toast cards, one per data source on screen. Each
+// The feeds dashboard, in a toast window (toasts.ts): a row per data source on screen. Each
 // shows how old its data is (a bar that fills and warms from green to red as the data
 // ages past its usual age) and how long until the app checks again (a ring that drains
-// to the next check). Cards slide in and out as layers are switched on and off, and
-// flash when new data arrives.
+// to the next check). Rows slide in and out as layers are switched on and off, and
+// flash when new data arrives; the window's status chip sums them up.
 //
 // It ticks once a second while open and the tab is visible, reading the rows afresh
 // each time, so it never holds state of its own beyond what's on screen.
@@ -17,6 +17,7 @@ import {
   waitFraction,
   type FeedState,
 } from './feeds';
+import type { Toast } from './toasts';
 
 export interface FeedRow {
   key: string;
@@ -56,16 +57,19 @@ function span(className: string, text = ''): HTMLSpanElement {
 export class FeedBoard {
   private readonly list: HTMLUListElement;
   private readonly cards = new Map<string, Card>();
+  private readonly empty: HTMLElement;
   private timer: ReturnType<typeof setInterval> | undefined;
   private shown = false;
 
   constructor(
-    private readonly root: HTMLElement,
+    private readonly toast: Toast,
     private readonly rows: () => FeedRow[],
-    onClose: () => void,
   ) {
-    this.list = root.querySelector('ul') as HTMLUListElement;
-    root.querySelector('.close')?.addEventListener('click', onClose);
+    this.list = document.createElement('ul');
+    this.list.className = 'feed-list';
+    this.list.setAttribute('aria-label', 'Data sources');
+    this.empty = span('feed-empty', 'No data layers on');
+    toast.body.append(this.list, this.empty);
     document.addEventListener('visibilitychange', () => this.sync());
   }
 
@@ -73,7 +77,7 @@ export class FeedBoard {
   show(open: boolean) {
     if (open === this.shown) return;
     this.shown = open;
-    this.root.hidden = !open;
+    this.toast.show(open);
     this.sync();
   }
 
@@ -113,7 +117,17 @@ export class FeedBoard {
       else before = before.nextElementSibling;
       this.update(card, row, now, isNew);
     }
-    this.root.classList.toggle('empty', !rows.length);
+    this.empty.hidden = rows.length > 0;
+    this.summarise(rows, now);
+  }
+
+  /** The header chip: failures first, then stale data, else all clear. */
+  private summarise(rows: FeedRow[], now: number) {
+    const failed = rows.filter((r) => r.state.error).length;
+    const stale = rows.filter((r) => r.state.dataAt !== undefined && freshness(now - r.state.dataAt, r.freshMs) === 'stale').length;
+    if (failed) this.toast.setStatus(`${failed} failed`, 'bad');
+    else if (stale) this.toast.setStatus(`${stale} stale`, 'warn');
+    else this.toast.setStatus(rows.length ? 'all current' : '', 'ok');
   }
 
   private card(row: FeedRow): Card {
@@ -187,7 +201,7 @@ export class FeedBoard {
         : s.checkedAt !== undefined
           ? s.error
             ? 'no data'
-            : 'no time given'
+            : 'no data yet'
           : 'loading…';
 
     // When the next check is.
