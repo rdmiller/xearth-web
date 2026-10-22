@@ -69,7 +69,7 @@ describe('storms', () => {
 
   it('titles a GDACS typhoon and an NHC depression from today’s data', () => {
     expect(stormTitle(champi)).toBe('TYPHOON CHAMPI');
-    expect(stormDetail(champi)).toBe('PEAK 296 KM/H · RED ALERT');
+    expect(stormDetail(champi)).toBe('PEAK 296 KM/H · HIGH IMPACT');
     // NHC's own classification wins over GDACS's forecast-derived class.
     expect(stormClass(td)).toBe('TD');
     expect(stormTitle(td)).toBe('TROPICAL DEPRESSION TWENTY-TWO-E');

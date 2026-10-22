@@ -36,7 +36,7 @@ global cloud layer refreshed every hour from geostationary satellites.
     by age, with labels on the largest.
   - **Lightning:** the last 30 minutes of flashes from the GOES-East and GOES-West Geostationary
     Lightning Mappers, as blue-white sparks (the Americas, Atlantic and eastern Pacific).
-  - **Floods, wildfires, eruptions:** GDACS events with their alert levels; wildfires carry their
+  - **Floods, wildfires, eruptions:** GDACS events with their impact levels; wildfires carry their
     burned area, drawn to scale when zoomed in.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
@@ -409,6 +409,11 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   Every flood, eruption and Orange/Red alert is labelled; of the dozens of Green wildfires
   only the three largest are, since FIRMS already shows where they burn. A wildfire's burned
   area is drawn as a dashed circle of the same area once it outgrows the marker.
+  - *Impact, not size:* GDACS's Green / Orange / Red grade expected humanitarian impact
+    (the hazard, the people exposed and how vulnerable they are), so labels say LOW / MEDIUM /
+    HIGH IMPACT in those colours — Green means international help is unlikely to be needed,
+    not that nothing is happening (a 66,000 ha fire with few people near it is Green). Cyclone
+    labels use the same wording for GDACS's levels.
 - **Snow and ice:**
   - *North:* the IMS 4 km chart is polar stereographic on WGS84 (true at 60°N, −80° down the
     grid). The pipeline reprojects it with its own projection maths rather than NOAA's 300 MB

@@ -52,6 +52,7 @@ import {
   eventLine,
   eventSize,
   eventTitle,
+  impactLabel,
   isEventManifest,
   isLightningManifest,
   isSmokeManifest,
@@ -738,7 +739,7 @@ function eventOverlays(): EventOverlay[] {
       size: eventSize(e.alert),
       areaRadiusKm: e.areaHa ? burnedRadiusKm(e.areaHa) : undefined,
       rows: labelled.has(e.id)
-        ? { title: eventTitle(e), detail: eventDetail(e, now), alert: e.alert, alertColor: ALERT_COLOR[e.alert] ?? '#c8d6e5' }
+        ? { title: eventTitle(e), detail: eventDetail(e, now), impact: impactLabel(e.alert), impactColor: ALERT_COLOR[e.alert] ?? '#c8d6e5' }
         : undefined,
     }));
   }

@@ -132,7 +132,7 @@ export function stormDetail(s: Storm): string {
   }
   const parts = [];
   if (s.peakWindKmh) parts.push(`PEAK ${s.peakWindKmh} KM/H`);
-  if (s.alert) parts.push(`${s.alert.toUpperCase()} ALERT`);
+  if (s.alert) parts.push(impactLabel(s.alert));
   return parts.join(' · ');
 }
 
@@ -442,6 +442,16 @@ export function isEventManifest(v: unknown): v is EventManifest {
 
 export const EVENT_COLOR: Record<GdacsType, string> = { FL: '#4da3ff', WF: '#ff7a45', VO: '#ff4d6d' };
 export const ALERT_COLOR: Record<string, string> = { Green: '#6fdc8c', Orange: '#ff9f43', Red: '#ff4d4d' };
+
+/**
+ * GDACS alert levels grade expected humanitarian impact (hazard × exposed population ×
+ * vulnerability), not the size of the event, so they're shown as impact: Green → LOW IMPACT
+ * (international help unlikely to be needed), Orange → MEDIUM (may be), Red → HIGH (likely).
+ */
+export function impactLabel(alert: string): string {
+  const level = { green: 'LOW', orange: 'MEDIUM', red: 'HIGH' }[alert.trim().toLowerCase()];
+  return level ? `${level} IMPACT` : alert.toUpperCase();
+}
 const EVENT_WORD: Record<GdacsType, string> = { FL: 'FLOOD', WF: 'WILDFIRE', VO: 'ERUPTION' };
 
 /** Radius (km) of a circle with the burned area. 1 ha = 0.01 km². */

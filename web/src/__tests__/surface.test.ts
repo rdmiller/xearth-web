@@ -109,3 +109,11 @@ describe('smoke', () => {
     expect(smokeLine({ ...m, plumes: { Light: 1, Medium: 0, Heavy: 0 }, latest: null })).toBe('smoke 21 Oct (HMS): 1 plume');
   });
 });
+
+describe('GDACS impact levels', () => {
+  it('reads alert colours as impact', async () => {
+    const { impactLabel } = await import('../hazards');
+    expect(['Green', 'Orange', 'Red', 'red'].map(impactLabel)).toEqual(['LOW IMPACT', 'MEDIUM IMPACT', 'HIGH IMPACT', 'HIGH IMPACT']);
+    expect(impactLabel('Unknown')).toBe('UNKNOWN');
+  });
+});

@@ -858,8 +858,8 @@ export interface EventOverlay {
   size: number;
   /** Wildfires: burned area as a circle, km (drawn once it outgrows the marker). */
   areaRadiusKm?: number;
-  /** Labelled ones: title, detail, alert level (drawn in its colour). */
-  rows?: { title: string; detail: string; alert: string; alertColor: string };
+  /** Labelled ones: title, detail, impact level ("LOW IMPACT"…, drawn in its GDACS colour). */
+  rows?: { title: string; detail: string; impact: string; impactColor: string };
 }
 
 /** Flood: two waves; wildfire: a flame; eruption: a cone with a plume dot. Cached per look. */
@@ -944,7 +944,7 @@ function eventRequests(s: OverlayState): CalloutRequest[] {
         [{ text: e.rows!.title, color: e.color }],
         [
           { text: e.rows!.detail, color: HUD.dim },
-          { text: ` · ${e.rows!.alert.toUpperCase()}`, color: e.rows!.alertColor },
+          { text: ` · ${e.rows!.impact}`, color: e.rows!.impactColor },
         ],
       ],
       gap: e.size + 6,
