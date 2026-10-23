@@ -508,7 +508,7 @@
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
-    <footer id="credits"><span class="sources">Data: NASA · NOAA · USGS · GDACS · CelesTrak · The Space Devs · Open-Meteo · </span><button type="button" aria-controls="help">All credits</button></footer>
+    <footer id="credits"><span class="sources">Data: NASA · NOAA · EUMETSAT · USGS · GDACS · CelesTrak · The Space Devs · Open-Meteo · </span><button type="button" aria-controls="help">All credits</button></footer>
     <aside id="help" class="glass glass--rail" hidden>
       <h2>xearth web</h2>
       Drag to look around, scroll to zoom. Settings live in the URL, so any view can be shared.
@@ -523,7 +523,7 @@
       </p>
       <h3>Data</h3>
       <ul class="credits">
-        <li><b>Earth</b> NASA Blue Marble / Black Marble, GIBS (VIIRS)</li>
+        <li><b>Earth</b> NASA Blue Marble / Black Marble, GIBS (VIIRS, GOES GeoColor), EUMETSAT EUMETView (MTG GeoColour)</li>
         <li><b>Moon</b> NASA SVS / LRO</li>
         <li><b>Clouds</b> NOAA/NESDIS GMGSI</li>
         <li><b>Satellites</b> CelesTrak</li>
@@ -532,7 +532,7 @@
         <li><b>Storms, floods, wildfires, eruptions</b> GDACS, NHC</li>
         <li><b>Fires</b> NASA FIRMS</li>
         <li><b>Quakes</b> USGS</li>
-        <li><b>Lightning</b> NOAA GOES GLM</li>
+        <li><b>Lightning</b> NOAA GOES GLM, EUMETSAT MTG Lightning Imager</li>
         <li><b>Snow &amp; ice</b> NOAA IMS, NSIDC</li>
         <li><b>Smoke</b> NOAA HMS</li>
         <li><b>Radar</b> RainViewer</li>
@@ -556,7 +556,7 @@
         <tr><td><code>aurora</code>, <code>storms</code>, <code>fires</code>, <code>quakes</code></td><td><code>0</code> hides that layer (keys <kbd>A</kbd> <kbd>W</kbd> <kbd>X</kbd> <kbd>Q</kbd>)</td></tr>
         <tr><td><code>lightning</code>, <code>events</code>, <code>snow</code></td><td>lightning, GDACS floods/wildfires/eruptions, snow and ice (keys <kbd>Z</kbd> <kbd>Y</kbd> <kbd>I</kbd>)</td></tr>
         <tr><td><code>radar</code>, <code>smoke</code>, <code>tsunami</code></td><td>RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts (keys <kbd>Shift+R</kbd> <kbd>Shift+S</kbd> <kbd>Shift+T</kbd>)</td></tr>
-        <tr><td><code>truecolor</code></td><td>NASA GIBS true-colour imagery when zoomed in (key <kbd>Shift+P</kbd>)</td></tr>
+        <tr><td><code>imagery</code></td><td><code>live</code> GOES and MTG pictures by day, <code>daily</code> yesterday’s VIIRS when zoomed in, <code>painted</code> neither (key <kbd>Shift+P</kbd>; the older <code>truecolor=0/1</code> still works)</td></tr>
         <tr><td><code>relief</code></td><td>terrain lit by the real Sun, from NOAA ETOPO 2022 (key <kbd>Shift+E</kbd>); 0 shows NASA's fixed shaded relief</td></tr>
         <tr><td><code>reliefscale</code></td><td>terrain relief strength, 0.1–5 (default 1)</td></tr>
         <tr><td><code>isslive</code></td><td>NASA ISS telemetry panel: <code>track</code> (while tracking the ISS), <code>1</code> (always) or <code>0</code> (key <kbd>Shift+L</kbd>)</td></tr>

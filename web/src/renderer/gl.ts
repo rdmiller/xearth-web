@@ -11,6 +11,14 @@ import type { AuroraGrid } from '../hazards';
 import { SatLayer, type SatCategoryLook } from './sats';
 import { StarLayer } from './stars';
 
+/** West lon, north lat, and spans, in degrees; lon may run past 180. */
+export interface LatLonBox {
+  lon0: number;
+  lat1: number;
+  lonSpan: number;
+  latSpan: number;
+}
+
 const VERT = `#version 300 es
 in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -33,8 +41,10 @@ export interface FrameState {
   radar: boolean;
   /** NOAA HMS smoke plumes. */
   smoke: boolean;
-  /** GIBS true-colour detail (when one has been set). */
+  /** The zoomed-in picture (when one has been set): yesterday's VIIRS, or a live one. */
   detail: boolean;
+  /** Live geostationary discs (when any has been set). */
+  live: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
   relief: number;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
@@ -47,6 +57,10 @@ export interface FrameState {
 }
 
 type Slot = 'day' | 'night' | 'cloudPrev' | 'cloudCur';
+/** Live geostationary discs: one array layer each, this many texels a side. */
+const LIVE_LAYERS = 3;
+const LIVE_PX = 2048;
+const LIVE_UNIT = 12;
 const UNIT: Record<Slot, number> = { day: 0, night: 1, cloudPrev: 2, cloudCur: 3 };
 const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight', cloudPrev: 'uCloudPrev', cloudCur: 'uCloudCur' };
 
@@ -72,6 +86,16 @@ export class GlobeRenderer {
   private readonly reliefTex: WebGLTexture;
   private hasRelief = false;
   private detailBox: [number, number, number, number] | null = null;
+  /** Longitude (radians) below the satellite that took the zoomed-in picture, if it's a live one. */
+  private detailSub: number | null = null;
+  private liveTex: WebGLTexture;
+  private liveSized = false;
+  private readonly liveHas = new Float32Array(LIVE_LAYERS);
+  private readonly liveBox = new Float32Array(LIVE_LAYERS * 4);
+  private readonly liveSub = new Float32Array(LIVE_LAYERS);
+  /** The Sun's direction when each disc, and the zoomed-in live picture, was taken. */
+  private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
+  private detailSun: Vec3 = [0, 0, 0];
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -107,6 +131,11 @@ export class GlobeRenderer {
     this.smokeTex = empty();
     this.detailTex = empty();
     this.reliefTex = empty();
+    // The live discs' array starts as one transparent texel too, for the same reason.
+    this.liveTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -262,8 +291,47 @@ export class GlobeRenderer {
     this.hasSmoke = true;
   }
 
-  /** True-colour detail for a lat/lon box (west, north, lon span, lat span in degrees). */
-  setDetail(image: TexImageSource, box: { lon0: number; lat1: number; lonSpan: number; latSpan: number }) {
+  /**
+   * One satellite's live disc (layer 0–2) for a lat/lon box, with the longitude below the
+   * satellite (degrees). Drawn to the array's fixed size first, whatever size it came at.
+   */
+  setLive(layer: number, image: CanvasImageSource, box: LatLonBox, subLon: number, scanSun: Vec3) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + LIVE_UNIT);
+    if (!this.liveSized) {
+      gl.deleteTexture(this.liveTex);
+      this.liveTex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, Math.log2(LIVE_PX) + 1, gl.RGBA8, LIVE_PX, LIVE_PX, LIVE_LAYERS);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (this.aniso) gl.texParameterf(gl.TEXTURE_2D_ARRAY, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+      this.liveSized = true;
+    }
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
+    const canvas = new OffscreenCanvas(LIVE_PX, LIVE_PX);
+    canvas.getContext('2d')!.drawImage(image, 0, 0, LIVE_PX, LIVE_PX);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, LIVE_PX, LIVE_PX, 1, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    this.liveHas[layer] = 1;
+    this.liveBox.set([box.lon0, box.lat1, box.lonSpan, box.latSpan], layer * 4);
+    this.liveSub[layer] = (subLon * Math.PI) / 180;
+    this.liveSun.set(scanSun, layer * 3);
+  }
+
+  get hasLive() {
+    return this.liveHas.some((v) => v > 0);
+  }
+
+  /**
+   * The zoomed-in picture for a lat/lon box (west, north, lon span, lat span in degrees).
+   * `live`: it's a live picture, taken from above this longitude with the Sun there; else
+   * yesterday's VIIRS.
+   */
+  setDetail(image: TexImageSource, box: LatLonBox, live?: { subLon: number; scanSun: Vec3 }) {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE10);
     gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
@@ -276,6 +344,8 @@ export class GlobeRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
     this.detailBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+    this.detailSub = live ? (live.subLon * Math.PI) / 180 : null;
+    if (live) this.detailSun = live.scanSun;
   }
 
   clearDetail() {
@@ -382,6 +452,17 @@ export class GlobeRenderer {
     gl.uniform1i(this.u('uDetail'), 10);
     gl.uniform1f(this.u('uDetailOn'), f.detail && this.detailBox ? 1 : 0);
     if (this.detailBox) gl.uniform4fv(this.u('uDetailBox'), this.detailBox);
+    gl.uniform1f(this.u('uDetailLive'), this.detailSub === null ? 0 : 1);
+    gl.uniform1f(this.u('uDetailSub'), this.detailSub ?? 0);
+    gl.uniform3fv(this.u('uDetailSun'), this.detailSun);
+    gl.activeTexture(gl.TEXTURE0 + LIVE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
+    gl.uniform1i(this.u('uLive'), LIVE_UNIT);
+    gl.uniform1f(this.u('uLiveOn'), f.live && this.hasLive ? 1 : 0);
+    gl.uniform1fv(this.u('uLiveHas'), this.liveHas);
+    gl.uniform4fv(this.u('uLiveBox'), this.liveBox);
+    gl.uniform1fv(this.u('uLiveSub'), this.liveSub);
+    gl.uniform3fv(this.u('uLiveSun'), this.liveSun);
     gl.activeTexture(gl.TEXTURE11);
     gl.bindTexture(gl.TEXTURE_2D, this.reliefTex);
     gl.uniform1i(this.u('uRelief'), 11);

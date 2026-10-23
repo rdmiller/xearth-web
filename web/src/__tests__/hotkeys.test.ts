@@ -197,6 +197,15 @@ describe('S cycles the star modes', () => {
   });
 });
 
+describe('Shift+P cycles the imagery', () => {
+  it('live → yesterday’s → painted → live', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('shift+p'), h.s.imagery));
+    expect(seen).toEqual(['daily', 'painted', 'live']);
+    expect(h.ctx.toasts[1]).toBe('Imagery off: Blue Marble and live clouds');
+  });
+});
+
 describe('view keys', () => {
   it('1 freezes the view where it is; 2 faces the Sun; 3/4 switch mode', () => {
     const h = harness({ view: 'moon' });

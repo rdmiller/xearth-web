@@ -69,7 +69,12 @@ export const DRAWER: DrawerGroup[] = [
     title: 'Earth',
     items: [
       { key: 'c', label: 'Clouds', icon: Cloud, state: flag('clouds') },
-      { key: 'shift+p', label: 'Imagery', icon: ImageIcon, state: flag('truecolor') },
+      {
+        key: 'shift+p',
+        label: 'Imagery',
+        icon: ImageIcon,
+        state: (s) => ({ on: s.imagery !== 'painted', tag: s.imagery === 'live' ? 'LIVE' : s.imagery === 'daily' ? 'DAILY' : undefined }),
+      },
       { key: 'shift+e', label: 'Terrain', icon: Mountain, state: flag('relief') },
       { key: 'n', label: 'Lights', icon: Lightbulb, state: flag('lights') },
       { key: 'i', label: 'Snow', icon: Snowflake, state: flag('snow') },

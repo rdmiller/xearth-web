@@ -107,3 +107,23 @@ describe('relief settings', () => {
     expect(back.reliefscale).toBe(2);
   });
 });
+
+describe('imagery setting', () => {
+  it('defaults to live and reads the three modes', () => {
+    expect(parseSettings('').imagery).toBe('live');
+    expect(parseSettings('?imagery=daily').imagery).toBe('daily');
+    expect(parseSettings('?imagery=PAINTED').imagery).toBe('painted');
+    expect(parseSettings('?imagery=junk').imagery).toBe('live');
+  });
+
+  it('still reads the older truecolor flag: 0 = painted, 1 = daily', () => {
+    expect(parseSettings('?truecolor=0').imagery).toBe('painted');
+    expect(parseSettings('?truecolor=1').imagery).toBe('daily');
+    expect(parseSettings('?truecolor=0&imagery=live').imagery).toBe('live');
+  });
+
+  it('round-trips through the URL', () => {
+    expect(toQuery({ ...defaults(), imagery: 'painted' })).toBe('?imagery=painted');
+    expect(parseSettings(toQuery({ ...defaults(), imagery: 'daily' })).imagery).toBe('daily');
+  });
+});

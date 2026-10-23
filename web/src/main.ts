@@ -47,7 +47,9 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
-import { chooseRange, GibsDetail, visibleBox, type Detail } from './gibs';
+import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, visibleBox, type Detail } from './gibs';
+import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
+import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import {
   decodeNwsAlerts,
   isAlertCategory,
@@ -69,7 +71,7 @@ import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame }
 import { fetchSpaceWeather, spaceWeatherSummary, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
   burnedRadiusKm,
-  decodeLightning,
+  lightningPoints,
   EVENT_COLOR,
   eventDetail,
   eventSummary,
@@ -619,6 +621,9 @@ let quakes: Quake[] = [];
 /** When USGS generated the feed now shown, ms. */
 let quakesAt: number | undefined;
 let lightningManifest: LightningManifest | undefined;
+/** MTG Lightning Imager cells for the last 30 min, fetched by the browser (mtgLightning.ts). */
+const liWindow = new LiWindow();
+let liCells: number[] = [];
 let eventManifest: EventManifest | undefined;
 let snowIce: SnowIceManifest | undefined;
 let smoke: SmokeManifest | undefined;
@@ -684,6 +689,19 @@ async function fetchJson(url: string): Promise<unknown> {
 
 const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
 
+/** GOES and MTG lightning cells together (the pipeline's GOES cells are also 0.1°). */
+function lightningData(): number[] {
+  return mergeCells(lightningManifest?.data ?? [], liCells);
+}
+
+/** Both instruments' cells as one manifest, for the place card. */
+function lightningLayer(): LightningManifest | undefined {
+  if (!lightningManifest && !liCells.length) return undefined;
+  const base = lightningManifest ?? { generated: liWindow.latest ?? '', source: '', satellites: [], latest: liWindow.latest ?? null, flashes: 0 };
+  const data = lightningData();
+  return { ...base, windowMin: LI_WINDOW_MIN, cellDeg: CELL_DEG, count: data.length / 4, data };
+}
+
 type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
 
 /** `dataAt`: when the data now held was published, for the feeds dashboard. */
@@ -731,16 +749,31 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
     },
     dataAt: () => quakesAt,
   },
+  // GOES from the pipeline (NOAA's buckets have no CORS); MTG from EUMETSAT, which has, every
+  // 5 minutes as its frames land. Either one alone still draws.
   lightning: {
-    everyMs: 15 * 60_000,
+    everyMs: 5 * 60_000,
     load: async () => {
-      const m = await fetchJson(pipelineFile(settings.lightningsrc));
-      if (!isLightningManifest(m)) throw new Error('lightning/latest.json is not a lightning manifest');
-      lightningManifest = m;
-      renderer.setLightning(decodeLightning(m));
+      const [glm, li] = await Promise.allSettled([
+        fetchJson(pipelineFile(settings.lightningsrc)).then((m) => {
+          if (!isLightningManifest(m)) throw new Error('lightning/latest.json is not a lightning manifest');
+          return m;
+        }),
+        liWindow.load(),
+      ]);
+      if (glm.status === 'fulfilled') lightningManifest = glm.value;
+      if (li.status === 'fulfilled') liCells = li.value;
+      if (glm.status === 'rejected' && li.status === 'rejected') throw glm.reason;
+      if (glm.status === 'rejected') console.warn('lightning (GOES):', glm.reason);
+      if (li.status === 'rejected') console.warn('lightning (MTG):', li.reason);
+      renderer.setLightning(lightningPoints(lightningData(), CELL_DEG));
     },
-    // The newest flash in the window, which trails the pipeline's run by its processing time.
-    dataAt: () => lightningManifest?.latest ?? lightningManifest?.generated,
+    // The newest flash in either window. GOES's trails the pipeline's run by its processing time.
+    dataAt: () => {
+      const t = [lightningManifest?.latest ?? lightningManifest?.generated, liWindow.latest].map((v) => (v ? Date.parse(v) : NaN));
+      const newest = Math.max(...t.filter(Number.isFinite));
+      return Number.isFinite(newest) ? newest : undefined;
+    },
   },
   events: {
     everyMs: 30 * 60_000,
@@ -992,26 +1025,78 @@ function issPanelState(sun: Vec3) {
 // Only when zoomed in past the Blue Marble's resolution, only for what's on screen, and only
 // once the view settles; see gibs.ts.
 
+// The zoomed-in picture is one texture, shared by both modes: each writes it only while its
+// mode is the one chosen.
 let detail: Detail | null = null;
 const gibs = new GibsDetail((d) => {
   detail = d;
+  if (settings.imagery !== 'daily') return;
   if (d) renderer.setDetail(d.image, d.bounds);
   else renderer.clearDetail();
   requestRedraw();
 });
 
-/** Ask for the tiles this view needs (or none), given device px per Earth radius. */
+// ---- live imagery (GOES, MTG) ---------------------------------------------------------------
+// Each satellite's disc, checked for a new scan every 5 minutes, and the view's own picture
+// when zoomed in; see liveImagery.ts.
+
+let liveDetail = false;
+const live = new LiveImagery(
+  (i, img) => {
+    renderer.setLive(i, img.image, img.box, img.source.subLon, sunDirection(new Date(img.time)));
+    requestRedraw();
+  },
+  (img) => {
+    liveDetail = !!img;
+    if (settings.imagery !== 'live') return;
+    if (img) renderer.setDetail(img.image, img.box, { subLon: img.source.subLon, scanSun: sunDirection(new Date(img.time)) });
+    else renderer.clearDetail();
+    requestRedraw();
+  },
+);
+
+/** Live pictures show the real now: a simulated time far from it gets the painted globe. */
+const liveShown = (date: Date) => settings.imagery === 'live' && Math.abs(date.getTime() - Date.now()) < LIVE_MAX_SKEW_MS;
+
+let liveTimer: ReturnType<typeof setInterval> | undefined;
+
+function runLive(): Promise<void> {
+  feedLog.begin('imagery', Date.now(), LIVE_CHECK_MS);
+  return live
+    .check()
+    .then(() => {
+      // The oldest disc on the globe: how far behind the mosaic is at worst.
+      const t = [...live.discs.values()].map((d) => Date.parse(d.time));
+      feedLog.done('imagery', Date.now(), t.length ? Math.min(...t) : undefined);
+    })
+    .catch((err) => {
+      feedLog.fail('imagery', Date.now(), err);
+      console.warn('live imagery:', err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncLive() {
+  clearInterval(liveTimer);
+  liveTimer = undefined;
+  if (settings.imagery !== 'live') return feedLog.stop('imagery');
+  void runLive();
+  liveTimer = setInterval(() => void runLive(), LIVE_CHECK_MS);
+}
+
+/** Ask for the pictures this view needs (or none), given device px per Earth radius. */
 function syncDetail(date: Date, radiusPx: number) {
-  if (!settings.truecolor) {
-    gibs.want(null, new Date());
-    return;
-  }
   const degPerPx = 180 / Math.PI / Math.max(radiusPx, 1);
   // Everything on screen lies within this angle of the centre (the screen's half-diagonal).
   const r = Math.hypot(globeCanvas.width, globeCanvas.height) / 2 / Math.max(radiusPx, 1);
   const radiusDeg = r >= 1 ? 90 : (Math.asin(r) * 180) / Math.PI;
   const at = viewerLatLon(settings, date, resolveTrack);
-  gibs.want(chooseRange(visibleBox(at.lat, at.lon, radiusDeg), degPerPx), new Date());
+  const box = visibleBox(at.lat, at.lon, radiusDeg);
+  gibs.want(settings.imagery === 'daily' ? chooseRange(box, degPerPx) : null, new Date());
+  if (liveShown(date)) {
+    live.needDiscSize(radiusPx);
+    live.want(liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX), at);
+  } else live.clear();
 }
 
 /** "106.6k", "940": counts in the readout. */
@@ -1024,10 +1109,18 @@ const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String
 function layerRows(): ReadoutRow[] {
   const rows: ReadoutRow[] = [];
   const add = (key: string, value: string | undefined) => value && rows.push({ key, value });
-  if (settings.truecolor && detail) {
+  const perPx = (level: number) => {
+    const km = (0.5625 / 2 ** level) * 111.32;
+    return `${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`;
+  };
+  if (settings.imagery === 'daily' && detail) {
     const day = new Date(`${detail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    const km = (0.5625 / 2 ** detail.level) * 111.32;
-    add('imagery', `${day} · ${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`);
+    add('imagery', `${day} · ${perPx(detail.level)}`);
+  }
+  if (settings.imagery === 'live' && live.discs.size) {
+    const times = [...live.discs.values()].map((d) => d.time).sort();
+    const span = times[0] === times[times.length - 1] ? hhmm(times[0]) : `${hhmm(times[0])}–${hhmm(times[times.length - 1])}`;
+    add('imagery', `live ${span} UTC${live.detail && liveDetail ? ` · ${live.detail.source.name} ${perPx(live.detail.level)}` : ''}`);
   }
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
@@ -1036,7 +1129,12 @@ function layerRows(): ReadoutRow[] {
   if (settings.storms && stormManifest) add('cyclones', String(stormManifest.storms.length));
   if (settings.fires && firePoints) add('fires', `${compact(firesWithin(firePoints, settings.firehours).detections)} in ${settings.firehours} h`);
   if (settings.quakes && quakes.length) add('quakes', `${quakes.length} M2.5+ in 24 h`);
-  if (settings.lightning && lightningManifest) add('lightning', `${compact(lightningManifest.flashes)} flashes in ${lightningManifest.windowMin} min`);
+  if (settings.lightning && (lightningManifest || liCells.length)) {
+    // GOES counts flashes; MTG's frames give flashes per pixel, so it counts the 0.1° cells lit.
+    const goes = lightningManifest ? `GOES ${compact(lightningManifest.flashes)} flashes` : undefined;
+    const mtg = liCells.length ? `MTG ${compact(liCells.length / 4)} cells lit` : undefined;
+    add('lightning', [goes, mtg, `${LI_WINDOW_MIN} min`].filter(Boolean).join(' · '));
+  }
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
   return rows;
@@ -1153,6 +1251,8 @@ const PIPELINE_FRESH = 90 * MIN;
 const FEEDS: { key: string; label: string; source: string; freshMs: number; on: () => boolean; everyMs?: number }[] = [
   // Scans land in NOAA's bucket 35–45 min after the hour and the pipeline runs at :50.
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
+  // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20.
+  { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
   { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
   { key: 'radar', label: 'Radar', source: 'RainViewer', freshMs: 20 * MIN, on: () => settings.radar },
   { key: 'smoke', label: 'Smoke', source: 'NOAA HMS', freshMs: PIPELINE_FRESH, on: () => settings.smoke },
@@ -1161,7 +1261,7 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'storms', label: 'Cyclones', source: 'GDACS · NHC', freshMs: PIPELINE_FRESH, on: () => settings.storms },
   { key: 'fires', label: 'Fires', source: 'NASA FIRMS', freshMs: PIPELINE_FRESH, on: () => settings.fires },
   { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
-  { key: 'lightning', label: 'Lightning', source: 'GOES GLM', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
+  { key: 'lightning', label: 'Lightning', source: 'GOES GLM · MTG LI', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
   { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
   // CelesTrak updates elements every 2 h; the pipeline refetches them at most every 3 h.
@@ -1288,7 +1388,7 @@ async function nearbySources(): Promise<NearbySources> {
     layerData(settings.storms, stormManifest, pipelineFile(settings.stormsrc), isStormManifest),
     layerData(settings.events, eventManifest, pipelineFile(settings.eventsrc), isEventManifest),
     settings.quakes && quakes.length ? Promise.resolve(quakes) : onDemandJson(USGS_QUAKES_URL).then((f) => (isQuakeFeed(f) ? decodeQuakes(f) : [])),
-    layerData(settings.lightning, lightningManifest, pipelineFile(settings.lightningsrc), isLightningManifest),
+    layerData(settings.lightning, lightningLayer(), pipelineFile(settings.lightningsrc), isLightningManifest),
     layerData(settings.fires, fireManifest, pipelineFile(settings.firesrc), isFireManifest),
     layerData(settings.tsunami, tsunamiManifest, pipelineFile(settings.tsunamisrc), isTsunamiManifest),
   ]);
@@ -1507,11 +1607,12 @@ function frame(now: number) {
     fires: settings.fires
       ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)) }
       : null,
-    lightning: settings.lightning && lightningManifest ? { windowMin: lightningManifest.windowMin } : null,
+    lightning: settings.lightning && (lightningManifest || liCells.length) ? { windowMin: LI_WINDOW_MIN } : null,
     snowIce: settings.snow,
     radar: settings.radar,
     smoke: settings.smoke,
-    detail: settings.truecolor && !!detail,
+    detail: settings.imagery === 'daily' ? !!detail : liveShown(date) && liveDetail,
+    live: liveShown(date),
     relief: reliefStrength(),
     dpr: scale,
   });
@@ -1615,6 +1716,7 @@ function update(patch: Partial<Settings>) {
   const magBefore = settings.mag;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
+  const imageryBefore = settings.imagery;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
@@ -1622,6 +1724,7 @@ function update(patch: Partial<Settings>) {
     if (settings[key] !== hazardsBefore[key]) syncHazard(key);
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
+  if (settings.imagery !== imageryBefore) syncLive();
   syncIssLive();
   satTree.refresh(settings, treeCounts());
   drawer.refresh(settings);
@@ -1804,6 +1907,7 @@ syncClouds();
 syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
+syncLive();
 
 // Installed web app / Android TWA: an offline shell (public/sw.js). Not inside the
 // Capacitor app, whose files are bundled; there, Android's back button closes panels.
