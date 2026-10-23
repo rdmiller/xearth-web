@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BLUE_MARBLE,
   chooseRange,
   degPerTexel,
   DETAIL_BELOW_DEG_PER_PX,
@@ -92,5 +93,21 @@ describe('night lights (Black Marble nightly)', () => {
     expect(newestDate('<Domain>2026-10-13/2026-10-21/P1D</Domain>')).toBe('2026-10-21');
     expect(newestDate('<Domain>2026-10-13T00:00:00Z/2026-10-21T00:00:00Z/P1D</Domain>')).toBe('2026-10-21');
     expect(newestDate('<Domains/>')).toBeUndefined();
+  });
+});
+
+describe("the Blue Marble at 500 m (the ISS camera's ground)", () => {
+  it('has no date in its tile paths: one fixed mosaic', () => {
+    // Fetched 2026-10-23: 200, image/jpeg, 43 KB, Access-Control-Allow-Origin: *.
+    expect(tileUrl('fixed', 6, 10, 40, BLUE_MARBLE)).toBe(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_NextGeneration/default/500m/6/10/40.jpeg',
+    );
+  });
+
+  it("picks ~1 km tiles for the camera's ground, a few of them", () => {
+    // 600 km across 580 device pixels, ~0.009° a pixel, within ~5° of nadir.
+    const r = chooseRange(visibleBox(-30, 140, 5), 0.009, BLUE_MARBLE.maxLevel)!;
+    expect(r.level).toBe(6);
+    expect(tileCount(r)).toBeLessThanOrEqual(16);
   });
 });

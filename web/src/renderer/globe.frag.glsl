@@ -43,7 +43,7 @@ uniform float uSmokeOn;
 uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
 uniform float uDetailOn;
 uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees); lon may run past 180
-uniform float uDetailLive;   // 1: the detail is a live geostationary picture, not yesterday's VIIRS
+uniform float uDetailLive;   // what the detail is: 0 yesterday's VIIRS, 1 a live geostationary picture, 2 a sharper base map
 uniform float uDetailSub;    // its satellite's longitude (radians)
 uniform vec3 uDetailSun;     // the Sun's direction when it was taken
 uniform sampler2DArray uLive; // live geostationary discs: GOES-West, GOES-East, MTG, IODC (liveImagery.ts)
@@ -173,20 +173,25 @@ void main() {
   vec3 albedo = toLinear(albedoS);
 
   // Zoomed in: yesterday's VIIRS true colour in place of the Blue Marble. GIBS draws "no
-  // data" black, so dark texels fall back; the box edge fades so the seam doesn't show.
+  // data" black, so dark texels fall back; the box edge fades so the seam doesn't show. Or
+  // (the ISS camera's) the Blue Marble itself at 500 m: a sharper albedo, and nothing more —
+  // snow, relief and clouds still go on it, as on the Blue Marble (photoA stays 0).
   float detailA = 0.0;
-  if (uDetailOn > 0.5 && uDetailLive < 0.5) {
+  float photoA = 0.0;
+  bool baseMap = uDetailLive > 1.5;
+  if (uDetailOn > 0.5 && (uDetailLive < 0.5 || baseMap)) {
     float du = mod(degrees(lon) - uDetailBox.x, 360.0) / uDetailBox.z;
     float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
     if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
       float texPerRad = float(textureSize(uDetail, 0).x) / radians(uDetailBox.z);
       float lod = log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
       vec3 d = textureLod(uDetail, vec2(du, dv), lod).rgb;
-      float data = smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
+      float data = baseMap ? 1.0 : smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
       vec2 edgeDeg = min(vec2(du, dv), 1.0 - vec2(du, dv)) * uDetailBox.zw * vec2(coslat, 1.0);
       float edge = smoothstep(0.0, 0.04 * min(uDetailBox.z * coslat, uDetailBox.w), min(edgeDeg.x, edgeDeg.y));
       detailA = data * edge;
       albedo = mix(albedo, toLinear(d), detailA);
+      photoA = baseMap ? 0.0 : detailA;
     }
   }
 
@@ -197,9 +202,9 @@ void main() {
     vec2 si = textureLod(uSnowIce, uv, lodFor(uSnowIce, mu, coslat)).rg;
     float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
     // (The true-colour photo already shows its own snow and ice.)
-    float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum)) * (1.0 - detailA);
+    float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum)) * (1.0 - photoA);
     albedo = mix(albedo, vec3(0.80, 0.83, 0.87), snowCover);
-    iceC = si.g * (1.0 - detailA);
+    iceC = si.g * (1.0 - photoA);
     albedo = mix(albedo, vec3(0.70, 0.76, 0.82), iceC * 0.9);
   }
 
@@ -210,7 +215,7 @@ void main() {
   // true-colour photo shows, its own (real) shadows take over.
   vec3 ng = n;
   if (uReliefK > 0.0) {
-    vec2 g = decodeSlope(textureLod(uRelief, uv, lodFor(uRelief, mu, coslat)).rg) * uReliefK * (1.0 - detailA);
+    vec2 g = decodeSlope(textureLod(uRelief, uv, lodFor(uRelief, mu, coslat)).rg) * uReliefK * (1.0 - photoA);
     g /= 1.0 + length(g) / 3.0;
     vec3 east = normalize(vec3(-n.y, n.x, 0.0) + vec3(1e-6, 0.0, 0.0));
     vec3 north = cross(n, east);
@@ -267,7 +272,7 @@ void main() {
       }
     }
     // The true-colour photo has its own (yesterday's) clouds: two sets would read as mush.
-    ca *= 1.0 - 0.9 * detailA;
+    ca *= 1.0 - 0.9 * photoA;
   }
   vec3 cloudCol = vec3(0.95) * dayW * (0.25 + 0.75 * lambert) * tint + vec3(0.012, 0.015, 0.022) * nightW;
   vec3 col = mix(dayCol + nightCol, cloudCol, ca * 0.92);
@@ -316,7 +321,7 @@ void main() {
     liveA += fillA * (1.0 - liveA);
   }
   // Zoomed in: the satellite seeing the view most face-on, for just what's on screen, over the discs.
-  if (uDetailOn > 0.5 && uDetailLive > 0.5) {
+  if (uDetailOn > 0.5 && uDetailLive > 0.5 && uDetailLive < 1.5) {
     float du = mod(degrees(lon) - uDetailBox.x, 360.0) / uDetailBox.z;
     float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
     if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {

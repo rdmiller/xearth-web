@@ -89,7 +89,8 @@ global cloud layer refreshed every hour from geostationary satellites.
   the ISS puts the gauges in its details window rather than a second one.
 - **ISS camera:** a Show/Hide frame in the ISS window (`isscam=1`): the station from 120 m
   above, looking straight down past it at the Earth, travel at the top. The Earth is the
-  globe's own layers; the station is NASA's 3D model with its eight solar array wings and both
+  globe's own layers on a sharper map (NASA's Blue Marble at 500 m by day, the newest night's
+  lights by night); the station is NASA's 3D model with its eight solar array wings and both
   rotary joints posed from the live telemetry (turned to the Sun when there's no signal).
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
@@ -1231,6 +1232,19 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     so the read-back waits only on its own pass: ~5 ms CPU and ~2 ms GPU a frame. The wheel
     zooms it from 30° to 120° across; wider, the corners would reach the horizon, where the
     globe's glow (made for a viewer far out) fogs the sky.
+  - *Camera's ground:* it sees ~600 km across a few hundred pixels, ~1–2 km a pixel, where the
+    globe's 7.4 km Blue Marble is soft. So it fetches pictures of its own from GIBS for the
+    ground out to its frame's corners plus 2° (~30 s of flight), at about its pixel size:
+    NASA's Blue Marble Next Generation (`BlueMarble_NextGeneration`, 500 m, dateless, CORS)
+    by day and the newest night's lights (Black Marble nightly, 500 m) by night. The Blue Marble
+    goes in as a base map: it replaces only the ground's colour, so snow and ice, the relief
+    lighting and the clouds still go on it (yesterday's VIIRS, a photo with its own clouds,
+    makes them stand back). The camera has its own detail textures, bound to the same two
+    texture units for its pass (`detailSlot`), so the main view's zoomed-in pictures are
+    untouched. The live geostationary discs (~6 km a pixel) are left out of its pass, so they
+    don't paint over the sharper ground; their clouds come from the hourly map and Himawari.
+    GIBS serves the 500 m mosaic with no dates, one picture all year, where the globe changes
+    its Blue Marble month by month, so the camera's snow and greenery may look a season off.
   - *Station model:* NASA 3D Resources' "International Space Station (ISS) (A)" (NASA Ames,
     6,642 triangles), baked from its Draco-compressed original (see *Baked data*) to 226 KB
     and fetched the first time the camera opens. `issModel.ts` reads it (no 3D library), cuts

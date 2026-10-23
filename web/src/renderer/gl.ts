@@ -12,6 +12,19 @@ import type { AuroraGrid } from '../hazards';
 import { SatLayer, type SatCategoryLook } from './sats';
 import { StarLayer } from './stars';
 
+/** Whose zoomed-in pictures: the main view's, or the ISS camera's (renderView). */
+export type DetailSlot = 'main' | 'camera';
+
+/** A zoomed-in picture: its texture and box, and what it is (0 yesterday's VIIRS, 1 live, 2 a base map). */
+interface DetailPicture {
+  tex: WebGLTexture;
+  box: [number, number, number, number] | null;
+  kind: number;
+  /** A live picture's: the longitude below its satellite (radians), and the Sun when it was taken. */
+  sub: number;
+  sun: Vec3;
+}
+
 /** West lon, north lat, and spans, in degrees; lon may run past 180. */
 export interface LatLonBox {
   lon0: number;
@@ -48,6 +61,8 @@ export interface FrameState {
   smoke: boolean;
   /** The zoomed-in picture (when one has been set): yesterday's VIIRS, or a live one. */
   detail: boolean;
+  /** Whose zoomed-in pictures (detail, nightDetail): the main view's (the default) or the ISS camera's. */
+  detailSlot?: DetailSlot;
   /** Live geostationary discs (when any has been set). */
   live: boolean;
   /** Himawari-9's live clouds over its disc, in place of the hourly map's (when set). */
@@ -126,14 +141,14 @@ export class GlobeRenderer {
   private readonly coverTex: WebGLTexture;
   private hasCover = false;
   private hasSmoke = false;
-  private readonly detailTex: WebGLTexture;
-  private readonly nightDetailTex: WebGLTexture;
-  private nightDetailBox: [number, number, number, number] | null = null;
+  /**
+   * The zoomed-in pictures, by day (unit 10) and by night (unit 15): the main view's, and the
+   * ISS camera's own for its pass (FrameState.detailSlot), bound to the same units in turn.
+   */
+  private readonly details: Record<DetailSlot, DetailPicture>;
+  private readonly nightDetails: Record<DetailSlot, { tex: WebGLTexture; box: [number, number, number, number] | null }>;
   private readonly reliefTex: WebGLTexture;
   private hasRelief = false;
-  private detailBox: [number, number, number, number] | null = null;
-  /** Longitude (radians) below the satellite that took the zoomed-in picture, if it's a live one. */
-  private detailSub: number | null = null;
   private liveTex: WebGLTexture;
   private liveSized = false;
   private readonly liveHas = new Float32Array(LIVE_LAYERS);
@@ -143,7 +158,6 @@ export class GlobeRenderer {
   private readonly liveFill = new Float32Array(LIVE_LAYERS);
   /** The Sun's direction when each disc, and the zoomed-in live picture, was taken. */
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
-  private detailSun: Vec3 = [0, 0, 0];
   private readonly himTex: WebGLTexture;
   private readonly sstTex: WebGLTexture;
   private hasSst = false;
@@ -199,8 +213,11 @@ export class GlobeRenderer {
     this.snowIceTex = empty();
     this.radarTex = empty();
     this.smokeTex = empty();
-    this.detailTex = empty();
-    this.nightDetailTex = empty();
+    this.details = {
+      main: { tex: empty(), box: null, kind: 0, sub: 0, sun: [0, 0, 0] },
+      camera: { tex: empty(), box: null, kind: 0, sub: 0, sun: [0, 0, 0] },
+    };
+    this.nightDetails = { main: { tex: empty(), box: null }, camera: { tex: empty(), box: null } };
     this.reliefTex = empty();
     this.himTex = empty();
     this.sstTex = empty();
@@ -547,13 +564,15 @@ export class GlobeRenderer {
 
   /**
    * The zoomed-in picture for a lat/lon box (west, north, lon span, lat span in degrees).
-   * `live`: it's a live picture, taken from above this longitude with the Sun there; else
-   * yesterday's VIIRS.
+   * `live`: it's a live picture, taken from above this longitude with the Sun there; `'base'`:
+   * a sharper base map in place of the Blue Marble (clouds and all still drawn over it); else
+   * yesterday's VIIRS. `slot`: the main view's, or the ISS camera's.
    */
-  setDetail(image: TexImageSource, box: LatLonBox, live?: { subLon: number; scanSun: Vec3 }) {
+  setDetail(image: TexImageSource, box: LatLonBox, live?: { subLon: number; scanSun: Vec3 } | 'base', slot: DetailSlot = 'main') {
     const gl = this.gl;
+    const d = this.details[slot];
     gl.activeTexture(gl.TEXTURE10);
-    gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
+    gl.bindTexture(gl.TEXTURE_2D, d.tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -562,20 +581,24 @@ export class GlobeRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
-    this.detailBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
-    this.detailSub = live ? (live.subLon * Math.PI) / 180 : null;
-    if (live) this.detailSun = live.scanSun;
+    d.box = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+    d.kind = live === 'base' ? 2 : live ? 1 : 0;
+    if (live && live !== 'base') {
+      d.sub = (live.subLon * Math.PI) / 180;
+      d.sun = live.scanSun;
+    }
   }
 
-  clearDetail() {
-    this.detailBox = null;
+  clearDetail(slot: DetailSlot = 'main') {
+    this.details[slot].box = null;
   }
 
   /** Night-lights detail for a lat/lon box, as setDetail. */
-  setNightDetail(image: TexImageSource, box: { lon0: number; lat1: number; lonSpan: number; latSpan: number }) {
+  setNightDetail(image: TexImageSource, box: { lon0: number; lat1: number; lonSpan: number; latSpan: number }, slot: DetailSlot = 'main') {
     const gl = this.gl;
+    const d = this.nightDetails[slot];
     gl.activeTexture(gl.TEXTURE15);
-    gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
+    gl.bindTexture(gl.TEXTURE_2D, d.tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -584,11 +607,11 @@ export class GlobeRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
-    this.nightDetailBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+    d.box = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
   }
 
-  clearNightDetail() {
-    this.nightDetailBox = null;
+  clearNightDetail(slot: DetailSlot = 'main') {
+    this.nightDetails[slot].box = null;
   }
 
   setFires(points: SurfacePoints) {
@@ -755,13 +778,14 @@ export class GlobeRenderer {
     gl.uniform1i(this.u('uSmoke'), 9);
     gl.uniform1f(this.u('uSmokeOn'), f.smoke && this.hasSmoke ? 1 : 0);
     gl.activeTexture(gl.TEXTURE10);
-    gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
+    const det = this.details[f.detailSlot ?? 'main'];
+    gl.bindTexture(gl.TEXTURE_2D, det.tex);
     gl.uniform1i(this.u('uDetail'), 10);
-    gl.uniform1f(this.u('uDetailOn'), f.detail && this.detailBox ? 1 : 0);
-    if (this.detailBox) gl.uniform4fv(this.u('uDetailBox'), this.detailBox);
-    gl.uniform1f(this.u('uDetailLive'), this.detailSub === null ? 0 : 1);
-    gl.uniform1f(this.u('uDetailSub'), this.detailSub ?? 0);
-    gl.uniform3fv(this.u('uDetailSun'), this.detailSun);
+    gl.uniform1f(this.u('uDetailOn'), f.detail && det.box ? 1 : 0);
+    if (det.box) gl.uniform4fv(this.u('uDetailBox'), det.box);
+    gl.uniform1f(this.u('uDetailLive'), det.kind);
+    gl.uniform1f(this.u('uDetailSub'), det.sub);
+    gl.uniform3fv(this.u('uDetailSun'), det.sun);
     gl.activeTexture(gl.TEXTURE0 + LIVE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
     gl.uniform1i(this.u('uLive'), LIVE_UNIT);
@@ -790,10 +814,11 @@ export class GlobeRenderer {
     gl.uniform1i(this.u('uSst'), SST_UNIT);
     gl.uniform1f(this.u('uSstMode'), this.hasSst ? f.sst : 0);
     gl.activeTexture(gl.TEXTURE15);
-    gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
+    const night = this.nightDetails[f.detailSlot ?? 'main'];
+    gl.bindTexture(gl.TEXTURE_2D, night.tex);
     gl.uniform1i(this.u('uNightDetail'), 15);
-    gl.uniform1f(this.u('uNightDetailOn'), f.nightDetail && this.nightDetailBox ? 1 : 0);
-    if (this.nightDetailBox) gl.uniform4fv(this.u('uNightDetailBox'), this.nightDetailBox);
+    gl.uniform1f(this.u('uNightDetailOn'), f.nightDetail && night.box ? 1 : 0);
+    if (night.box) gl.uniform4fv(this.u('uNightDetailBox'), night.box);
     gl.activeTexture(gl.TEXTURE11);
     gl.bindTexture(gl.TEXTURE_2D, this.reliefTex);
     gl.uniform1i(this.u('uRelief'), 11);

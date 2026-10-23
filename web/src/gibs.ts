@@ -22,7 +22,9 @@ export const GIBS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best';
 export interface GibsProduct {
   layer: string;
   matrix: '250m' | '500m';
-  ext: 'jpg' | 'png';
+  ext: 'jpg' | 'jpeg' | 'png';
+  /** A layer with no dates (a fixed mosaic): its tiles' paths have none. */
+  timeless?: boolean;
   /** The finest level its matrix set has. */
   maxLevel: number;
   /** Days back to ask for until GIBS says what its newest is. */
@@ -52,6 +54,20 @@ export const NIGHT_LIGHTS: GibsProduct = {
   maxLevel: 7,
   daysBack: 2,
   // Empty means no data at all there (sunlit), not "not yet": no point trying earlier days.
+  emptyBytes: 0,
+};
+
+/**
+ * NASA's Blue Marble Next Generation (MODIS, 500 m): the globe's own base map, ~15× sharper,
+ * for the ISS camera's ground. Cloud-free and dateless, so the cloud layers still go on top.
+ */
+export const BLUE_MARBLE: GibsProduct = {
+  layer: 'BlueMarble_NextGeneration',
+  matrix: '500m',
+  ext: 'jpeg',
+  timeless: true,
+  maxLevel: 7,
+  daysBack: 0,
   emptyBytes: 0,
 };
 
@@ -159,7 +175,8 @@ export const rangeKey = (r: TileRange, date: string) => `${date}/${r.level}/${r.
 export function tileUrl(date: string, level: number, row: number, col: number, p: GibsProduct = TRUE_COLOR): string {
   const { cols } = matrixSize(level);
   const c = ((col % cols) + cols) % cols;
-  return `${GIBS_BASE}/${p.layer}/default/${date}/${p.matrix}/${level}/${row}/${c}.${p.ext}`;
+  const day = p.timeless ? '' : `${date}/`;
+  return `${GIBS_BASE}/${p.layer}/default/${day}${p.matrix}/${level}/${row}/${c}.${p.ext}`;
 }
 
 /** Yesterday (UTC): the newest day whose mosaic is complete everywhere. */
@@ -199,6 +216,7 @@ export class GibsDetail {
 
   /** The date to show: GIBS's newest once known (asked every few hours), else `daysBack`. */
   private dateFor(now: Date): string {
+    if (this.product.timeless) return 'fixed';
     if (Date.now() - this.newestAt > GibsDetail.NEWEST_EVERY_MS) {
       this.newestAt = Date.now();
       void fetch(domainUrl(this.product, now))

@@ -69,7 +69,7 @@ import {
 } from './picks';
 import { PickPanelView } from './pickView';
 import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
-import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
+import { BLUE_MARBLE, chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange, viewAngleDeg } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import { FRP_CELL_DEG, FRP_WINDOW_MIN, FrpWindow, frpPoints, frpRows } from './mtgFires';
@@ -1748,6 +1748,55 @@ const gibsNight = new GibsDetail((d) => {
   requestRedraw();
 }, NIGHT_LIGHTS);
 
+// ---- the ISS camera's ground: sharper maps under it -----------------------------------------
+// The camera sees ~600 km of ground across a few hundred pixels, ~1 km a pixel, where the Blue
+// Marble's 7.4 km is soft. So it has pictures of its own from GIBS (gibs.ts) for the ground in
+// its frame, into the renderer's camera textures: the Blue Marble at 500 m by day (a base map,
+// so snow, relief and clouds still go on it) and the newest night's lights by night.
+
+let camDayShown = false;
+let camNightShown = false;
+const camDay = new GibsDetail((d) => {
+  camDayShown = !!d;
+  if (d) renderer.setDetail(d.image, d.bounds, 'base', 'camera');
+  else renderer.clearDetail('camera');
+  requestRedraw();
+}, BLUE_MARBLE);
+const camNight = new GibsDetail((d) => {
+  camNightShown = !!d;
+  if (d) renderer.setNightDetail(d.image, d.bounds, 'camera');
+  else renderer.clearNightDetail('camera');
+  requestRedraw();
+}, NIGHT_LIGHTS);
+
+/** How much ground past the frame's corners the camera's pictures cover, degrees: ~30 s of flight. */
+const CAM_GROUND_MARGIN_DEG = 2;
+
+/**
+ * Ask for the camera's pictures (none while `cam` is undefined): the ground out to its frame's
+ * corners and a margin to fly on into, at about its pixel size at nadir (`widthPx` across).
+ */
+function syncCameraDetail(cam: Camera | undefined, widthPx: number, date: Date) {
+  const now = new Date();
+  if (!cam) {
+    camDay.want(null, now);
+    camNight.want(null, now);
+    return;
+  }
+  const tanHalf = 1 / cam.focal;
+  // The ray to a corner of the 16:10 frame, and how far from nadir it meets the ground.
+  const corner = Math.atan(tanHalf * Math.hypot(1, 10 / 16));
+  const reach = Math.asin(Math.min(1, cam.dist * Math.sin(corner))) - corner;
+  const radiusDeg = (reach * 180) / Math.PI + CAM_GROUND_MARGIN_DEG;
+  const kmPerPx = ((cam.dist - 1) * EARTH_RADIUS_KM * 2 * tanHalf) / Math.max(widthPx, 1);
+  const at = toLatLon(cam.dir);
+  const box = visibleBox(at.lat, at.lon, radiusDeg);
+  const sun = subsolarPoint(date);
+  const fromSun = (Math.acos(Math.max(-1, Math.min(1, dot(cam.dir, fromLatLon(sun.lat, sun.lon))))) * 180) / Math.PI;
+  camDay.want(fromSun - radiusDeg < 96 ? chooseRange(box, kmPerPx / 111.32, BLUE_MARBLE.maxLevel) : null, now);
+  camNight.want(settings.imagery !== 'painted' && fromSun + radiusDeg > 90 ? chooseRange(box, kmPerPx / 111.32, NIGHT_LIGHTS.maxLevel) : null, now);
+}
+
 /** Ask for the pictures this view needs (or none), given device px per Earth radius. */
 function syncDetail(date: Date, radiusPx: number) {
   const degPerPx = 180 / Math.PI / Math.max(radiusPx, 1);
@@ -2887,13 +2936,22 @@ function frame(now: number) {
         bodies: [],
         satellites: null,
         fires: frameState.fires && { ...frameState.fires, minIntensity: 0 },
+        // Its own sharper ground; the live discs (~6 km a pixel) would paint over it.
+        detail: camDayShown,
+        nightDetail: settings.imagery !== 'painted' && camNightShown,
+        detailSlot: 'camera',
+        live: false,
         model,
       },
       width,
       height,
     );
     issPanelView.camera.draw(view, width, height, model ? (model.live ? 'arrays live' : 'arrays to the Sun') : '');
-  } else renderer.releaseView();
+    syncCameraDetail(cam, width, date);
+  } else {
+    renderer.releaseView();
+    syncCameraDetail(undefined, 0, date);
+  }
 
   const slot = stats.nextSlot;
   if (settings.fps) gpuTimer.begin();
