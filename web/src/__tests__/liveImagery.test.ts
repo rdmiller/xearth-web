@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DETAIL_BELOW_DEG_PER_PX, rangeBounds } from '../gibs';
 import {
   bestSource,
   discBox,
   discSize,
+  fetchServedTime,
   getMapUrl,
   LIVE_SOURCES,
   liveRange,
@@ -20,8 +21,19 @@ import {
 const source = (key: string) => LIVE_SOURCES.find((s) => s.key === key)!;
 
 describe('live imagery sources', () => {
-  it('runs west to east: GOES-West, GOES-East, MTG', () => {
-    expect(LIVE_SOURCES.map((s) => s.key)).toEqual(['goes-west', 'goes-east', 'mtg']);
+  it('runs west to east: GOES-West, GOES-East, MTG, then Meteosat-9 (IODC) filling in', () => {
+    expect(LIVE_SOURCES.map((s) => s.key)).toEqual(['goes-west', 'goes-east', 'mtg', 'iodc']);
+    expect(LIVE_SOURCES.filter((s) => s.fill).map((s) => s.key)).toEqual(['iodc']);
+  });
+
+  it('uses Meteosat-9 only where MTG can’t see, even where it sees more face-on', () => {
+    expect(viewAngleDeg(-1.3, 36.8, source('iodc').subLon)).toBeLessThan(viewAngleDeg(-1.3, 36.8, 0));
+    expect(bestSource(-1.3, 36.8)?.key).toBe('mtg'); // Nairobi
+    expect(bestSource(25.2, 55.3)?.key).toBe('mtg'); // Dubai, 59° from MTG
+    expect(bestSource(19.1, 72.9)?.key).toBe('iodc'); // Mumbai, 74° from MTG
+    expect(bestSource(28.6, 77.2)?.key).toBe('iodc'); // Delhi
+    expect(bestSource(43.2, 76.9)?.key).toBe('iodc'); // Almaty
+    expect(bestSource(-6.2, 106.8)?.key).toBe('iodc'); // Jakarta, 62° from Meteosat-9
   });
 
   it('picks the satellite seeing a place most face-on, and none over Asia', () => {
@@ -68,6 +80,9 @@ describe('WMS requests', () => {
     expect(url.searchParams.get('TIME')).toBe('2026-10-23T00:10:00Z');
     const mtg = new URL(getMapUrl(source('mtg'), '2026-10-23T00:40:00Z', { lon0: -81, lon1: 81, x: 0, width: 1024 }, -81, 81, 1024));
     expect(mtg.host).toBe('view.eumetsat.int');
+    const iodc = new URL(getMapUrl(source('iodc'), '2026-10-23T08:00:00Z', wmsParts(discBox(source('iodc')), 1024)[0], -81, 81, 1024));
+    expect(iodc.searchParams.get('LAYERS')).toBe('msg_iodc:rgb_natural');
+    expect(iodc.searchParams.get('BBOX')).toBe('-81,-35.5,81,126.5');
     expect(mtg.searchParams.get('LAYERS')).toBe('mtg_fd:rgb_geocolour');
   });
 
@@ -144,5 +159,21 @@ describe('sizes and ranges', () => {
     const b = rangeBounds(r);
     expect(b.lon0).toBeLessThanOrEqual(-90);
     expect(b.lon0 + b.lonSpan).toBeGreaterThanOrEqual(-80);
+  });
+});
+
+describe('a day-only product', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('takes the newest listed scan without probing it, since its night side is empty', async () => {
+    const xml = `<Layer><Name>rgb_natural</Name><Dimension name="time" default="2026-10-23T15:45:00Z" units="ISO8601" nearestValue="1">2020-08-01T00:00:00.000Z/2026-10-23T15:45:00.000Z/PT15M</Dimension></Layer>`;
+    const fetch = vi.fn(async () => new Response(xml));
+    vi.stubGlobal('fetch', fetch);
+    const t = await fetchServedTime(source('iodc'), new Date('2026-10-23T16:15:00Z'));
+    expect(t).toBe('2026-10-23T15:45:00Z');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe(
+      'https://view.eumetsat.int/geoserver/msg_iodc/rgb_natural/ows?service=WMS&request=GetCapabilities&version=1.3.0',
+    );
   });
 });

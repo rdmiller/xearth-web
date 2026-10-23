@@ -5,7 +5,10 @@
 // over the Americas and the Atlantic (both GeoColor, from NASA GIBS) and Meteosat Third
 // Generation over Europe and Africa (GeoColour, from EUMETSAT's EUMETView). Both servers are
 // WMS with CORS, so the browser asks for a JPEG of each satellite's disc on the globe's own
-// latitude/longitude grid; a new scan lands every 10 minutes. Asia and the west Pacific
+// latitude/longitude grid; a new scan lands every 10 minutes. Meteosat-9's Indian Ocean
+// service (IODC, at 45.5°E) fills in east of MTG's limb, over the Indian Ocean and western
+// and central Asia, every 15 minutes: Natural Colour, not GeoColour (the server has no
+// GeoColour for it), so it shows only where MTG can't. East Asia and the west Pacific
 // (Himawari) have no colour product on either server, so the painted globe shows there.
 //
 // The pictures are already lit by the real Sun, and their night side is a different product
@@ -28,16 +31,27 @@ export interface LiveSource {
   layer: string;
   /** Where the newest scan's time comes from. */
   times: 'gibs' | 'eumetsat';
+  /** Shown only where the other satellites leave gaps (a different look, or older and coarser). */
+  fill?: boolean;
+  /**
+   * The product is empty on the night side (Natural Colour stops ~1–2° after sunset), so a
+   * blank picture there means night, not an unrendered scan: the newest listed scan is used.
+   */
+  dayOnly?: boolean;
 }
 
 const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
 const EUMETSAT_WMS = 'https://view.eumetsat.int/geoserver/ows';
 
-/** West to east. GOES-18 is GOES-West at 137.2°W, GOES-19 GOES-East at 75.2°W, MTG-I1 at 0°. */
+/**
+ * West to east. GOES-18 is GOES-West at 137.2°W, GOES-19 GOES-East at 75.2°W, MTG-I1 at 0° and
+ * Meteosat-9 (IODC) at 45.5°E (EUMETView's layer box is centred on 41.5°E, but its disc isn't).
+ */
 export const LIVE_SOURCES: readonly LiveSource[] = [
   { key: 'goes-west', name: 'GOES-West', subLon: -137.2, wms: GIBS_WMS, layer: 'GOES-West_ABI_GeoColor', times: 'gibs' },
   { key: 'goes-east', name: 'GOES-East', subLon: -75.2, wms: GIBS_WMS, layer: 'GOES-East_ABI_GeoColor', times: 'gibs' },
   { key: 'mtg', name: 'MTG', subLon: 0, wms: EUMETSAT_WMS, layer: 'mtg_fd:rgb_geocolour', times: 'eumetsat' },
+  { key: 'iodc', name: 'Meteosat-9', subLon: 45.5, wms: EUMETSAT_WMS, layer: 'msg_iodc:rgb_natural', times: 'eumetsat', fill: true, dayOnly: true },
 ];
 
 /** Each disc is fetched as this box around the sub-satellite point; past ~81° there's only space. */
@@ -69,15 +83,22 @@ export function viewAngleDeg(lat: number, lon: number, subLon: number): number {
   return Math.acos(Math.max(-1, Math.min(1, c))) / r;
 }
 
-/** The satellite seeing a point most nearly face-on, if any sees it well enough to use. */
+/**
+ * The satellite seeing a point most nearly face-on, if any sees it well enough to use; a fill
+ * satellite only where none of the others does, as on the globe.
+ */
 export function bestSource(lat: number, lon: number, sources: readonly LiveSource[] = LIVE_SOURCES): LiveSource | undefined {
-  let best: LiveSource | undefined;
-  let bestAngle = LIMB_DEG - 4;
-  for (const s of sources) {
-    const a = viewAngleDeg(lat, lon, s.subLon);
-    if (a < bestAngle) [best, bestAngle] = [s, a];
-  }
-  return best;
+  const pick = (fill: boolean) => {
+    let best: LiveSource | undefined;
+    let bestAngle = LIMB_DEG - 4;
+    for (const s of sources) {
+      if (!!s.fill !== fill) continue;
+      const a = viewAngleDeg(lat, lon, s.subLon);
+      if (a < bestAngle) [best, bestAngle] = [s, a];
+    }
+    return best;
+  };
+  return pick(false) ?? pick(true);
 }
 
 /** A lat/lon box for the shader and for requests: west lon, north lat, spans (degrees). */
@@ -277,6 +298,7 @@ export async function fetchServedTime(s: LiveSource, now: Date, known?: string, 
   const xml = await r.text();
   const times = s.times === 'gibs' ? parseGibsDomain(xml) : parseWmsTimes(xml);
   if (!times.length) throw new Error(`${s.name}: no scan times listed`);
+  if (s.dayOnly) return times[0];
   for (const t of times) {
     if (known && t <= known) return known;
     try {

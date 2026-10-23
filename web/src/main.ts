@@ -1448,14 +1448,14 @@ const gibs = new GibsDetail((d) => {
   requestRedraw();
 });
 
-// ---- live imagery (GOES, MTG) ---------------------------------------------------------------
+// ---- live imagery (GOES, MTG, Meteosat-9) ---------------------------------------------------
 // Each satellite's disc, checked for a new scan every 5 minutes, and the view's own picture
 // when zoomed in; see liveImagery.ts.
 
 let liveDetail = false;
 const live = new LiveImagery(
   (i, img) => {
-    renderer.setLive(i, img.image, img.box, img.source.subLon, sunDirection(new Date(img.time)));
+    renderer.setLive(i, img.image, img.box, img.source.subLon, sunDirection(new Date(img.time)), img.source.fill);
     requestRedraw();
   },
   (img) => {
@@ -1703,8 +1703,8 @@ const PIPELINE_FRESH = 90 * MIN;
 const FEEDS: { key: string; label: string; source: string; freshMs: number; on: () => boolean; everyMs?: number }[] = [
   // Scans land in NOAA's bucket 35–45 min after the hour and the pipeline runs at :50.
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
-  // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20.
-  { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
+  { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
   { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
   { key: 'radar', label: 'Radar', source: 'RainViewer', freshMs: 20 * MIN, on: () => settings.radar },
   // The early run lands ~5 h after its half hour.

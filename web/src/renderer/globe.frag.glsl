@@ -45,12 +45,13 @@ uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees
 uniform float uDetailLive;   // 1: the detail is a live geostationary picture, not yesterday's VIIRS
 uniform float uDetailSub;    // its satellite's longitude (radians)
 uniform vec3 uDetailSun;     // the Sun's direction when it was taken
-uniform sampler2DArray uLive; // live geostationary discs: GOES-West, GOES-East, MTG (liveImagery.ts)
+uniform sampler2DArray uLive; // live geostationary discs: GOES-West, GOES-East, MTG, IODC (liveImagery.ts)
 uniform float uLiveOn;
-uniform float uLiveHas[3];
-uniform vec4 uLiveBox[3];    // as uDetailBox, per disc
-uniform float uLiveSub[3];   // longitude below each satellite (radians)
-uniform vec3 uLiveSun[3];    // the Sun's direction when each was taken
+uniform float uLiveHas[4];
+uniform vec4 uLiveBox[4];    // as uDetailBox, per disc
+uniform float uLiveSub[4];   // longitude below each satellite (radians)
+uniform vec3 uLiveSun[4];    // the Sun's direction when each was taken
+uniform float uLiveFill[4];  // 1: shown only where the other discs leave gaps
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -235,14 +236,18 @@ void main() {
   // Sun is well up both now and when the scan was taken (up to an hour or so ago): their night
   // side is a different product, and the terminator moves ~15° an hour. Each satellite fades toward its
   // limb; where two overlap, the one seeing more face-on takes over within a few degrees, so
-  // the clouds' parallax between them doesn't ghost. Premultiplied: livePre over liveA.
+  // the clouds' parallax between them doesn't ghost. A fill disc (IODC's Natural Colour) goes
+  // under the others, so it shows only past their limbs. Premultiplied: livePre over liveA.
   float liveA = 0.0;
   vec3 livePre = vec3(0.0);
   if (uLiveOn > 0.5) {
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
+    vec3 fillAcc = vec3(0.0);
+    float fillSum = 0.0;
+    float fillA = 0.0;
     float texPerRad = float(textureSize(uLive, 0).x);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       if (uLiveHas[i] < 0.5) continue;
       vec4 bx = uLiveBox[i];
       float du = mod(degrees(lon) - bx.x, 360.0) / bx.z;
@@ -255,11 +260,19 @@ void main() {
       vec3 c = textureLod(uLive, vec3(du, dv, float(i)), lod).rgb;
       float q = fade * smoothstep(0.012, 0.045, max(c.r, max(c.g, c.b))) * smoothstep(0.1, 0.25, dot(n, uLiveSun[i]));
       float w = q * exp(40.0 * (cosg - 1.0));
+      if (uLiveFill[i] > 0.5) {
+        fillAcc += w * toLinear(c);
+        fillSum += w;
+        fillA = max(fillA, q);
+        continue;
+      }
       acc += w * toLinear(c);
       wsum += w;
       liveA = max(liveA, q);
     }
     livePre = acc / max(wsum, 1e-30) * liveA;
+    livePre += fillAcc / max(fillSum, 1e-30) * fillA * (1.0 - liveA);
+    liveA += fillA * (1.0 - liveA);
   }
   // Zoomed in: the satellite seeing the view most face-on, for just what's on screen, over the discs.
   if (uDetailOn > 0.5 && uDetailLive > 0.5) {

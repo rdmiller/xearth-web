@@ -64,7 +64,7 @@ export interface FrameState {
 
 type Slot = 'day' | 'night' | 'cloudPrev' | 'cloudCur';
 /** Live geostationary discs: one array layer each, this many texels a side. */
-const LIVE_LAYERS = 3;
+const LIVE_LAYERS = 4;
 const LIVE_PX = 2048;
 const LIVE_UNIT = 12;
 const UNIT: Record<Slot, number> = { day: 0, night: 1, cloudPrev: 2, cloudCur: 3 };
@@ -110,6 +110,8 @@ export class GlobeRenderer {
   private readonly liveHas = new Float32Array(LIVE_LAYERS);
   private readonly liveBox = new Float32Array(LIVE_LAYERS * 4);
   private readonly liveSub = new Float32Array(LIVE_LAYERS);
+  /** 1 for a disc shown only where the others leave gaps (LiveSource.fill). */
+  private readonly liveFill = new Float32Array(LIVE_LAYERS);
   /** The Sun's direction when each disc, and the zoomed-in live picture, was taken. */
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
   private detailSun: Vec3 = [0, 0, 0];
@@ -364,10 +366,11 @@ export class GlobeRenderer {
   }
 
   /**
-   * One satellite's live disc (layer 0–2) for a lat/lon box, with the longitude below the
+   * One satellite's live disc (layer 0–3) for a lat/lon box, with the longitude below the
    * satellite (degrees). Drawn to the array's fixed size first, whatever size it came at.
+   * `fill`: shown only where the other discs leave gaps.
    */
-  setLive(layer: number, image: CanvasImageSource, box: LatLonBox, subLon: number, scanSun: Vec3) {
+  setLive(layer: number, image: CanvasImageSource, box: LatLonBox, subLon: number, scanSun: Vec3, fill = false) {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0 + LIVE_UNIT);
     if (!this.liveSized) {
@@ -391,6 +394,7 @@ export class GlobeRenderer {
     this.liveHas[layer] = 1;
     this.liveBox.set([box.lon0, box.lat1, box.lonSpan, box.latSpan], layer * 4);
     this.liveSub[layer] = (subLon * Math.PI) / 180;
+    this.liveFill[layer] = fill ? 1 : 0;
     this.liveSun.set(scanSun, layer * 3);
   }
 
@@ -564,6 +568,7 @@ export class GlobeRenderer {
     gl.uniform1fv(this.u('uLiveHas'), this.liveHas);
     gl.uniform4fv(this.u('uLiveBox'), this.liveBox);
     gl.uniform1fv(this.u('uLiveSub'), this.liveSub);
+    gl.uniform1fv(this.u('uLiveFill'), this.liveFill);
     gl.uniform3fv(this.u('uLiveSun'), this.liveSun);
     gl.activeTexture(gl.TEXTURE15);
     gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
