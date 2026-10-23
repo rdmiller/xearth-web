@@ -27,6 +27,8 @@ export interface FrameState {
   /** Sun and Moon discs (drawn behind the globe). */
   bodies: BodyDraw[];
   aurora: boolean;
+  /** Ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
+  iono: 'off' | 'tec' | 'drap';
   /** Snow on land and sea ice (NOAA IMS + Sea Ice Index). */
   snowIce: boolean;
   /** RainViewer radar composite. */
@@ -62,6 +64,11 @@ export class GlobeRenderer {
   private readonly lightningLayer: SurfacePointLayer;
   private readonly auroraTex: WebGLTexture;
   private hasAurora = false;
+  /** One space-weather texture on the aurora's 1° grid: aurora (r), TEC (g), D-RAP (b). */
+  private auroraBytes: Uint8Array | null = null;
+  private tecBytes: Uint8Array | null = null;
+  private drapBytes: Uint8Array | null = null;
+  private swSize = { width: 360, height: 181 };
   private readonly snowIceTex: WebGLTexture;
   private hasSnowIce = false;
   private readonly radarTex: WebGLTexture;
@@ -184,17 +191,37 @@ export class GlobeRenderer {
 
   /** Aurora probability grid (row 0 = north pole, column 0 = −180°), one byte per cell. */
   setAurora(grid: AuroraGrid) {
+    this.auroraBytes = grid.data;
+    this.swSize = { width: grid.width, height: grid.height };
+    this.hasAurora = true;
+    this.uploadSpaceWeather();
+  }
+
+  /** TEC and D-RAP bytes on the aurora's grid (ionosphere.ts), or null to keep what's there. */
+  setIonosphere(tec: Uint8Array | null, drap: Uint8Array | null) {
+    if (tec) this.tecBytes = tec;
+    if (drap) this.drapBytes = drap;
+    this.uploadSpaceWeather();
+  }
+
+  /** Aurora, TEC and D-RAP share a grid, so they share a texture (and a texture unit). */
+  private uploadSpaceWeather() {
+    const { width, height } = this.swSize;
+    const n = width * height;
+    const rgba = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      rgba[i * 4] = this.auroraBytes?.[i] ?? 0;
+      rgba[i * 4 + 1] = this.tecBytes?.[i] ?? 0;
+      rgba[i * 4 + 2] = this.drapBytes?.[i] ?? 0;
+    }
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, grid.width, grid.height, 0, gl.RED, gl.UNSIGNED_BYTE, grid.data);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.hasAurora = true;
   }
 
   /** Snow (red) and ice concentration (green) on the globe's grid. */
@@ -365,6 +392,8 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
     gl.uniform1i(this.u('uAurora'), 5);
     gl.uniform1f(this.u('uAuroraOn'), f.aurora && this.hasAurora ? 1 : 0);
+    const iono = f.iono === 'tec' && this.tecBytes ? 1 : f.iono === 'drap' && this.drapBytes ? 2 : 0;
+    gl.uniform1f(this.u('uIonoMode'), iono);
     gl.activeTexture(gl.TEXTURE7);
     gl.bindTexture(gl.TEXTURE_2D, this.snowIceTex);
     gl.uniform1i(this.u('uSnowIce'), 7);

@@ -16,6 +16,10 @@ global cloud layer refreshed every hour from geostationary satellites.
   exposed for the sunlit Earth would.
 - **Space weather:** Kp (with NOAA G-scale storm level), GOES X-ray class and the last flare,
   and solar wind speed and Bz, from NOAA SWPC. The Sun disc shows the live GOES SUVI 304 Å image.
+- **Ionosphere** (Shift+I, off by default): a colour wash ~300 km up, either GloTEC's total
+  electron content (the dayside's equatorial crests, what slows GNSS signals) or D-RAP's HF
+  radio absorption (near nothing on a quiet day; a flare lights the sunlit side, a proton event
+  the polar caps), from NOAA SWPC.
 - **Sun and Moon:** both are drawn at their true positions and angular size (~0.5°), behind
   the globe like the stars. The Sun is a limb-darkened disc with a glow. The Moon uses NASA's
   LRO colour map, near side to Earth, lit by the real Sun (so it shows its phase) with faint
@@ -154,7 +158,7 @@ Imagery in the dock) turns it off.
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
-snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora), Hazards (cyclones,
+snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora, ionosphere), Hazards (cyclones,
 fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a small button for
 the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
@@ -184,6 +188,7 @@ style. A test checks that every layer hotkey has a button.
 | `B` | Sun and Moon on/off |
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
+| `Shift+I` | ionosphere: electron content → HF radio absorption → off |
 | `Z` `Y` `I` | lightning, GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
@@ -220,6 +225,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/bodies.ts      Sun/Moon positions, sizes, Moon phase and orientation, framing views
   src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
   src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
+  src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
@@ -256,6 +262,7 @@ pnpm events                  # GDACS floods, wildfires, eruptions → public/eve
 pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
 pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
+pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
 pnpm dev
 ```
 
@@ -374,6 +381,7 @@ docker compose down                 # stop (the data volume is kept)
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
+| `iono`, `ionosrc` | ionosphere wash: `tec` (GloTEC electron content), `drap` (D-RAP HF absorption) or `0`; folder holding GloTEC's `latest.json` | `0`, `ionosphere/` |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
@@ -524,6 +532,8 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 |---|---|---|---|
 | Aurora | NOAA SWPC OVATION (1° grid, ~156 KB gzipped) | browser | 10 min |
 | Space weather | NOAA SWPC Kp, latest flare, solar-wind summaries (< 1 KB each) | browser, with the aurora | 10 min |
+| Ionosphere: electron content | NOAA SWPC GloTEC, 5° × 2.5° (2.5 MB a map at SWPC, ~12 KB gzipped after the pipeline) | pipeline | hourly, browser re-reads every 15 min (only while shown) |
+| Ionosphere: HF absorption | NOAA SWPC D-RAP global frequencies, 4° × 2° text table (2.8 KB gzipped) | browser | 10 min (only while shown) |
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
@@ -537,6 +547,26 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
 | ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
+- **Ionosphere** (`iono=tec` or `drap`, Shift+I): one wash at a time, and only its source
+  is fetched.
+  - *Electron content:* GloTEC assimilates GNSS ground stations and radio occultations into a
+    global map of total electron content (TECU, 10^16 electrons/m²) every 10 minutes. SWPC
+    serves each as GeoJSON with CORS, but 5,184 points with four variables each come to
+    2.5 MB, uncompressed, so the pipeline keeps the newest map's TEC and anomaly as a 72×72
+    grid in tenths of a TECU (36 KB, 12 KB gzipped). Drawn on an "inferno"-like ramp
+    (violet → magenta → orange → pale yellow) up to 120 TECU, fading in from ~8 so the night
+    side stays clear. On 2026-10-23 at 01:55Z it ran 2–84 TECU, the equatorial anomaly's two
+    crests either side of the magnetic equator across the afternoon Pacific.
+  - *HF absorption:* D-RAP is the highest radio frequency the D region absorbs by 1 dB, on a
+    4° × 2° grid, as a text table (with SWPC's X-ray and proton messages) the browser reads
+    directly every 10 minutes. Drawn violet → green → yellow → red up to 35 MHz, SWPC's own
+    scale. SWPC's maps start at blue, but over the ocean blue disappears, so here the low end
+    is violet. A quiet day (02:16Z on 2026-10-23: up to 3.4 MHz under the Sun, over a third of
+    the globe above 1 MHz) is only a faint tint; ~10 MHz, where HF blackouts start, is clear;
+    20+ is strong. The readout names the X-ray or proton message when it isn't "normal".
+  - *One texture:* both are resampled (bilinear, wrapping the date line) onto the aurora's 1°
+    grid and share its texture, aurora in red, TEC in green, absorption in blue, so the
+    ionosphere costs no texture unit.
 - **Aurora** is drawn in the globe shader above the clouds, only where the Sun is at least ~6°
   below the horizon, using a 1 − exp(−2.5·p^1.4) response so the oval's core is bright and its
   fringe faint. The feed carries a spurious ring of values at latitudes −3…0°, an edge
@@ -750,7 +780,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
-- Aurora, space weather and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
+- Aurora, space weather, the ionosphere (GloTEC, D-RAP) and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
   Earth Science Data and Information System (ESDIS)."

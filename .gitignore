@@ -12,6 +12,7 @@ web/public/lightning/
 web/public/events/
 web/public/smoke/
 web/public/tsunami/
+web/public/ionosphere/
 *.part
 __pycache__/
 *.egg-info/

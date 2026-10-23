@@ -82,6 +82,9 @@ jobs:
       - name: Tsunami bulletins (NOAA NTWC + PTWC)
         continue-on-error: true
         run: python -m xearth_clouds.tsunami --out web/public/tsunami
+      - name: Ionosphere total electron content (NOAA SWPC GloTEC; 2.5 MB a map, so trimmed here)
+        continue-on-error: true
+        run: python -m xearth_clouds.ionosphere --out web/public/ionosphere
 
       - name: Cache NASA textures
         uses: actions/cache@v4

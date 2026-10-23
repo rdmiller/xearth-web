@@ -12,7 +12,7 @@ UTC = dt.timezone.utc
 def test_jobs_follow_the_deploy_order_with_clouds_last():
     names = [j[0] for j in run.JOBS]
     assert names[-1] == "clouds"  # reads the textures, and is the one layer everything needs
-    assert set(names) == {"satellites", "launches", "storms", "fires", "lightning", "events", "snowice", "smoke", "tsunami", "clouds"}
+    assert set(names) == {"satellites", "launches", "storms", "fires", "lightning", "events", "snowice", "smoke", "tsunami", "ionosphere", "clouds"}
 
 
 def test_next_run_is_the_next_hh50():

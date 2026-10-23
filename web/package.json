@@ -22,6 +22,7 @@
     "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice",
     "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke",
     "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
+    "ionosphere": "cd ../pipeline && python -m xearth_clouds.ionosphere --out ../web/public/ionosphere",
     "icons": "python scripts/make-icons.py",
     "android:build": "vite build --mode android && cap sync android",
     "android:open": "cap open android",

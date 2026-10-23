@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
+import { defaults, type IonoMode, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -100,6 +100,12 @@ export const ISSLIVE_LABELS: Record<IssLiveMode, string> = {
   track: 'ISS telemetry while tracking the ISS',
   on: 'ISS telemetry always',
   off: 'ISS telemetry off',
+};
+const NEXT_IONO: Record<IonoMode, IonoMode> = { off: 'tec', tec: 'drap', drap: 'off' };
+export const IONO_LABELS: Record<IonoMode, string> = {
+  tec: 'Ionosphere: total electron content (NOAA SWPC GloTEC)',
+  drap: 'Ionosphere: HF radio absorption (NOAA SWPC D-RAP)',
+  off: 'Ionosphere off',
 };
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
@@ -210,6 +216,17 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('b', 'bodies', 'Sun and Moon'),
   layer('u', 'launches', 'Upcoming launches'),
   layer('a', 'aurora', 'Aurora'),
+  {
+    keys: ['shift+i'],
+    label: 'Shift+I',
+    description: 'Ionosphere: electron content → HF radio absorption → off (NOAA SWPC)',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_IONO[ctx.settings.iono];
+      ctx.update({ iono: next });
+      ctx.toast(IONO_LABELS[next]);
+    },
+  },
   layer('w', 'storms', 'Tropical cyclones'),
   layer('x', 'fires', 'Fires (24 h)'),
   layer('q', 'quakes', 'Earthquakes (24 h)'),

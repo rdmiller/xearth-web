@@ -10,7 +10,7 @@
 #   web       (always)  nginx: the built app, plus the pipeline's folders from the volume
 #
 # The site works before the first run finishes: layers without data yet say so in the readout.
-# Radar, aurora, quakes, space weather, US tsunami alerts and ISS telemetry come from their
+# Radar, aurora, quakes, space weather, HF absorption, US tsunami alerts and ISS telemetry come from their
 # sources straight to the browser, not through here.
 
 name: xearth

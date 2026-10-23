@@ -47,6 +47,7 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
+import { DRAP_URL, drapGrid, drapSummary, isTecManifest, parseDrap, tecGrid, tecSummary, type Drap, type TecManifest } from './ionosphere';
 import { chooseRange, GibsDetail, visibleBox, type Detail } from './gibs';
 import {
   decodeNwsAlerts,
@@ -828,6 +829,62 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
   },
 };
 
+// ---- ionosphere (NOAA SWPC) --------------------------------------------------------------
+// One wash at a time, so only its source is fetched: GloTEC from the pipeline (each map is
+// 2.5 MB at SWPC), D-RAP straight from SWPC (CORS-enabled, 2.8 KB gzipped). See ionosphere.ts.
+
+let tecManifest: TecManifest | undefined;
+let drap: Drap | undefined;
+const IONO: Record<'tec' | 'drap', { everyMs: number; load: () => Promise<void>; dataAt: () => string | null | undefined }> = {
+  tec: {
+    // The pipeline refreshes it hourly; GloTEC itself every 10 minutes.
+    everyMs: 15 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.ionosrc));
+      if (!isTecManifest(m)) throw new Error('ionosphere/latest.json is not a GloTEC grid');
+      if (m.time !== tecManifest?.time) renderer.setIonosphere(tecGrid(m), null);
+      tecManifest = m;
+    },
+    dataAt: () => tecManifest?.time,
+  },
+  drap: {
+    everyMs: 10 * 60_000,
+    load: async () => {
+      const r = await fetch(DRAP_URL, { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${r.status} ${DRAP_URL}`);
+      const d = parseDrap(await r.text());
+      if (!d) throw new Error('the D-RAP table could not be read');
+      renderer.setIonosphere(null, drapGrid(d));
+      drap = d;
+    },
+    dataAt: () => drap?.valid,
+  },
+};
+let ionoTimer: ReturnType<typeof setInterval> | undefined;
+
+function runIono(mode: 'tec' | 'drap'): Promise<void> {
+  feedLog.begin(mode, Date.now(), IONO[mode].everyMs);
+  return IONO[mode]
+    .load()
+    .then(() => feedLog.done(mode, Date.now(), IONO[mode].dataAt()))
+    .catch((err) => {
+      feedLog.fail(mode, Date.now(), err);
+      console.warn(`ionosphere (${mode}):`, err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncIono() {
+  clearInterval(ionoTimer);
+  ionoTimer = undefined;
+  feedLog.stop('tec');
+  feedLog.stop('drap');
+  const mode = settings.iono;
+  if (mode === 'off') return;
+  void runIono(mode);
+  ionoTimer = setInterval(() => void runIono(mode), IONO[mode].everyMs);
+}
+
 const hazardTimers: Partial<Record<HazardKey, ReturnType<typeof setInterval>>> = {};
 
 /** Load a layer once. `everyMs`: this is its scheduled check, and the next is due that long after. */
@@ -1031,6 +1088,8 @@ function layerRows(): ReadoutRow[] {
   }
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
+  if (settings.iono === 'tec' && tecManifest) add('ionosphere', tecSummary(tecManifest));
+  if (settings.iono === 'drap' && drap) add('ionosphere', drapSummary(drap));
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
   if (settings.aurora && spaceWeather) add('space wx', spaceWeatherSummary(spaceWeather));
   if (settings.storms && stormManifest) add('cyclones', String(stormManifest.storms.length));
@@ -1158,6 +1217,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'smoke', label: 'Smoke', source: 'NOAA HMS', freshMs: PIPELINE_FRESH, on: () => settings.smoke },
   { key: 'sun', label: 'Sun image', source: 'GOES SUVI', freshMs: 30 * MIN, on: () => settings.bodies && feedLog.get('sun').startedAt !== undefined, everyMs: SUN_IMAGE_EVERY_MS },
   { key: 'aurora', label: 'Aurora', source: 'NOAA SWPC', freshMs: 20 * MIN, on: () => settings.aurora },
+  { key: 'tec', label: 'Ionosphere TEC', source: 'SWPC GloTEC', freshMs: PIPELINE_FRESH, on: () => settings.iono === 'tec', everyMs: 15 * MIN },
+  { key: 'drap', label: 'HF absorption', source: 'SWPC D-RAP', freshMs: 20 * MIN, on: () => settings.iono === 'drap', everyMs: 10 * MIN },
   { key: 'storms', label: 'Cyclones', source: 'GDACS · NHC', freshMs: PIPELINE_FRESH, on: () => settings.storms },
   { key: 'fires', label: 'Fires', source: 'NASA FIRMS', freshMs: PIPELINE_FRESH, on: () => settings.fires },
   { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
@@ -1504,6 +1565,7 @@ function frame(now: number) {
     satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt, categories: satLooks } : null,
     bodies: bodies.draws,
     aurora: settings.aurora,
+    iono: settings.iono,
     fires: settings.fires
       ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)) }
       : null,
@@ -1612,6 +1674,7 @@ let radarZoomTimer: ReturnType<typeof setTimeout> | undefined;
 
 function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
+  const ionoBefore = settings.iono;
   const magBefore = settings.mag;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
@@ -1622,6 +1685,7 @@ function update(patch: Partial<Settings>) {
     if (settings[key] !== hazardsBefore[key]) syncHazard(key);
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
+  if (settings.iono !== ionoBefore) syncIono();
   syncIssLive();
   satTree.refresh(settings, treeCounts());
   drawer.refresh(settings);
@@ -1804,6 +1868,7 @@ syncClouds();
 syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
+syncIono();
 
 // Installed web app / Android TWA: an offline shell (public/sw.js). Not inside the
 // Capacitor app, whose files are bundled; there, Android's back button closes panels.
