@@ -358,7 +358,7 @@ export interface OverlayState {
   /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
   tsunami?: TsunamiOverlay[];
   tsunamiZones?: ZoneOverlay[];
-  /** US severe weather: NWS warning polygons and SPC outlook areas, drawn under everything else. */
+  /** Severe weather: NWS warning polygons, SPC outlook areas and MeteoAlarm regions, drawn under everything else. */
   severe?: SevereShape[];
   severeLabels?: SevereLabel[];
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
@@ -965,7 +965,11 @@ export interface SevereShape {
   /** Translucent fill (even-odd, so holes stay open), or none. */
   fill?: string;
   fillAlpha?: number;
+  /** Non-zero for many regions in one shape, wound so that overlaps fill and holes don't. */
+  fillRule?: CanvasFillRule;
   lineWidth: number;
+  /** Outline opacity (default 0.9). */
+  strokeAlpha?: number;
   dashed?: boolean;
 }
 
@@ -1016,9 +1020,9 @@ function drawSevere(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
     if (shape.fill) {
       ctx.globalAlpha = shape.fillAlpha ?? 0.2;
       ctx.fillStyle = shape.fill;
-      ctx.fill(whole, 'evenodd');
+      ctx.fill(whole, shape.fillRule ?? 'evenodd');
     }
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = shape.strokeAlpha ?? 0.9;
     ctx.strokeStyle = shape.stroke;
     ctx.lineWidth = shape.lineWidth;
     ctx.setLineDash(shape.dashed ? [4, 3] : []);

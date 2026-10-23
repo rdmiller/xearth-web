@@ -82,6 +82,9 @@ jobs:
       - name: Tsunami bulletins (NOAA NTWC + PTWC)
         continue-on-error: true
         run: python -m xearth_clouds.tsunami --out web/public/tsunami
+      - name: European weather warnings (MeteoAlarm; its feeds send no CORS headers)
+        continue-on-error: true
+        run: python -m xearth_clouds.meteoalarm --out web/public/meteoalarm
       - name: Ionosphere total electron content (NOAA SWPC GloTEC; 2.5 MB a map, so trimmed here)
         continue-on-error: true
         run: python -m xearth_clouds.ionosphere --out web/public/ionosphere

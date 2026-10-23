@@ -22,6 +22,7 @@
     "snowice": "cd ../pipeline && python -m xearth_clouds.snowice --out ../web/public/snowice",
     "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke",
     "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
+    "meteoalarm": "cd ../pipeline && python -m xearth_clouds.meteoalarm --out ../web/public/meteoalarm",
     "ionosphere": "cd ../pipeline && python -m xearth_clouds.ionosphere --out ../web/public/ionosphere",
     "meteors": "cd ../pipeline && python -m xearth_clouds.meteors --out ../web/public/meteors",
     "buoys": "cd ../pipeline && python -m xearth_clouds.buoys --out ../web/public/buoys",

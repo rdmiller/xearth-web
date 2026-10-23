@@ -70,7 +70,7 @@ export interface Settings extends ViewSettings {
   tsunami: boolean;
   /** Live geostationary pictures, yesterday's VIIRS mosaic when zoomed in, or neither. */
   imagery: ImageryMode;
-  /** US severe weather: NWS storm-based warnings and the SPC day-1 outlook. */
+  /** Severe weather: NWS storm-based warnings and the SPC day-1 outlook (US), MeteoAlarm's warnings (Europe). */
   severe: boolean;
   /** The last day's meteors (GMN) and recent fireballs (CNEOS); off by default, it's thousands of streaks. */
   meteors: boolean;
@@ -110,6 +110,8 @@ export interface Settings extends ViewSettings {
   snowsrc: string;
   smokesrc: string;
   tsunamisrc: string;
+  /** Where the pipeline's MeteoAlarm latest.json lives. */
+  meteoalarmsrc: string;
   /** Where the pipeline's meteors latest.json lives. */
   meteorsrc: string;
   /** Where the pipeline's buoys latest.json, history.json and argo.json live. */
@@ -199,6 +201,7 @@ export function defaults(): Settings {
     snowsrc: dataSrc('VITE_SNOW_BASE', 'snowice/'),
     smokesrc: dataSrc('VITE_SMOKE_BASE', 'smoke/'),
     tsunamisrc: dataSrc('VITE_TSUNAMI_BASE', 'tsunami/'),
+    meteoalarmsrc: dataSrc('VITE_METEOALARM_BASE', 'meteoalarm/'),
     meteorsrc: dataSrc('VITE_METEORS_BASE', 'meteors/'),
     buoysrc: dataSrc('VITE_BUOYS_BASE', 'buoys/'),
     iono: 'off',
@@ -339,6 +342,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     snowsrc: q.get('snowsrc') ?? base.snowsrc,
     smokesrc: q.get('smokesrc') ?? base.smokesrc,
     tsunamisrc: q.get('tsunamisrc') ?? base.tsunamisrc,
+    meteoalarmsrc: q.get('meteoalarmsrc') ?? base.meteoalarmsrc,
     meteorsrc: q.get('meteorsrc') ?? base.meteorsrc,
     buoysrc: q.get('buoysrc') ?? base.buoysrc,
     iono: ionoMode(q, base.iono),

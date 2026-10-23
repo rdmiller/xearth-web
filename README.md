@@ -71,6 +71,11 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **US severe weather:** NWS tornado, severe thunderstorm, flash flood and other storm-based
     warnings as the polygons forecasters drew, and the Storm Prediction Center's day-1 outlook
     (marginal to high risk) in SPC's own colours.
+  - **European weather warnings:** MeteoAlarm's warnings from 38 national weather services,
+    each region coloured by its worst warning in force in MeteoAlarm's yellow, orange and red,
+    and outlined, dashed, where a worse one starts within two days. Red ones get a label and a
+    toast; a click opens a region's warnings, in English, and a searched European place's card
+    lists its own.
 - **Buoys** (Shift+B, off by default): the ~1,900 buoys reporting on NOAA's global network
   (drifting, moored, tropical, ice and DART tsunami buoys) as dots by type. Click one for its
   window: waves, water temperature, wind and pressure with their last 24 hours as sparklines,
@@ -415,8 +420,8 @@ A click (a press that moves under 5 px, not part of a pinch) on a marker opens i
 under the others on the right, and puts a reticle on it. The nearest marker of every layer
 shown wins, within about its drawn size (8 px for a bulk satellite's dot, 14 for a named
 satellite, a launch, a cyclone or a tsunami bulletin, a quake's ring plus 3 px). A click on
-nothing marked falls through to the US severe-weather warning under the pointer, if any, the
-one drawn on top. Clicking empty space does nothing; × closes the window. With a mouse, the
+nothing marked falls through to the severe-weather warning under the pointer, if any, the
+one drawn on top (a US warning, else the worst MeteoAlarm region). Clicking empty space does nothing; × closes the window. With a mouse, the
 cursor turns from the grab hand to the pointing hand over anything a click would open,
 checked as the mouse moves and every 300 ms while it rests, since satellites move under it.
 
@@ -433,7 +438,9 @@ checked as the mouse moves and every 300 ms while it rests, since satellites mov
   **cyclones** (class, wind, pressure, motion, GDACS impact), **GDACS** floods, fires and
   eruptions (impact, burned area, since when, a link to the GDACS report), **tsunami** bulletins
   (centre, magnitude, region, a link to the bulletin), **fireballs** (impact and radiated
-  energy, altitude, speed) and **NWS warnings** (until when, the threat tags, the counties).
+  energy, altitude, speed), **NWS warnings** (until when, the threat tags, the counties) and
+  **MeteoAlarm regions** (each warning's level, type and hours, who issued it, the worst one's
+  text and advice, a link to the national service).
 - **Buoys** keep their own window (see Buoys under Hazard layers).
 - **Following:** the window's Follow / Stop following button switches it. A click while
   following still picks; only a drag lets go (into a fixed view from where the view was), so
@@ -481,7 +488,7 @@ style. A test checks that every layer hotkey has a button.
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` | rain: radar with satellite rain where there's none → radar only → off |
 | `Shift+S` `Shift+T` | smoke, tsunami alerts on/off |
-| `Shift+W` | US severe weather warnings and SPC outlook on/off |
+| `Shift+W` | severe weather on/off: US warnings and SPC outlook, MeteoAlarm's European warnings |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
 | `Shift+P` | imagery: live (GOES, MTG) → yesterday's when zoomed in (VIIRS) → painted |
@@ -517,6 +524,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
   src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
   src/severe.ts      NWS storm-based warnings and the SPC outlook: decoding, styles, labels
+  src/meteoalarm.ts  MeteoAlarm's European warnings (pipeline): region levels, window, labels
   src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
   src/meteors.ts     GMN meteor trajectories as streaks, CNEOS fireballs, shower colours
   src/buoys.ts       buoys: decoding, picking, nearest to a place, drift, pressure tendency, wording
@@ -569,6 +577,7 @@ pnpm events                  # GDACS floods, wildfires, eruptions → public/eve
 pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
 pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
+pnpm meteoalarm              # MeteoAlarm warnings, 38 countries, with region outlines → public/meteoalarm/
 pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
 pnpm meteors                 # GMN trajectories (last 24 h) + CNEOS fireballs (90 d) → public/meteors/
 pnpm buoys                   # NOAA OSMC + NDBC: buoys, latest + last 24 h, and Argo floats → public/buoys/
@@ -689,7 +698,7 @@ docker compose down                 # stop (the data volume is kept)
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, any other satellite by NORAD number (`44744`), `launch` (the picked, current or next launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
-| `pick` | what was clicked, whose window is open: `sat:`, `launch:`, `quake:`, `storm:`, `event:`, `tsunami:`, `fireball:` or `warning:` and its id | none |
+| `pick` | what was clicked, whose window is open: `sat:`, `launch:`, `quake:`, `storm:`, `event:`, `tsunami:`, `fireball:`, `warning:`, `volcano:` or `alarm:` (a MeteoAlarm region) and its id | none |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json`, `history.json` and `argo.json` | `0`, none, `buoys/` |
 | `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
@@ -698,13 +707,13 @@ docker compose down                 # stop (the data volume is kept)
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
 | `imagery` | `live` GOES/MTG pictures by day, `daily` yesterday's VIIRS when zoomed in, `painted` neither (`truecolor=0/1` still read) | `live` |
-| `severe` | US severe weather: NWS storm-based warnings and the SPC day-1 outlook | 1 |
+| `severe` | severe weather: NWS storm-based warnings and the SPC day-1 outlook (US), MeteoAlarm's warnings (Europe) | 1 |
 | `imerg` | with the radar, NASA IMERG satellite rain where there's no radar | 1 |
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
-| `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
+| `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc`, `meteoalarmsrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami / MeteoAlarm `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/`, `meteoalarm/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (everything ticked), `featured` (named only), `0` | `all` |
 | `satshow` | categories ticked in the satellite panel: comma list of `iss`, `tiangong`, `satgus`, `starlink`, `oneweb`, `kuiper`, `qianfan`, `weather-geo`, `weather-heo`, `weather-leo`, `gps`, `glonass`, `galileo`, `beidou`, or `none` | all |
@@ -873,6 +882,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Smoke | NOAA/NESDIS HMS smoke polygons (KML) | pipeline | through the day, hourly; browser re-reads every 30 min |
 | Tsunami (US alerts) | NWS alerts API: active Tsunami Warning / Watch / Advisory, plus sampled zone geometry | browser | 2 min |
 | Severe weather (US) | NWS alerts API: storm-based warning polygons; SPC day-1 categorical outlook (GeoJSON) | browser | 2 min (outlook 15 min) |
+| Weather warnings (Europe) | MeteoAlarm CAP feeds, one per country (JSON, ~37 MB in all); region outlines baked from MeteoAlarm's geocodes | pipeline | hourly; browser re-reads every 15 min |
 | Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
 | ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
@@ -1152,6 +1162,35 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     limb is drawn as an outline only.
   - On 2026-10-23 at 02:00Z that was 5 severe thunderstorm and 14 flash flood warnings over
     the Southwest, inside a Slight Risk over Arizona and New Mexico.
+- **European weather warnings (MeteoAlarm):**
+  - *Source:* MeteoAlarm (EUMETNET) gathers the warnings of 38 national weather services into a
+    CAP feed per country (feeds.meteoalarm.org, CC BY 4.0). The feeds send no CORS headers and
+    keep expired warnings, so the pipeline reads all 38 (~37 MB, under a minute) and keeps what's
+    in force or starts within 48 h, at level yellow and up (green means no warning). Nearly every
+    service sends English alongside its own language; that's the text kept.
+  - *Levels and types:* MeteoAlarm's awareness level is the same scale everywhere: yellow
+    (potentially dangerous), orange (dangerous), red (very dangerous). The colours are its style
+    guide's, #ffda22, #ff9300 and #ff0000. Its awareness type says what: wind, rain,
+    thunderstorm, snow or ice, fog, heat, cold, coastal event, forest fire, avalanche, flood.
+  - *Regions:* services name the areas they warn in different ways, and the pipeline turns each
+    into an outline. Some put the polygon in the warning (France, Switzerland, Norway, Sweden,
+    the UK, Israel, Ukraine, the Baltics, Slovenia, Luxembourg). Most give MeteoAlarm's EMMA_ID
+    region codes, whose outlines come from its geocode file (2,006 regions, 33 MB), simplified to
+    ~1 km and baked into the pipeline (0.26 MB, `pipeline/scripts/bake_meteoalarm_regions.py`).
+    Bulgaria, Hungary, Romania and North Macedonia give only NUTS codes, matched to the region of
+    the same name. Belgium's provinces and Ireland's counties (FIPS codes) go by small tables. Croatia's
+    counties are newer than the geocode file and come from Natural Earth. On 2026-10-23 every
+    area in all 38 feeds found its outline. The pipeline's file was 0.67 MB (0.15 MB gzipped)
+    for ~400 warnings over ~760 regions.
+  - *Drawing:* a region is filled by its worst warning in force and outlined, dashed, in the
+    colour of a worse one still to come. Each level is one shape, filled non-zero with outlines
+    wound one way and holes the other, so where regions overlap (Ireland's sea areas under the
+    Met Office's polygons, Dutch coastal waters over German islands) they fill once instead of
+    cancelling out, and holes stay open. The borders between regions are kept faint. Red warnings get a label at their
+    largest region and a toast when new (one toast for more than three). Shapes are rebuilt each
+    minute, as warnings begin and end.
+  - On 2026-10-23 at 19:30Z: a red wind warning over the Harz above 1,000 m (gusts up to 130 km/h),
+    49 orange and ~350 yellow, most for wind.
 - **ISS live telemetry:** NASA publishes Mission Control's ISS console data through a
   Lightstreamer server (adapter set `ISSLIVE` at push.lightstreamer.com); the symbol list is
   NASA's PUIList.xml. The client library (~50 KB gzipped) is loaded only when wanted, and by
@@ -1313,6 +1352,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   (tsunami.gov); NOAA National Weather Service alerts.
 - Severe weather: NOAA National Weather Service alerts (api.weather.gov) and the NOAA Storm
   Prediction Center's day-1 convective outlook.
+- European weather warnings: MeteoAlarm, data provided by EUMETNET members (CC BY 4.0); region
+  outlines from MeteoAlarm's geocodes, and Croatia's counties from Natural Earth (public domain).
 - ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer
   (lightstreamer-client-web, Apache-2.0).
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and

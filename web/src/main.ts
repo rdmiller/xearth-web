@@ -97,6 +97,23 @@ import {
   type Polygon,
   type SevereWarning,
 } from './severe';
+import {
+  ALARM_CHECK_MS,
+  alarmGroups,
+  alarmInfo,
+  alarmRows,
+  alarmSummary,
+  freshRed,
+  inMeteoAlarmArea,
+  isAlarmManifest,
+  labelledAlarms,
+  labelRegion,
+  LEVEL_COLOR,
+  placeAlarms,
+  redToast,
+  regionStates,
+  type AlarmManifest,
+} from './meteoalarm';
 import { DRAP_URL, drapGrid, drapSummary, isTecManifest, parseDrap, tecGrid, tecSummary, type Drap, type TecManifest } from './ionosphere';
 import {
   decodeNwsAlerts,
@@ -754,6 +771,10 @@ const SPC_EVERY_MS = 15 * 60_000;
 const zoneCentroids = new Map<string, [number, number] | null>();
 /** NWS alerts already announced with a toast. */
 const announced = new Set<string>();
+/** MeteoAlarm's warnings for Europe, via the pipeline; its red warnings already announced. */
+let alarmManifest: AlarmManifest | undefined;
+const announcedAlarms = new Set<string>();
+let alarmTimer: ReturnType<typeof setInterval> | undefined;
 let radarFrame: RadarFrame | undefined;
 let radarZoomShown = 0;
 /** Where RainViewer has radars (refetched daily), and NASA IMERG for everywhere it hasn't. */
@@ -1376,14 +1397,41 @@ function eventOverlays(): EventOverlay[] {
 }
 
 /** Tsunami markers change only with their data (and statements' label windows), so built per load. */
-/** Polygons on the globe, built once per load: SPC's areas under NWS's warnings, the worst on top. */
-let severeCache: { shapes: SevereShape[]; labels: SevereLabel[] } | undefined;
+/**
+ * Polygons on the globe, built once per load: SPC's areas under NWS's warnings, the worst on
+ * top, and MeteoAlarm's regions (rebuilt each minute too, as its warnings begin and end).
+ */
+let severeCache: { shapes: SevereShape[]; labels: SevereLabel[]; at: number } | undefined;
 function severeOverlays(): { shapes: SevereShape[]; labels: SevereLabel[] } {
   if (!settings.severe) return { shapes: [], labels: [] };
-  if (severeCache) return severeCache;
+  const now = Date.now();
+  if (severeCache && (!alarmManifest || now - severeCache.at < 60_000)) return severeCache;
   const toGlobe = (polygons: Polygon[]) => polygons.map((p) => p.map((ring) => densify(ring).map(([lon, lat]) => fromLatLon(lat, lon))));
   const shapes: SevereShape[] = [];
   const labels: SevereLabel[] = [];
+  // Europe: each region filled by its worst warning in force (one shape a level, its regions'
+  // shared borders faint), and outlined, dashed, where something worse is still to come.
+  if (alarmManifest) {
+    const m = alarmManifest;
+    for (const g of alarmGroups(regionStates(m, now))) {
+      const color = LEVEL_COLOR[g.level];
+      const polygons = toGlobe(g.keys.flatMap((k) => m.regions[k].polygons));
+      shapes.push(
+        g.upcoming
+          ? { polygons, stroke: color, lineWidth: 1.2, dashed: true }
+          : { polygons, stroke: color, fill: color, fillAlpha: 0.3, fillRule: 'nonzero', lineWidth: 0.6, strokeAlpha: 0.55 },
+      );
+    }
+    const reds = labelledAlarms(m, now);
+    for (const w of reds) {
+      const key = labelRegion(m, w);
+      const ring = key && largestRing(m.regions[key].polygons);
+      if (!key || !ring) continue;
+      const [lon, lat] = ringCentre(ring);
+      // A few always show; past that they give way to each other.
+      labels.push({ anchor: fromLatLon(lat, lon), color: LEVEL_COLOR[w.level], rows: alarmRows(m, w, key, now), optional: reds.length > 4 });
+    }
+  }
   for (const a of spcOutlook?.areas ?? []) {
     // General thunder covers half the country most days: a faint dashed edge, no fill.
     const tstm = a.level === 'TSTM';
@@ -1405,8 +1453,39 @@ function severeOverlays(): { shapes: SevereShape[]; labels: SevereLabel[] } {
       labels.push({ anchor: fromLatLon(lat, lon), color, rows: warningRows(w) });
     }
   }
-  severeCache = { shapes, labels };
+  severeCache = { shapes, labels, at: now };
   return severeCache;
+}
+
+// ---- MeteoAlarm (Europe's weather warnings, via the pipeline), with the severe weather ---------
+
+function runAlarm(): Promise<void> {
+  feedLog.begin('meteoalarm', Date.now(), ALARM_CHECK_MS);
+  return fetchJson(pipelineFile(settings.meteoalarmsrc))
+    .then((m) => {
+      if (!isAlarmManifest(m)) throw new Error('meteoalarm/latest.json is not a MeteoAlarm manifest');
+      if (m.generated !== alarmManifest?.generated) {
+        alarmManifest = m;
+        severeCache = undefined;
+        const fresh = freshRed(m, announcedAlarms, Date.now());
+        if (fresh.length > 3) toast(`${fresh.length} new red weather warnings in Europe`);
+        else for (const w of fresh) toast(redToast(m, w));
+        requestRedraw();
+      }
+      feedLog.done('meteoalarm', Date.now(), Date.parse(m.generated));
+    })
+    .catch((err) => {
+      feedLog.fail('meteoalarm', Date.now(), err);
+      console.warn('MeteoAlarm:', err);
+    });
+}
+
+function syncAlarm() {
+  clearInterval(alarmTimer);
+  alarmTimer = undefined;
+  if (!settings.severe) return feedLog.stop('meteoalarm');
+  void runAlarm();
+  alarmTimer = setInterval(() => void runAlarm(), ALARM_CHECK_MS);
 }
 
 let tsunamiCache: { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[]; at: number } | undefined;
@@ -1690,6 +1769,7 @@ function layerRows(): ReadoutRow[] {
   if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
   if (settings.buoys && buoyManifest) add('buoys', buoySummary(buoyManifest));
   if (settings.severe && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
+  if (settings.severe && alarmManifest) add('Europe', alarmSummary(alarmManifest, Date.now()));
   return rows;
 }
 
@@ -1837,6 +1917,7 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'lightning', label: 'Lightning', source: 'GOES GLM · MTG LI', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
   { key: 'severe', label: 'Severe weather', source: 'NWS · SPC', freshMs: 15 * MIN, on: () => settings.severe },
+  { key: 'meteoalarm', label: 'Europe warnings', source: 'MeteoAlarm', freshMs: PIPELINE_FRESH, on: () => settings.severe, everyMs: ALARM_CHECK_MS },
   { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
   // GMN's newest trajectories are hours behind its cameras, and its daily file a day.
   // The pipeline runs hourly; buoys report every 10 min to a few hours.
@@ -1974,6 +2055,14 @@ function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]
       const centre = ring && ringCentre(ring);
       return { detail: warningInfo(w, WARNING_COLOR[w.event], centre, now), pos: centre && at(centre[1], centre[0]) };
     }
+    case 'alarm': {
+      const region = settings.severe ? alarmManifest?.regions[p.id] : undefined;
+      if (!region) return undefined;
+      const ring = largestRing(region.polygons);
+      const centre = ring && ringCentre(ring);
+      const detail = alarmInfo(alarmManifest!, p.id, now, centre);
+      return detail && { detail, pos: centre && at(centre[1], centre[0]) };
+    }
   }
 }
 
@@ -2065,14 +2154,23 @@ function targetAt(clientX: number, clientY: number): string | undefined {
 
   const hit = nearestTarget(hits, x, y);
   if (hit) return hit.key;
-  if (!settings.severe || !severeWarnings.length) return undefined;
+  if (!settings.severe || (!severeWarnings.length && !alarmManifest)) return undefined;
   const ground = unproject(camera, (x - cx) / r, -(y - cy) / r);
   if (!ground) return undefined;
   const { lat, lon } = toLatLon(ground);
   // The one drawn on top: tornadoes over thunderstorms over floods.
   const order = (w: SevereWarning) => WARNING_EVENTS.indexOf(w.event);
   const under = [...severeWarnings].sort((a, b) => order(b) - order(a)).find((w) => w.polygons.some((poly) => inPolygon(lon, lat, poly)));
-  return under && pickKey('warning', under.id);
+  if (under) return pickKey('warning', under.id);
+  // A MeteoAlarm region under a warning; where regions overlap, the worst.
+  if (!alarmManifest) return undefined;
+  let region: string | undefined;
+  let worst = 0;
+  for (const [key, s] of regionStates(alarmManifest, Date.now())) {
+    const level = Math.max(s.now, s.soon);
+    if (level > worst && alarmManifest.regions[key].polygons.some((poly) => inPolygon(lon, lat, poly))) [region, worst] = [key, level];
+  }
+  return region && pickKey('alarm', region);
 }
 
 /** A click (a press that didn't move) opens the window of what's under it. */
@@ -2452,9 +2550,11 @@ async function getJson(url: string, init?: RequestInit): Promise<unknown> {
 async function placeAlerts(place: Place): Promise<Required<Pick<PlaceReport, 'alerts' | 'checked'>>> {
   const { lat, lon } = place;
   const nws = inNwsArea(lat, lon);
-  const [air, nwsAlerts, nearby] = await Promise.allSettled([
+  const europe = inMeteoAlarmArea(lat, lon);
+  const [air, nwsAlerts, alarms, nearby] = await Promise.allSettled([
     getJson(airQualityUrl(lat, lon)).then(aqiAlert),
     nws ? getJson(nwsPointAlertsUrl(lat, lon), { headers: { Accept: 'application/geo+json' } }).then(decodeNwsPointAlerts) : Promise.resolve([]),
+    europe ? layerData(settings.severe, alarmManifest, pipelineFile(settings.meteoalarmsrc), isAlarmManifest).then((m) => (m ? placeAlarms(m, lat, lon, Date.now()) : null)) : Promise.resolve(null),
     nearbySources().then((src) => nearbyHazards(lat, lon, src, Date.now(), imperial)),
   ]);
   const alerts: LocalAlert[] = [];
@@ -2462,6 +2562,10 @@ async function placeAlerts(place: Place): Promise<Required<Pick<PlaceReport, 'al
   if (nws && nwsAlerts.status === 'fulfilled') {
     alerts.push(...nwsAlerts.value);
     checked.push('NWS');
+  }
+  if (alarms.status === 'fulfilled' && alarms.value) {
+    alerts.push(...alarms.value);
+    checked.push('MeteoAlarm');
   }
   if (air.status === 'fulfilled') {
     if (air.value) alerts.push(air.value);
@@ -2471,7 +2575,7 @@ async function placeAlerts(place: Place): Promise<Required<Pick<PlaceReport, 'al
     alerts.push(...nearby.value);
     checked.push('nearby hazards');
   }
-  for (const r of [air, nwsAlerts, nearby]) if (r.status === 'rejected') console.warn('place card:', r.reason);
+  for (const r of [air, nwsAlerts, alarms, nearby]) if (r.status === 'rejected') console.warn('place card:', r.reason);
   return { alerts, checked };
 }
 
@@ -2806,6 +2910,7 @@ function update(patch: Partial<Settings>) {
     syncFlood();
     syncHans();
   }
+  if (settings.severe !== hazardsBefore.severe) syncAlarm();
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -3015,6 +3120,7 @@ syncAsh();
 syncSst();
 syncFlood();
 syncHans();
+syncAlarm();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);

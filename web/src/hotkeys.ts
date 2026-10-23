@@ -278,7 +278,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+b', 'buoys', 'Buoys (NOAA): click one for its last 24 hours'),
   layer('shift+m', 'meteors', 'Meteors, last 24 h (Global Meteor Network), and fireballs (NASA/JPL)'),
   layer('shift+a', 'ash', 'Volcanic ash: EUMETSAT Ash RGB, and eruptions (GDACS)'),
-  layer('shift+w', 'severe', 'Severe weather warnings and outlook (US: NWS, SPC)'),
+  layer('shift+w', 'severe', 'Severe weather warnings and outlook (US: NWS, SPC; Europe: MeteoAlarm)'),
   {
     keys: ['shift+p'],
     label: 'Shift+P',
