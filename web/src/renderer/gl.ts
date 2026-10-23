@@ -68,6 +68,11 @@ export interface FrameState {
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number; categories: SatCategoryLook[] } | null;
   dpr: number;
+  /**
+   * Pixels per Earth radius on the ground, over radiusPx: how much finer the textures must be
+   * sampled than radiusPx says. 1 when absent; the ISS camera's ground is ~18× nearer.
+   */
+  lodScale?: number;
 }
 
 type Slot = 'day' | 'night';
@@ -159,6 +164,8 @@ export class GlobeRenderer {
   private readonly aniso: EXT_texture_filter_anisotropic | null;
   /** 0 → previous cloud map, 1 → current; animated by the caller after setClouds. */
   cloudMix = 1;
+  /** renderView's offscreen frame, at the size last asked for. */
+  private view: { fbo: WebGLFramebuffer; rb: WebGLRenderbuffer; width: number; height: number; pixels: Uint8Array } | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false });
@@ -625,20 +632,58 @@ export class GlobeRenderer {
   }
 
   render(f: FrameState) {
+    this.draw(f, this.canvas.width, this.canvas.height);
+  }
+
+  /**
+   * Draw a frame into an offscreen buffer of this size rather than the canvas, and read it
+   * back (RGBA, rows bottom to top): a second view of everything uploaded — the ISS camera —
+   * for one more pass over a small frame and no more texture units. The read waits on the GPU.
+   */
+  renderView(f: FrameState, width: number, height: number): Uint8Array {
+    const gl = this.gl;
+    let v = this.view;
+    if (!v || v.width !== width || v.height !== height) {
+      this.releaseView();
+      const rb = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, width, height);
+      const fbo = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+      v = this.view = { fbo, rb, width, height, pixels: new Uint8Array(width * height * 4) };
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, v.fbo);
+    this.draw(f, width, height);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, v.pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return v.pixels;
+  }
+
+  /** Free renderView's buffer (the camera was closed). */
+  releaseView() {
+    if (!this.view) return;
+    this.gl.deleteFramebuffer(this.view.fbo);
+    this.gl.deleteRenderbuffer(this.view.rb);
+    this.view = null;
+  }
+
+  private draw(f: FrameState, width: number, height: number) {
     const gl = this.gl;
     const { camera: cam } = f;
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    const res: [number, number] = [width, height];
+    gl.viewport(0, 0, width, height);
     gl.disable(gl.BLEND);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (f.stars) {
       this.stars.draw(
         { camera: cam, radiusPx: f.radiusPx, dpr: f.dpr, ...f.stars },
-        [this.canvas.width, this.canvas.height],
+        res,
       );
     }
 
-    this.bodies.draw(f.bodies, [this.canvas.width, this.canvas.height]);
+    this.bodies.draw(f.bodies, res);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -648,8 +693,9 @@ export class GlobeRenderer {
       gl.activeTexture(gl.TEXTURE0 + UNIT[slot]);
       gl.bindTexture(gl.TEXTURE_2D, this.textures[slot]);
     }
-    gl.uniform2f(this.u('uRes'), this.canvas.width, this.canvas.height);
+    gl.uniform2f(this.u('uRes'), width, height);
     gl.uniform1f(this.u('uRadiusPx'), f.radiusPx);
+    gl.uniform1f(this.u('uLodScale'), f.lodScale ?? 1);
     gl.uniform3fv(this.u('uDir'), cam.dir);
     gl.uniform3fv(this.u('uRight'), cam.right);
     gl.uniform3fv(this.u('uUp'), cam.up);
@@ -739,7 +785,6 @@ export class GlobeRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 
-    const res: [number, number] = [this.canvas.width, this.canvas.height];
     if (f.floods) this.floodLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: 1, minIntensity: 0 }, res);
     if (f.fires) {
       this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.fires.windowH, minIntensity: f.fires.minIntensity }, res);
@@ -751,7 +796,7 @@ export class GlobeRenderer {
     if (f.satellites) {
       this.sats.draw(
         { camera: cam, radiusPx: f.radiusPx, sun: f.sun, dpr: f.dpr, dt: f.satellites.dt, categories: f.satellites.categories },
-        [this.canvas.width, this.canvas.height],
+        res,
       );
     }
   }

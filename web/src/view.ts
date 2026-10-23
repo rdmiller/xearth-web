@@ -1,7 +1,7 @@
 // Viewing position (xearth's -pos) and the camera derived from it.
 
 import { gastDeg, sublunarPoint, subsolarPoint } from './astronomy';
-import { DEG, cross, dot, fromLatLon, normalize, sub, wrapLon, type Vec3 } from './vec';
+import { DEG, cross, dot, fromLatLon, normalize, scale, sub, wrapLon, type Vec3 } from './vec';
 
 export type ViewMode = 'fixed' | 'sunrel' | 'orbit' | 'moon' | 'track';
 
@@ -92,6 +92,20 @@ export function cameraFor(s: ViewSettings, date: Date, resolve?: TrackResolver):
   const dist = s.dist > 1.0001 ? s.dist : 0;
   const focal = dist ? 1 / Math.tan(Math.asin(1 / dist)) : 1;
   return { dir, right, up, dist, focal };
+}
+
+/**
+ * A camera on a satellite at `pos` (Earth radii) looking straight down, with `ahead` (along its
+ * travel) at the top of the frame and `halfFovDeg` the half-width's angle, for a frame drawn
+ * with radiusPx at half its width. Past the horizon (about 70° off nadir for the ISS) its rays
+ * see the sky, as from orbit.
+ */
+export function nadirCamera(pos: Vec3, ahead: Vec3, halfFovDeg: number): Camera {
+  const dir = normalize(pos);
+  let up = sub(ahead, scale(dir, dot(ahead, dir)));
+  if (Math.hypot(...up) < 1e-9) up = cross(dir, Math.abs(dir[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]);
+  up = normalize(up);
+  return { dir, right: cross(up, dir), up, dist: Math.hypot(...pos), focal: 1 / Math.tan(halfFovDeg * DEG) };
 }
 
 /**

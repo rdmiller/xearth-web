@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { subsolarPoint } from '../astronomy';
-import { dot, fromLatLon, type Vec3 } from '../vec';
-import { cameraFor, isOccluded, project, viewerLatLon, type ViewSettings } from '../view';
+import { dot, fromLatLon, normalize, scale, sub, type Vec3 } from '../vec';
+import { cameraFor, isOccluded, nadirCamera, project, unproject, viewerLatLon, type ViewSettings } from '../view';
 
 const base: ViewSettings = { view: 'fixed', track: 'iss', lat: 0, lon: 0, period: 1.5, inc: 51.6, rot: 0, dist: 0 };
 const date = new Date('2026-10-21T16:00:00Z');
@@ -111,5 +111,37 @@ describe('project', () => {
     const limbAngle = Math.acos(1 / 3) / (Math.PI / 180);
     const p = project(cam, fromLatLon(0, limbAngle - 1e-6));
     expect(Math.hypot(p.x, p.y)).toBeCloseTo(1, 4);
+  });
+});
+
+describe('nadirCamera', () => {
+  // The ISS over 20°N 30°E, 420 km up, heading northeast.
+  const r = 1 + 420 / 6371;
+  const pos = scale(fromLatLon(20, 30), r);
+  const ahead = sub(scale(fromLatLon(20.5, 30.5), r), pos);
+  const cam = nadirCamera(pos, ahead, 50);
+
+  it('looks straight down from the satellite, travel at the top', () => {
+    expectOrthonormal(cam.right, cam.up, cam.dir);
+    expect(cam.dist).toBeCloseTo(r, 10);
+    const below = project(cam, fromLatLon(20, 30));
+    expect(below.x).toBeCloseTo(0, 10);
+    expect(below.y).toBeCloseTo(0, 10);
+    const next = project(cam, fromLatLon(20.5, 30.5));
+    expect(next.y).toBeGreaterThan(0);
+    expect(Math.abs(next.x)).toBeLessThan(next.y * 1e-2);
+  });
+
+  it('spans the half field of view across half the frame', () => {
+    const edge = unproject(cam, 1, 0)!;
+    const ray = normalize(sub(edge, pos));
+    expect(Math.acos(-dot(ray, cam.dir)) / (Math.PI / 180)).toBeCloseTo(50, 6);
+  });
+
+  it('sees past the horizon when the field is wide enough', () => {
+    const wide = nadirCamera(pos, ahead, 75);
+    // The horizon from 420 km is asin(1/r) ≈ 69.6° off nadir.
+    expect(unproject(wide, 1, 0)).toBeNull();
+    expect(unproject(wide, 0.5, 0)).not.toBeNull();
   });
 });

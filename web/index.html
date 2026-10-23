@@ -254,6 +254,22 @@
       :is(#iss, #buoy, #pick, #ash) .dial-needle { transform-box: view-box; stroke: var(--hud-accent); stroke-width: 2; stroke-linecap: round; transition: transform var(--dur-data) ease-out; }
       :is(#iss, #buoy, #pick, #ash) .dial-hub { fill: var(--hud-accent); }
       :is(#iss, #buoy, #pick, #ash) .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); }
+      /* The ISS camera (issView.ts IssCamera): a toggle, then the rendered view with a mark at nadir. */
+      :is(#iss, #pick) .iss-cam { display: grid; gap: 6px; }
+      :is(#iss, #pick) .iss-cam-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      :is(#iss, #pick) .iss-cam-toggle { padding: 2px 8px; font: 600 10px var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--hud-accent); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.45); border-radius: var(--r-md); cursor: pointer; }
+      :is(#iss, #pick) .iss-cam-toggle:hover { background: rgb(var(--hud-cyan-rgb) / 0.12); }
+      :is(#iss, #pick) .iss-cam-toggle[aria-pressed="true"] { color: var(--ink-1); background: rgb(var(--hud-cyan-rgb) / 0.16); }
+      :is(#iss, #pick) .iss-cam-frame { position: relative; overflow: hidden; border-radius: var(--r-sm); background: #000; box-shadow: inset 0 0 0 1px rgb(var(--hud-cyan-rgb) / 0.22); }
+      :is(#iss, #pick) .iss-cam-frame[hidden] { display: none; }
+      :is(#iss, #pick) .iss-cam-canvas { position: static; display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; }
+      :is(#iss, #pick) .iss-cam-frame::after {
+        content: ''; position: absolute; left: 50%; top: 50%; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; pointer-events: none;
+        background: linear-gradient(rgb(var(--hud-cyan-rgb) / 0.7), rgb(var(--hud-cyan-rgb) / 0.7)) center / 1px 100% no-repeat,
+          linear-gradient(rgb(var(--hud-cyan-rgb) / 0.7), rgb(var(--hud-cyan-rgb) / 0.7)) center / 100% 1px no-repeat;
+      }
+      :is(#iss, #pick) .iss-cam-caption { position: absolute; left: 5px; bottom: 5px; padding: 1px 5px; border-radius: var(--r-sm); font-size: 10px; letter-spacing: 0.06em; color: var(--ink-1); background: rgb(0 0 0 / 0.55); pointer-events: none; }
       @media (prefers-reduced-motion: reduce) { :is(#iss, #buoy, #pick, #ash) .meter-fill, :is(#iss, #buoy, #pick, #ash) .dial-needle, :is(#iss, #buoy, #pick, #ash) .iss-content { transition: none; } }
       /* A buoy's window (buoyView.ts) borrows the ISS window's instruments: two dials, not three. */
       #buoy .iss-dials { grid-template-columns: repeat(2, 1fr); }
@@ -627,6 +643,7 @@
         <tr><td><code>relief</code></td><td>terrain lit by the real Sun, from NOAA ETOPO 2022 (key <kbd>Shift+E</kbd>); 0 shows NASA's fixed shaded relief</td></tr>
         <tr><td><code>reliefscale</code></td><td>terrain relief strength, 0.1–5 (default 1)</td></tr>
         <tr><td><code>isslive</code></td><td>NASA ISS telemetry panel: <code>track</code> (while tracking the ISS), <code>1</code> (always) or <code>0</code> (key <kbd>Shift+L</kbd>)</td></tr>
+        <tr><td><code>isscam</code></td><td><code>1</code> opens the camera in the ISS telemetry: the view straight down from the station, rendered (the wheel zooms it, 30–120°)</td></tr>
         <tr><td><code>firehours</code></td><td>show fires detected within this many hours, 1–24 (default 12)</td></tr>
         <tr><td><code>launches</code></td><td><code>0</code> hides launch mode (key <kbd>U</kbd>)</td></tr>
         <tr><td><code>bodies</code>, <code>bodyscale</code></td><td>Sun and Moon on/off; enlarge their discs (1 = true size)</td></tr>

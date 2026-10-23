@@ -9,6 +9,7 @@ precision mediump sampler2DArray;
 
 uniform vec2 uRes;
 uniform float uRadiusPx;   // pixels per Earth radius
+uniform float uLodScale;   // texture detail per pixel, relative to uRadiusPx's (ISS camera: ~18)
 uniform vec3 uDir;         // centre → viewer
 uniform vec3 uRight;
 uniform vec3 uUp;
@@ -132,7 +133,7 @@ vec3 drapRamp(float t) {
 // which misbehaves across the longitude seam and at the limb.
 float lodFor(sampler2D t, float mu, float coslat) {
   float texPerRad = float(textureSize(t, 0).y) / PI;
-  float ratio = texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
+  float ratio = texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
   return log2(max(ratio, 1.0));
 }
 
@@ -179,7 +180,7 @@ void main() {
     float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
     if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
       float texPerRad = float(textureSize(uDetail, 0).x) / radians(uDetailBox.z);
-      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      float lod = log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
       vec3 d = textureLod(uDetail, vec2(du, dv), lod).rgb;
       float data = smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
       vec2 edgeDeg = min(vec2(du, dv), 1.0 - vec2(du, dv)) * uDetailBox.zw * vec2(coslat, 1.0);
@@ -240,7 +241,7 @@ void main() {
     vec2 duv = boxUV(uNightDetailBox, lon, lat);
     if (duv.x >= 0.0 && duv.x <= 1.0 && duv.y >= 0.0 && duv.y <= 1.0) {
       float texPerRad = float(textureSize(uNightDetail, 0).x) / radians(uNightDetailBox.z);
-      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      float lod = log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
       vec4 d = textureLod(uNightDetail, duv, lod);
       vec3 ground = min(nightTex, vec3(0.006));
       vec3 lights = ground + toLinear(d.rgb) * vec3(1.0, 0.755, 0.36); // sRGB (1, 0.88, 0.63)
@@ -251,7 +252,7 @@ void main() {
 
   float ca = 0.0;
   if (uCloudOn > 0.5) {
-    float lc = log2(max(float(textureSize(uClouds, 0).y) / PI / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+    float lc = log2(max(float(textureSize(uClouds, 0).y) / PI / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
     ca = mix(textureLod(uClouds, vec3(uv, 1.0 - uCloudCur), lc).r, textureLod(uClouds, vec3(uv, uCloudCur), lc).r, uCloudMix);
     // Over Himawari's disc, its live clouds (the hourly map's recipe, every 10 minutes) in
     // place of the hourly map's, faded toward its limb as the live pictures are.
@@ -259,7 +260,7 @@ void main() {
       vec2 hu = boxUV(uHimBox, lon, lat);
       if (hu.x >= 0.0 && hu.x <= 1.0 && hu.y >= 0.0 && hu.y <= 1.0) {
         float texPerRad = float(textureSize(uHim, 0).x) / radians(uHimBox.z);
-        float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+        float lod = log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
         vec2 hv = textureLod(uHim, hu, lod).rg;
         float w = hv.g * smoothstep(LIMB_COS, LIMB_COS_IN, coslat * cos(lon - uHimSub));
         ca = mix(ca, hv.r / max(hv.g, 1e-3), w);
@@ -296,7 +297,7 @@ void main() {
       float cosg = coslat * cos(lon - uLiveSub[i]);
       float fade = smoothstep(LIMB_COS, LIMB_COS_IN, cosg);
       if (fade <= 0.0) continue;
-      float lod = log2(max(texPerRad / radians(bx.z) / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      float lod = log2(max(texPerRad / radians(bx.z) / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
       vec3 c = textureLod(uLive, vec3(du, dv, float(i)), lod).rgb;
       float q = fade * smoothstep(0.012, 0.045, max(c.r, max(c.g, c.b))) * smoothstep(0.1, 0.25, dot(n, uLiveSun[i]));
       float w = q * exp(40.0 * (cosg - 1.0));
@@ -320,7 +321,7 @@ void main() {
     float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
     if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
       float texPerRad = float(textureSize(uDetail, 0).x) / radians(uDetailBox.z);
-      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      float lod = log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
       vec3 d = textureLod(uDetail, vec2(du, dv), lod).rgb;
       float data = smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
       vec2 edgeDeg = min(vec2(du, dv), 1.0 - vec2(du, dv)) * uDetailBox.zw * vec2(coslat, 1.0);
@@ -354,7 +355,7 @@ void main() {
         float cosg = coslat * cos(lon - uAshSub[i]);
         float fade = tier == 2 ? 1.0 : smoothstep(LIMB_COS, LIMB_COS_IN, cosg);
         if (fade <= 0.0) continue;
-        float lod = log2(max(texPerRad / radians(uAshBox[i].z) / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+        float lod = log2(max(texPerRad / radians(uAshBox[i].z) / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
         vec4 c4 = textureLod(uAsh, vec3(duv, float(i)), lod);
         vec3 c = c4.rgb / max(c4.a, 1e-3);
         float q = fade * smoothstep(0.5, 0.9, c4.a);
@@ -412,7 +413,7 @@ void main() {
   // texel size on the ground shrinks with cos(latitude), which sets the mip level.
   if (uRadarOn > 0.5 && merc) {
     float texPerRad = float(textureSize(uRadar, 0).x) / (2.0 * PI) / max(coslat, 0.05);
-    vec4 r = textureLod(uRadar, ruv, log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)), 1.0)));
+    vec4 r = textureLod(uRadar, ruv, log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)), 1.0)));
     if (r.a > 0.004) {
       vec3 echo = toLinear(r.rgb / r.a) * mix(0.55, 1.0, dayW);
       col = mix(col, echo, r.a * 0.85);
@@ -458,7 +459,7 @@ void main() {
   if (uGrid > 0.5) {
     float latD = degrees(lat);
     float lonD = degrees(lon);
-    float pxDeg = degrees(1.0 / (uRadiusPx * max(mu, 0.05)));
+    float pxDeg = degrees(1.0 / (uRadiusPx * uLodScale * max(mu, 0.05)));
     float dLat = abs(fract(latD / 15.0 + 0.5) - 0.5) * 15.0;
     float dLon = abs(fract(lonD / 15.0 + 0.5) - 0.5) * 15.0 * coslat;
     float line = 1.0 - smoothstep(0.0, 0.8 * pxDeg, min(dLat, dLon));

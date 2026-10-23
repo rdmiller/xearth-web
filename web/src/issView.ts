@@ -6,6 +6,8 @@
 //   CABIN    meters for pressure, temperature, O2, CO2 and gyroscope momentum, each marking
 //            its normal band and coloured by where the value sits (cyan, amber, red)
 //   ARRAYS   dials for the Sun's beta angle and the two solar array joints
+//   CAMERA   at the user's say-so, the view straight down from the station, travel at the top,
+//            rendered by the globe's renderer from the same layers (the wheel zooms it)
 //
 // Values only change about once a second, so the DOM is built once and touched only when a
 // reading moves. While the station is out of signal, the instruments dim: the values are
@@ -255,7 +257,94 @@ export class Dial {
   }
 }
 
+/**
+ * The camera's horizontal field of view, degrees: where it opens, and the wheel's range. Wider
+ * than ~122° a 16:10 frame's corners pass the horizon, where the globe's glow (made for a
+ * viewer far out in space) would fog the sky.
+ */
+const CAM_FOV = { start: 100, min: 30, max: 120 };
+/** The camera frame's width over its height. */
+const CAM_ASPECT = 16 / 10;
+
+/**
+ * The camera: what the ISS sees straight down. main.ts renders the frames (GlobeRenderer's
+ * renderView); this holds the toggle, the frame and its zoom.
+ */
+export class IssCamera {
+  readonly el: HTMLElement;
+  /** Horizontal field of view, degrees. */
+  fov = CAM_FOV.start;
+  private readonly toggle: HTMLButtonElement;
+  private readonly frame: HTMLElement;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly caption: HTMLElement;
+  private image: ImageData | null = null;
+  private on = false;
+
+  constructor(
+    /** Open (true) or close (false) the camera. */
+    onToggle: (on: boolean) => void,
+    /** The field of view changed: draw again. */
+    onZoom: () => void,
+  ) {
+    this.el = el('div', 'iss-cam');
+    const head = el('div', 'iss-cam-head');
+    this.toggle = el('button', 'iss-cam-toggle');
+    this.toggle.type = 'button';
+    this.toggle.addEventListener('click', () => onToggle(!this.on));
+    head.append(label('Camera · nadir'), this.toggle);
+    this.frame = el('div', 'iss-cam-frame');
+    this.canvas = el('canvas', 'iss-cam-canvas');
+    this.canvas.setAttribute('role', 'img');
+    this.canvas.setAttribute('aria-label', 'The view straight down from the ISS, rendered');
+    this.caption = el('span', 'iss-cam-caption');
+    this.frame.append(this.canvas, this.caption);
+    this.frame.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.fov = Math.max(CAM_FOV.min, Math.min(CAM_FOV.max, this.fov * Math.exp(e.deltaY * 0.001)));
+        onZoom();
+      },
+      { passive: false },
+    );
+    this.el.append(head, this.frame);
+    this.show(false);
+  }
+
+  show(on: boolean) {
+    if (on === this.on && this.toggle.textContent) return;
+    this.on = on;
+    this.frame.hidden = !on;
+    this.toggle.setAttribute('aria-pressed', String(on));
+    put(this.toggle, on ? 'Hide' : 'Show');
+  }
+
+  /** The frame to render, in device pixels; undefined while the camera's closed or not laid out. */
+  size(): { width: number; height: number } | undefined {
+    const w = this.on ? this.frame.clientWidth : 0;
+    if (!w) return undefined;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    return { width: Math.round(w * dpr), height: Math.round((w / CAM_ASPECT) * dpr) };
+  }
+
+  /** Show a rendered frame: RGBA rows bottom to top, as WebGL reads them back. */
+  draw(pixels: Uint8Array, width: number, height: number) {
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+      this.image = null;
+    }
+    const image = (this.image ??= new ImageData(width, height));
+    const row = width * 4;
+    for (let y = 0; y < height; y++) image.data.set(pixels.subarray((height - 1 - y) * row, (height - y) * row), y * row);
+    this.canvas.getContext('2d')!.putImageData(image, 0, 0);
+    put(this.caption, `${Math.round(this.fov)}° · travel ↑`);
+  }
+}
+
 export class IssPanelView {
+  readonly camera: IssCamera;
   private readonly content: HTMLElement;
   private readonly time: HTMLElement;
   private readonly chips: HTMLElement;
@@ -268,7 +357,13 @@ export class IssPanelView {
   private readonly foot: HTMLElement;
   private chipKey = '';
 
-  constructor(private readonly toast: Toast) {
+  constructor(
+    private readonly toast: Toast,
+    /** Open or close the camera; the field of view changed. */
+    onCamera: (on: boolean) => void,
+    onZoom: () => void,
+  ) {
+    this.camera = new IssCamera(onCamera, onZoom);
     this.content = el('div', 'iss-content');
     const meta = el('div', 'iss-meta');
     this.time = el('span', 'iss-time');
@@ -286,7 +381,7 @@ export class IssPanelView {
     dials.append(this.dials.beta.el, this.dials.stbd.el, this.dials.port.el);
 
     this.foot = el('div', 'iss-note');
-    this.content.append(meta, tiles, this.tle, meters, dials, this.foot);
+    this.content.append(meta, tiles, this.tle, meters, dials, this.foot, this.camera.el);
     toast.body.append(this.content);
   }
 

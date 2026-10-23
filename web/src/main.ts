@@ -219,7 +219,7 @@ import {
 import { FrameStats, GpuTimer, SlowFrames } from './perf';
 import { publishSeverity } from './tokens';
 import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
-import { GlobeRenderer } from './renderer/gl';
+import { GlobeRenderer, type FrameState } from './renderer/gl';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
   EARTH_RADIUS_KM,
@@ -240,7 +240,7 @@ import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './st
 import { dayTextureUrl, loadImage, nightTextureUrl, reliefUrl } from './textures';
 import type { SurfaceRequest, SurfaceResponse } from './surfaceWorker';
 import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
-import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, project, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
+import { cameraFor, nadirCamera, ORTHO_SKY_FOCAL, pinchMag, project, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
 import { Capacitor } from '@capacitor/core';
 import type { BodyDraw } from './renderer/bodies';
 
@@ -1545,6 +1545,15 @@ function issLiveState(date: Date, sun: Vec3) {
   return t && { pos: t.pos, lat: t.lat, lon: t.lon, altKm: t.altKm, speed: t.speed, sunlit: !inShadow(t.pos, sun) };
 }
 
+/** Where the ISS is at `date` and which way it's heading (Earth-fixed), for its camera. */
+function issCameraAt(date: Date, sun: Vec3): { pos: Vec3; ahead: Vec3 } | undefined {
+  const rec = featuredRecs.get('iss')?.rec;
+  const now = rec && positionAt(rec, date);
+  const next = rec && positionAt(rec, new Date(date.getTime() + 1000));
+  if (!now || !next) return undefined;
+  return { pos: issLiveState(date, sun)?.pos ?? now, ahead: sub(next, now) };
+}
+
 function issPanelState(sun: Vec3) {
   if (!issLiveWanted()) return undefined;
   const now = new Date();
@@ -1954,6 +1963,8 @@ toasts.onChange = () => queueMicrotask(requestRedraw);
 const perfPanel = new PerfPanel(toasts.add({ id: 'perf', title: 'Frame rate', order: 0, shrink: 0, onClose: () => update({ fps: false }) }));
 const issPanelView = new IssPanelView(
   toasts.add({ id: 'iss', title: 'ISS · NASA live telemetry', order: 1, shrink: 0, onClose: () => update({ isslive: 'off' }) }),
+  (on) => update({ isscam: on }),
+  requestRedraw,
 );
 const feedBoard = new FeedBoard(toasts.add({ id: 'feeds', title: 'Data feeds', order: 2, onClose: () => update({ feeds: false }) }), feedRows);
 const buoyPanel = new BuoyPanelView(
@@ -2762,9 +2773,7 @@ function frame(now: number) {
   };
   const t1 = performance.now();
 
-  const slot = stats.nextSlot;
-  if (settings.fps) gpuTimer.begin();
-  renderer.render({
+  const frameState: FrameState = {
     camera,
     sun: sunDir,
     radiusPx,
@@ -2793,7 +2802,36 @@ function frame(now: number) {
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
-  });
+  };
+  // The ISS camera: the same layers again, straight down from the station, into its window.
+  // Drawn before the main frame, so reading it back waits only on its own small pass.
+  const iss = issPanelState(sunDir);
+  issPanelView.camera.show(settings.isscam);
+  const camSize = iss && issPanelView.camera.size();
+  const camAt = camSize && issCameraAt(date, sunDir);
+  if (camSize && camAt) {
+    const cam = nadirCamera(camAt.pos, camAt.ahead, issPanelView.camera.fov / 2);
+    const { width, height } = camSize;
+    const view = renderer.renderView(
+      {
+        ...frameState,
+        camera: cam,
+        radiusPx: width / 2,
+        lodScale: cam.focal / (cam.dist - 1),
+        stars: null,
+        bodies: [],
+        satellites: null,
+        fires: frameState.fires && { ...frameState.fires, minIntensity: 0 },
+      },
+      width,
+      height,
+    );
+    issPanelView.camera.draw(view, width, height);
+  } else renderer.releaseView();
+
+  const slot = stats.nextSlot;
+  if (settings.fps) gpuTimer.begin();
+  renderer.render(frameState);
   if (settings.fps) gpuTimer.end(slot);
   const t2 = performance.now();
 
@@ -2836,7 +2874,6 @@ function frame(now: number) {
   }
   // While the ISS is the pick, its telemetry goes in the pick window rather than a second one,
   // and the telemetry's sparkline tiles stand in for the pick's altitude and speed.
-  const iss = issPanelState(sunDir);
   const issDocked = !!iss && !!picked && pickedSat() === 'iss';
   issPanelView.update(iss, issDocked ? pickPanel.slot : undefined);
   syncPickPanel(

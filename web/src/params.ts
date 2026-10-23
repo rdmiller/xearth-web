@@ -88,6 +88,8 @@ export interface Settings extends ViewSettings {
   reliefscale: number;
   /** NASA ISS live telemetry. */
   isslive: IssLiveMode;
+  /** The ISS telemetry window's camera: the view straight down from the station, rendered. */
+  isscam: boolean;
   /** NOAA HMS smoke plumes. */
   smoke: boolean;
   /** Enlarge the Sun and Moon discs (1 = true angular size, ~0.5°). */
@@ -188,6 +190,7 @@ export function defaults(): Settings {
     relief: true,
     reliefscale: 1,
     isslive: 'track',
+    isscam: false,
     bodyscale: 1,
     time: null,
     speed: 1,
@@ -329,6 +332,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),
+    isscam: bool(q, 'isscam', base.isscam),
     bodyscale: num(q, 'bodyscale', base.bodyscale, 1, 30),
     time: time && !Number.isNaN(time.getTime()) ? time : base.time,
     speed: num(q, 'speed', base.speed, -1e6, 1e6),
