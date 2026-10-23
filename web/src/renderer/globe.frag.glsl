@@ -18,8 +18,8 @@ uniform vec3 uSun;         // unit vector toward the Sun, Earth-fixed
 
 uniform sampler2D uDay;
 uniform sampler2D uNight;
-uniform sampler2D uCloudPrev;
-uniform sampler2D uCloudCur;
+uniform sampler2DArray uClouds; // the hourly cloud map: the current layer and the previous one
+uniform float uCloudCur;     // which layer is current (the other is the previous)
 uniform float uHasDay;
 uniform float uHasNight;
 uniform float uCloudMix;   // 0 → prev, 1 → cur
@@ -62,6 +62,8 @@ uniform float uAshHas[3];
 uniform vec4 uAshBox[3];     // as uDetailBox, per picture
 uniform float uAshSub[3];    // longitude below each satellite (radians)
 uniform float uAshTier[3];   // 0 first, 1 where 0 isn't, 2 (a whole-world mosaic) under both
+uniform sampler2D uSst;      // sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts)
+uniform float uSstMode;      // 0 off, 1 temperature, 2 anomaly
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -100,6 +102,22 @@ vec3 tecRamp(float t) {
   vec3 a = mix(vec3(0.16, 0.04, 0.42), vec3(0.78, 0.22, 0.50), smoothstep(0.0, 0.4, t));
   vec3 b = mix(a, vec3(0.98, 0.55, 0.15), smoothstep(0.35, 0.7, t));
   return mix(b, vec3(0.98, 0.95, 0.55), smoothstep(0.65, 1.0, t));
+}
+
+// Sea surface temperature, 0…30 °C: deep blue through cyan and yellow to red, cool to warm.
+vec3 sstRamp(float t) {
+  vec3 a = mix(vec3(0.05, 0.10, 0.35), vec3(0.10, 0.42, 0.82), smoothstep(0.0, 0.3, t));
+  vec3 b = mix(a, vec3(0.25, 0.78, 0.80), smoothstep(0.25, 0.5, t));
+  vec3 c = mix(b, vec3(0.97, 0.90, 0.42), smoothstep(0.45, 0.65, t));
+  vec3 d = mix(c, vec3(0.97, 0.52, 0.18), smoothstep(0.62, 0.82, t));
+  return mix(d, vec3(0.70, 0.08, 0.12), smoothstep(0.8, 1.0, t));
+}
+
+// SST anomaly, −1…1 for −3…+3 °C: blue, white at zero, red, as public anomaly maps draw it.
+vec3 anomalyRamp(float s) {
+  vec3 cold = mix(mix(vec3(0.97), vec3(0.55, 0.75, 0.92), smoothstep(0.0, 0.5, -s)), vec3(0.13, 0.30, 0.67), smoothstep(0.45, 1.0, -s));
+  vec3 warm = mix(mix(vec3(0.97), vec3(0.97, 0.63, 0.48), smoothstep(0.0, 0.5, s)), vec3(0.70, 0.08, 0.15), smoothstep(0.45, 1.0, s));
+  return s < 0.0 ? cold : warm;
 }
 
 // HF absorption toward 35 MHz: violet, green, yellow, red. (SWPC's own maps start at blue, on
@@ -233,8 +251,8 @@ void main() {
 
   float ca = 0.0;
   if (uCloudOn > 0.5) {
-    float lc = lodFor(uCloudCur, mu, coslat);
-    ca = mix(textureLod(uCloudPrev, uv, lc).r, textureLod(uCloudCur, uv, lc).r, uCloudMix);
+    float lc = log2(max(float(textureSize(uClouds, 0).y) / PI / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+    ca = mix(textureLod(uClouds, vec3(uv, 1.0 - uCloudCur), lc).r, textureLod(uClouds, vec3(uv, uCloudCur), lc).r, uCloudMix);
     // Over Himawari's disc, its live clouds (the hourly map's recipe, every 10 minutes) in
     // place of the hourly map's, faded toward its limb as the live pictures are.
     if (uHimOn > 0.5) {
@@ -350,6 +368,29 @@ void main() {
     }
     col = col * (1.0 - ashA) + ashPre;
     liveA += ashA * (1.0 - liveA); // no sun glint on the picture
+  }
+
+  // Sea surface temperature, or how far it is from usual, as a wash over the sea, day and night.
+  // The anomaly is faint near zero and strong past ±2 °C, so El Niño's tongue and the marine
+  // heatwaves stand out at a glance. The texture is premultiplied: alpha is the sea's share.
+  if (uSstMode > 0.5) {
+    vec4 s4 = textureLod(uSst, uv, lodFor(uSst, mu, coslat));
+    if (s4.a > 0.02) {
+      vec2 v = s4.rg / s4.a;
+      vec3 c;
+      float a;
+      if (uSstMode < 1.5) {
+        c = sstRamp(clamp((v.r * 36.0 - 2.0) / 30.0, 0.0, 1.0));
+        a = 0.85;
+      } else {
+        float an = v.g * 8.0 - 4.0;
+        c = anomalyRamp(clamp(an / 3.0, -1.0, 1.0));
+        a = 0.15 + 0.75 * smoothstep(0.3, 2.0, abs(an));
+      }
+      a *= smoothstep(0.5, 0.95, s4.a);
+      col = mix(col, toLinear(c), a);
+      liveA += a * (1.0 - liveA); // no sun glint on the data
+    }
   }
 
   // Satellite rain (IMERG) where no radar sees, a little fainter than radar: it's an

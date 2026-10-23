@@ -51,6 +51,9 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Volcanic ash** (Shift+A, off by default): EUMETSAT's Ash RGB, the false-colour infrared
     picture forecasters use for ash and SO2 plumes, over the whole globe day and night, with a
     toast of what its colours mean and GDACS's eruptions, each one press away.
+  - **Sea temperature** (Shift+H: temperature → anomaly → off): the GHRSST MUR analysis, a
+    day behind, as a wash over the sea. The anomaly is blue–white–red and faint near zero, so El
+    Niño and marine heatwaves stand out; the readout gives Niño 3.4.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
   - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,
@@ -248,6 +251,35 @@ at 8.7) and blue from the 10.8 µm temperature. Being infrared, it works day and
   day and how long ago, and which picture shows each and how often it's new. On 2026-10-23
   those were Kanlaon and Taal (Philippines, the Geo Ring only) and Krakatau (the Indian Ocean
   disc). Pressing one centres the globe on it.
+
+### Sea surface temperature
+
+GHRSST's MUR analysis (JPL) blends satellite and in-situ SST into a gap-free daily field, and
+NASA GIBS serves it, and its anomaly from usual, as coloured PNGs with CORS.
+
+- **Read back to values:** GIBS's colour maps (215 colours for temperature, 0.15 °C bins; 62
+  for the anomaly, 0.1 °C bins, ±3 °C at the ends) are baked in and tested against the real
+  files, and every pixel of both PNGs was an exact colour-map colour on 2026-10-22, so each is
+  read back to °C and the globe draws them in its own ramps: cool to warm for the temperature,
+  and for the anomaly the blue–white–red public anomaly maps use, faint near zero and strong
+  past ±2 °C, so the big departures are what you see.
+- **MUR, not MUR25:** MUR (0.01°) asked for at 0.25° (1440 × 720, ~880 KB for both a day).
+  GIBS's MUR25 anomaly comes in ~1° squares that showed as blocks on the globe; MUR's at the
+  same size has none, and gives the same Niño 3.4 (+2.67 against +2.68 °C on 2026-10-22).
+- **Niño 3.4** (5°S–5°N, 170°W–120°W) is averaged by area for the readout, with the region's
+  temperature, and named by NOAA's ONI thresholds (±0.5, 1.0, 1.5 °C), loosely, since it's a
+  day and not a three-month mean. MUR's anomaly is against MUR's own 2003–2014 climatology,
+  not NOAA's 1991–2020, and it matters: in October 2026 MUR said +2.7 °C where NOAA CPC's
+  weekly OISST said +3.3, though both had the region at 30.0 °C. So the readout names the
+  baseline. CPC's file has no CORS; the official index would need the pipeline.
+- **Marine heatwaves** proper (above the seasonal 90th percentile for 5+ days, Hobday et al.
+  2016) need a percentile climatology GIBS doesn't serve, so the readout only says how much of
+  the ocean is +2 °C or more above usual (11.2% on 2026-10-22), and doesn't call it a heatwave.
+- **Texture units:** WebGL promises a shader 16, and with the live clouds and volcanic ash all
+  16 were spoken for (the GPU it was checked on has exactly 16). The hourly cloud map's two
+  textures (the current and the previous, for the cross-fade) became one two-layer array, which
+  freed the unit SST uses; temperature and anomaly share that one texture, so switching between
+  them costs nothing.
 
 ### Yesterday's (daily)
 
@@ -451,6 +483,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/himawariCloud.ts  the hourly cloud map's recipe (convert.py), ported, for Himawari's bands
   src/himawariClouds.ts, src/himawariWorker.ts   Himawari live clouds: fetching, and a worker
   src/ash.ts         volcanic ash: the Ash RGB sources, their no-data mask, and the toast
+  src/sst.ts         sea surface temperature: GIBS's MUR colours read back to °C, Niño 3.4
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
@@ -775,6 +808,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour Enhanced (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
 | Live clouds (East Asia, west Pacific) | Himawari-9 AHI Band 13 (PNG, ~2.4 MB) and, by day, Band 3 (JPEG, ~340 KB) from NASA GIBS, turned into cloud opacity in a worker | browser, while its disc faces the view | 10 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
+| Sea surface temperature | GHRSST MUR temperature and anomaly (NASA GIBS WMS PNG, 0.25°, ~880 KB a day) | browser, while the layer is on | daily, a day behind; checked hourly |
 | Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
@@ -1192,6 +1226,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
 - Volcanic ash: EUMETSAT, via EUMETView — Ash RGB from the Geo Ring multi-mission mosaic and
   Meteosat Second Generation's 0° and Indian Ocean services.
+- Sea surface temperature: GHRSST Level 4 MUR Global Foundation SST Analysis (JPL MUR MEaSUREs
+  Project), distributed by NASA PO.DAAC, via NASA GIBS.
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
 - Satellite rain: NASA GPM IMERG (Huffman et al.), early run, via NASA GIBS.

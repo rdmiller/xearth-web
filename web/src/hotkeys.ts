@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
+import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type SatMode, type Settings, type SstMode, type StarMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -117,6 +117,12 @@ export const IONO_LABELS: Record<IonoMode, string> = {
   tec: 'Ionosphere: total electron content (NOAA SWPC GloTEC)',
   drap: 'Ionosphere: HF radio absorption (NOAA SWPC D-RAP)',
   off: 'Ionosphere off',
+};
+const NEXT_SST: Record<SstMode, SstMode> = { off: 'temp', temp: 'anomaly', anomaly: 'off' };
+export const SST_LABELS: Record<SstMode, string> = {
+  temp: 'Sea surface temperature (GHRSST MUR)',
+  anomaly: 'Sea surface temperature anomaly: El Niño, marine heatwaves (GHRSST MUR)',
+  off: 'Sea temperature off',
 };
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
@@ -236,6 +242,17 @@ export const HOTKEYS: readonly Hotkey[] = [
       const next = NEXT_IONO[ctx.settings.iono];
       ctx.update({ iono: next });
       ctx.toast(IONO_LABELS[next]);
+    },
+  },
+  {
+    keys: ['shift+h'],
+    label: 'Shift+H',
+    description: 'Sea temperature → its anomaly (El Niño, marine heatwaves) → off (GHRSST MUR)',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_SST[ctx.settings.sst];
+      ctx.update({ sst: next });
+      ctx.toast(SST_LABELS[next]);
     },
   },
   layer('w', 'storms', 'Tropical cyclones'),

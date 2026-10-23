@@ -53,6 +53,8 @@ export interface FrameState {
   himawari: boolean;
   /** Volcanic ash: the Ash RGB pictures over everything below (when any has been set). */
   ash: boolean;
+  /** Sea surface temperature: 0 off, 1 the temperature, 2 its anomaly (when set). */
+  sst: number;
   /** GIBS night-lights detail (when one has been set). */
   nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
@@ -66,7 +68,7 @@ export interface FrameState {
   dpr: number;
 }
 
-type Slot = 'day' | 'night' | 'cloudPrev' | 'cloudCur';
+type Slot = 'day' | 'night';
 /** Live geostationary discs: one array layer each, this many texels a side. */
 const LIVE_LAYERS = 4;
 const LIVE_PX = 2048;
@@ -76,8 +78,15 @@ const HIM_UNIT = 4;
 /** The Ash RGB pictures (ash.ts): MSG 0°, the Indian Ocean disc, the Geo Ring. Unit 6, as 4. */
 const ASH_LAYERS = 3;
 const ASH_UNIT = 6;
-const UNIT: Record<Slot, number> = { day: 0, night: 1, cloudPrev: 2, cloudCur: 3 };
-const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight', cloudPrev: 'uCloudPrev', cloudCur: 'uCloudCur' };
+const UNIT: Record<Slot, number> = { day: 0, night: 1 };
+const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight' };
+/**
+ * The hourly cloud map: one two-layer array (the current map and the previous, for the
+ * cross-fade), so both take one texture unit of the 16 WebGL promises.
+ */
+const CLOUD_UNIT = 2;
+/** Sea surface temperature and its anomaly (sst.ts), in the unit the cloud array freed. */
+const SST_UNIT = 3;
 
 export class GlobeRenderer {
   readonly gl: WebGL2RenderingContext;
@@ -125,6 +134,8 @@ export class GlobeRenderer {
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
   private detailSun: Vec3 = [0, 0, 0];
   private readonly himTex: WebGLTexture;
+  private readonly sstTex: WebGLTexture;
+  private hasSst = false;
   private ashTex: WebGLTexture;
   private ashSized = false;
   private readonly ashHas = new Float32Array(ASH_LAYERS);
@@ -136,7 +147,12 @@ export class GlobeRenderer {
   private himSub = 0;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
-  private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
+  private readonly loaded: Record<Slot, boolean> = { day: false, night: false };
+  private cloudTex: WebGLTexture;
+  private cloudSize: [number, number] | null = null;
+  /** The array layer holding the current map; the other holds the previous. */
+  private cloudCur = 0;
+  private cloudLoaded = false;
   private readonly aniso: EXT_texture_filter_anisotropic | null;
   /** 0 → previous cloud map, 1 → current; animated by the caller after setClouds. */
   cloudMix = 1;
@@ -171,6 +187,7 @@ export class GlobeRenderer {
     this.nightDetailTex = empty();
     this.reliefTex = empty();
     this.himTex = empty();
+    this.sstTex = empty();
     this.ashTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -203,10 +220,12 @@ export class GlobeRenderer {
     this.textures = {
       day: blank([16, 40, 96, 255]),
       night: blank([0, 0, 0, 255]),
-      cloudPrev: blank([0, 0, 0, 255]),
-      cloudCur: blank([0, 0, 0, 255]),
     };
     for (const slot of Object.keys(UNIT) as Slot[]) gl.uniform1i(this.u(SAMPLER[slot]), UNIT[slot]);
+    this.cloudTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.cloudTex);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(8));
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   }
 
   private u(name: string) {
@@ -237,24 +256,37 @@ export class GlobeRenderer {
     this.upload('night', image);
   }
 
-  /** Show a new cloud map; the previous one is kept for a cross-fade (cloudMix 0 → 1). */
-  setClouds(image: TexImageSource) {
-    if (this.loaded.cloudCur) {
-      [this.textures.cloudPrev, this.textures.cloudCur] = [this.textures.cloudCur, this.textures.cloudPrev];
-      this.loaded.cloudPrev = true;
-      this.cloudMix = 0;
-    } else {
-      this.cloudMix = 1;
-    }
-    this.upload('cloudCur', image);
-    // The swap changed which texture object sits in each unit.
+  /**
+   * Show a new cloud map; the previous one is kept for a cross-fade (cloudMix 0 → 1). It goes
+   * into the layer not now current; a map of a new size starts the array afresh, with no fade.
+   */
+  setClouds(image: ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas) {
     const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE0 + UNIT.cloudPrev);
-    gl.bindTexture(gl.TEXTURE_2D, this.textures.cloudPrev);
+    const w = image.width;
+    const h = image.height;
+    gl.activeTexture(gl.TEXTURE0 + CLOUD_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.cloudTex);
+    const fresh = !this.cloudSize || this.cloudSize[0] !== w || this.cloudSize[1] !== h;
+    if (fresh) {
+      gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, w, h, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      this.cloudSize = [w, h];
+    }
+    const layer = fresh || !this.cloudLoaded ? 0 : 1 - this.cloudCur;
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // row 0 = north = v 0
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, w, h, 1, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (this.aniso) gl.texParameterf(gl.TEXTURE_2D_ARRAY, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    this.cloudMix = this.cloudLoaded && !fresh ? 0 : 1;
+    this.cloudCur = layer;
+    this.cloudLoaded = true;
   }
 
   get hasClouds() {
-    return this.loaded.cloudCur;
+    return this.cloudLoaded;
   }
 
   /** Aurora probability grid (row 0 = north pole, column 0 = −180°), one byte per cell. */
@@ -475,6 +507,24 @@ export class GlobeRenderer {
     this.ashTier[layer] = tier;
   }
 
+  /**
+   * Sea surface temperature (r) and anomaly (g) on the whole-world 0.25° grid, alpha 255 where
+   * there's data and all zero where not: premultiplied, so mipmaps average only the sea.
+   */
+  setSst(rgba: Uint8Array, w: number, h: number) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + SST_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.sstTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasSst = true;
+  }
+
   get hasLive() {
     return this.liveHas.some((v) => v > 0);
   }
@@ -600,8 +650,12 @@ export class GlobeRenderer {
     gl.uniform3fv(this.u('uSun'), f.sun);
     gl.uniform1f(this.u('uHasDay'), this.loaded.day ? 1 : 0);
     gl.uniform1f(this.u('uHasNight'), this.loaded.night ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0 + CLOUD_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.cloudTex);
+    gl.uniform1i(this.u('uClouds'), CLOUD_UNIT);
+    gl.uniform1f(this.u('uCloudCur'), this.cloudCur);
     gl.uniform1f(this.u('uCloudMix'), this.cloudMix);
-    gl.uniform1f(this.u('uCloudOn'), f.clouds && this.loaded.cloudCur ? 1 : 0);
+    gl.uniform1f(this.u('uCloudOn'), f.clouds && this.cloudLoaded ? 1 : 0);
     gl.uniform1f(this.u('uLights'), f.lights ? 1 : 0);
     gl.uniform1f(this.u('uGrid'), f.grid ? 1 : 0);
     gl.activeTexture(gl.TEXTURE5);
@@ -661,6 +715,10 @@ export class GlobeRenderer {
     gl.uniform4fv(this.u('uAshBox'), this.ashBox);
     gl.uniform1fv(this.u('uAshSub'), this.ashSub);
     gl.uniform1fv(this.u('uAshTier'), this.ashTier);
+    gl.activeTexture(gl.TEXTURE0 + SST_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.sstTex);
+    gl.uniform1i(this.u('uSst'), SST_UNIT);
+    gl.uniform1f(this.u('uSstMode'), this.hasSst ? f.sst : 0);
     gl.activeTexture(gl.TEXTURE15);
     gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
     gl.uniform1i(this.u('uNightDetail'), 15);

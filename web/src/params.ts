@@ -4,9 +4,10 @@
 import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
 import type { IonoMode } from './ionosphere';
+import type { SstMode } from './sst';
 
 /** The ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
-export type { IonoMode };
+export type { IonoMode, SstMode };
 
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
 export type StarMode = 'on' | 'off' | 'photo';
@@ -115,6 +116,8 @@ export interface Settings extends ViewSettings {
   buoysrc: string;
   /** The ionosphere wash (off by default: it tints the whole globe). */
   iono: IonoMode;
+  /** Sea surface temperature (GHRSST MUR): off, the temperature, or its anomaly from usual. */
+  sst: SstMode;
   /** Where the pipeline's GloTEC latest.json lives. */
   ionosrc: string;
 }
@@ -199,6 +202,7 @@ export function defaults(): Settings {
     meteorsrc: dataSrc('VITE_METEORS_BASE', 'meteors/'),
     buoysrc: dataSrc('VITE_BUOYS_BASE', 'buoys/'),
     iono: 'off',
+    sst: 'off',
     ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
   };
 }
@@ -246,6 +250,14 @@ function ionoMode(q: URLSearchParams, fallback: IonoMode): IonoMode {
   if (raw === undefined) return fallback;
   if (raw === 'tec' || raw === 'drap') return raw;
   return FALSY.includes(raw) ? 'off' : 'tec';
+}
+
+/** `sst=temp|anomaly|off`; anything else true-ish means the anomaly, the at-a-glance view. */
+function sstMode(q: URLSearchParams, fallback: SstMode): SstMode {
+  const raw = q.get('sst')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'temp' || raw === 'anomaly') return raw;
+  return FALSY.includes(raw) ? 'off' : 'anomaly';
 }
 
 function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
@@ -330,6 +342,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     meteorsrc: q.get('meteorsrc') ?? base.meteorsrc,
     buoysrc: q.get('buoysrc') ?? base.buoysrc,
     iono: ionoMode(q, base.iono),
+    sst: sstMode(q, base.sst),
     ionosrc: q.get('ionosrc') ?? base.ionosrc,
   };
 }

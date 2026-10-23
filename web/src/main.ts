@@ -74,6 +74,7 @@ import { FRP_CELL_DEG, FRP_WINDOW_MIN, FrpWindow, frpPoints, frpRows } from './m
 import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
+import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
 import {
   decodeOutlook,
   decodeWarnings,
@@ -1620,6 +1621,7 @@ function layerRows(): ReadoutRow[] {
   }
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
+  if (settings.sst !== 'off' && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
   if (settings.iono === 'tec' && tecManifest) add('ionosphere', tecSummary(tecManifest));
   if (settings.iono === 'drap' && drap) add('ionosphere', drapSummary(drap));
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
@@ -1765,6 +1767,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
   { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // GIBS has a MUR day the next day: dated noon, it's ~30 hours old when it lands.
+  { key: 'sst', label: 'Sea temperature', source: 'GHRSST MUR', freshMs: 3 * 24 * 60 * MIN, on: () => settings.sst !== 'off', everyMs: SST_CHECK_MS },
   // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
   { key: 'ash', label: 'Volcanic ash', source: 'EUMETSAT Ash RGB', freshMs: 7 * 60 * MIN, on: () => settings.ash, everyMs: LIVE_CHECK_MS },
   // GIBS draws a Himawari scan about an hour after it's taken.
@@ -2116,6 +2120,38 @@ function syncAsh() {
   ashTimer = setInterval(() => void runAsh(), LIVE_CHECK_MS);
 }
 
+// ---- sea surface temperature (GHRSST MUR, via NASA GIBS) -----------------------------------
+// The day's temperature and anomaly, both in one texture, so switching between them is free;
+// GIBS has each day the next, so an hourly look is plenty. See sst.ts.
+
+let sstFrame: SstFrame | undefined;
+let sstTimer: ReturnType<typeof setInterval> | undefined;
+
+function runSst(): Promise<void> {
+  feedLog.begin('sst', Date.now(), SST_CHECK_MS);
+  return loadSst(new Date(), sstFrame?.date)
+    .then((f) => {
+      if (f) {
+        sstFrame = f;
+        renderer.setSst(f.rgba, SST_W, SST_H);
+      }
+      feedLog.done('sst', Date.now(), sstFrame && Date.parse(`${sstFrame.date}T12:00:00Z`));
+    })
+    .catch((err) => {
+      feedLog.fail('sst', Date.now(), err);
+      console.warn('sea temperature:', err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncSst() {
+  clearInterval(sstTimer);
+  sstTimer = undefined;
+  if (settings.sst === 'off') return feedLog.stop('sst');
+  void runSst();
+  sstTimer = setInterval(() => void runSst(), SST_CHECK_MS);
+}
+
 const placeToast = toasts.add({
   id: 'place-card',
   title: 'Place',
@@ -2448,6 +2484,7 @@ function frame(now: number) {
     live: liveShown(date),
     himawari: settings.clouds && liveShown(date),
     ash: settings.ash,
+    sst: settings.sst === 'temp' ? 1 : settings.sst === 'anomaly' ? 2 : 0,
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
@@ -2564,6 +2601,7 @@ function update(patch: Partial<Settings>) {
   const launchesBefore = settings.launches;
   const imageryBefore = settings.imagery;
   const ashBefore = settings.ash;
+  const sstBefore = settings.sst;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
@@ -2574,6 +2612,7 @@ function update(patch: Partial<Settings>) {
   if (settings.imagery !== imageryBefore) syncLive();
   if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
   if (settings.ash !== ashBefore) syncAsh();
+  if ((settings.sst === 'off') !== (sstBefore === 'off')) syncSst();
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -2780,6 +2819,7 @@ for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 syncLive();
 syncHimawari();
 syncAsh();
+syncSst();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
