@@ -36,25 +36,25 @@ const METERS: { key: keyof IssReadings; label: string; unit: string; digits: num
   { key: 'cmgPct', label: 'CMG mom.', unit: '%', digits: 0, scale: { min: 0, max: 100, ok: [0, 70], warn: [0, 90] } },
 ];
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = '') =>
+export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = '') =>
   Object.assign(document.createElement(tag), { className, textContent: text });
 
-function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
+export function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const node = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
   return node;
 }
 
-function put(node: Element, text: string) {
+export function put(node: Element, text: string) {
   if (node.textContent !== text) node.textContent = text;
 }
 
-function attr(node: Element, name: string, value: string) {
+export function attr(node: Element, name: string, value: string) {
   if (node.getAttribute(name) !== value) node.setAttribute(name, value);
 }
 
 /** An instrument's name. Labels are set in capitals, but a Greek letter keeps its case (β, not Β). */
-function label(text: string): HTMLElement {
+export function label(text: string): HTMLElement {
   const node = el('span', 'iss-label');
   for (const part of text.split(/([Ͱ-Ͽ])/)) {
     if (/^[Ͱ-Ͽ]$/.test(part)) node.append(el('span', 'greek', part));
@@ -199,8 +199,8 @@ class Meter {
   }
 }
 
-/** A dial for an angle: a semicircle for beta (±75°), a full turn for a rotary joint. */
-class Dial {
+/** A dial for an angle: a semicircle for beta (±75°), a full turn for a rotary joint (or a compass bearing). */
+export class Dial {
   readonly el: HTMLElement;
   private readonly needle: SVGLineElement;
   private readonly value: HTMLElement;

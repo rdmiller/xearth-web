@@ -20,6 +20,8 @@ export interface PlaceReport {
   alerts?: LocalAlert[];
   /** What was checked for alerts, for the "none" line: "NWS", "nearby hazards"… */
   checked?: string[];
+  /** The nearest buoy's readings, and opening its window; null when none is near. */
+  buoy?: { text: string; open: () => void } | null;
 }
 
 export interface PlaceCardHandlers {
@@ -154,6 +156,15 @@ export class PlaceCard {
       rows.push(el('p', 'detail', 'Weather unavailable right now.'));
     } else {
       rows.push(el('p', 'loading', 'Checking the weather…'));
+    }
+
+    if (report.buoy) {
+      const row = el('p', 'buoy');
+      const open = el('button', '', 'Open');
+      open.type = 'button';
+      open.addEventListener('click', report.buoy.open);
+      row.append(el('span', '', report.buoy.text), open);
+      rows.push(row);
     }
 
     const alerts = sortAlerts(report.alerts ?? []);

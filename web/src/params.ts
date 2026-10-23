@@ -73,6 +73,10 @@ export interface Settings extends ViewSettings {
   severe: boolean;
   /** The last day's meteors (GMN) and recent fireballs (CNEOS); off by default, it's thousands of streaks. */
   meteors: boolean;
+  /** Buoys (NOAA OSMC, NDBC) as dots; off by default. */
+  buoys: boolean;
+  /** The buoy whose window is open (its id), or '' for none. */
+  buoy: string;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
   relief: boolean;
   /** Relief strength: 1 = the default vertical exaggeration. */
@@ -103,6 +107,8 @@ export interface Settings extends ViewSettings {
   tsunamisrc: string;
   /** Where the pipeline's meteors latest.json lives. */
   meteorsrc: string;
+  /** Where the pipeline's buoys latest.json and history.json live. */
+  buoysrc: string;
   /** The ionosphere wash (off by default: it tints the whole globe). */
   iono: IonoMode;
   /** Where the pipeline's GloTEC latest.json lives. */
@@ -166,6 +172,8 @@ export function defaults(): Settings {
     imagery: 'live',
     severe: true,
     meteors: false,
+    buoys: false,
+    buoy: '',
     relief: true,
     reliefscale: 1,
     isslive: 'track',
@@ -183,6 +191,7 @@ export function defaults(): Settings {
     smokesrc: dataSrc('VITE_SMOKE_BASE', 'smoke/'),
     tsunamisrc: dataSrc('VITE_TSUNAMI_BASE', 'tsunami/'),
     meteorsrc: dataSrc('VITE_METEORS_BASE', 'meteors/'),
+    buoysrc: dataSrc('VITE_BUOYS_BASE', 'buoys/'),
     iono: 'off',
     ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
   };
@@ -292,6 +301,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     imagery: imageryMode(q, base.imagery),
     severe: bool(q, 'severe', base.severe),
     meteors: bool(q, 'meteors', base.meteors),
+    buoys: bool(q, 'buoys', base.buoys),
+    buoy: q.get('buoy')?.trim() ?? base.buoy,
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),
@@ -309,6 +320,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     smokesrc: q.get('smokesrc') ?? base.smokesrc,
     tsunamisrc: q.get('tsunamisrc') ?? base.tsunamisrc,
     meteorsrc: q.get('meteorsrc') ?? base.meteorsrc,
+    buoysrc: q.get('buoysrc') ?? base.buoysrc,
     iono: ionoMode(q, base.iono),
     ionosrc: q.get('ionosrc') ?? base.ionosrc,
   };

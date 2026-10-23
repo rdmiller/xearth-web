@@ -88,6 +88,9 @@ jobs:
       - name: Meteors, last 24 h (Global Meteor Network) and fireballs (NASA/JPL CNEOS)
         continue-on-error: true
         run: python -m xearth_clouds.meteors --out web/public/meteors
+      - name: Buoys and their last 24 h (NOAA OSMC + NDBC, DART)
+        continue-on-error: true
+        run: python -m xearth_clouds.buoys --out web/public/buoys
 
       - name: Cache NASA textures
         uses: actions/cache@v4

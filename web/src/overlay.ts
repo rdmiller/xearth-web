@@ -349,6 +349,8 @@ export interface OverlayState {
   quakes?: QuakeOverlay[];
   /** The last day's meteors (GMN) as streaks along their paths, and recent fireballs (CNEOS). */
   meteors?: MeteorOverlay;
+  /** Buoys (OSMC, NDBC) as dots by type; the selected one ringed, a drifter's last day as a line. */
+  buoys?: BuoyOverlay;
   /** GDACS floods, wildfires and eruptions. */
   events?: EventOverlay[];
   /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
@@ -789,6 +791,64 @@ function quakeRequests(s: OverlayState): CalloutRequest[] {
 }
 
 // ---- go-to target --------------------------------------------------------------------------
+
+// ---- buoys -------------------------------------------------------------------------------
+
+export interface BuoyOverlay {
+  dots: { pos: Vec3; color: string }[];
+  selected?: { pos: Vec3; color: string; track?: Vec3[] };
+}
+
+/** Dots batched one path per colour; the selected buoy's track, then its reticle, on top. */
+function drawBuoys(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  const b = s.buoys;
+  if (!b) return;
+  const toScreen = (p: Vec3) => {
+    const q = project(s.camera, p);
+    return { x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, visible: q.visible };
+  };
+  const paths = new Map<string, Path2D>();
+  for (const d of b.dots) {
+    const q = toScreen(d.pos);
+    if (!q.visible) continue;
+    let path = paths.get(d.color);
+    if (!path) paths.set(d.color, (path = new Path2D()));
+    path.moveTo(q.x + 2, q.y);
+    path.arc(q.x, q.y, 2, 0, Math.PI * 2);
+  }
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  for (const [color, path] of paths) {
+    ctx.fillStyle = color;
+    ctx.fill(path);
+  }
+  ctx.globalAlpha = 1;
+  const sel = b.selected;
+  if (sel) {
+    if (sel.track && sel.track.length > 1) {
+      const line = new Path2D();
+      let pen = false;
+      for (const p of sel.track) {
+        const q = toScreen(p);
+        if (!q.visible) {
+          pen = false;
+          continue;
+        }
+        if (pen) line.lineTo(q.x, q.y);
+        else line.moveTo(q.x, q.y);
+        pen = true;
+      }
+      ctx.strokeStyle = sel.color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke(line);
+      ctx.setLineDash([]);
+    }
+    const q = toScreen(sel.pos);
+    if (q.visible) stamp(ctx, reticleSprite(sel.color, dpr), q.x, q.y, dpr);
+  }
+  ctx.restore();
+}
 
 function drawTarget(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
   if (!s.target) return;
@@ -1521,6 +1581,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
   drawSevere(ctx, s, w, h);
   drawEvents(ctx, s, w, h, dpr);
   drawMeteors(ctx, s, w, h, dpr);
+  drawBuoys(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawTsunami(ctx, s, w, h, dpr);
   drawTarget(ctx, s, w, h, dpr);

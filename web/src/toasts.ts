@@ -1,5 +1,5 @@
 // Toast windows: the panels down the right edge — frame rate, ISS telemetry, data feeds, a
-// searched place. One manager gives them all the same shell (width, glass, a header with the
+// searched place, a buoy. One manager gives them all the same shell (width, glass, a header with the
 // title, a status chip and ×, and a body) and stacks them in a fixed order in one column
 // between the top of the window and the dock, so they never overlap or drift apart in style.
 //

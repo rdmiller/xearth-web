@@ -47,6 +47,8 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
+import { buoyLine, buoySummary, isBuoyHistory, isBuoyManifest, nearestBuoy, pickNearest, TYPE_COLOR, type BuoyHistory, type BuoyManifest } from './buoys';
+import { BuoyPanelView } from './buoyView';
 import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
@@ -156,6 +158,7 @@ import {
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
+  type BuoyOverlay,
   type MeteorOverlay,
   type SevereLabel,
   type SevereShape,
@@ -190,7 +193,7 @@ import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './st
 import { dayTextureUrl, loadImage, nightTextureUrl, reliefUrl } from './textures';
 import type { SurfaceRequest, SurfaceResponse } from './surfaceWorker';
 import { cross, dot, fromLatLon, normalize, scale, sub, toLatLon, type Vec3 } from './vec';
-import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
+import { cameraFor, ORTHO_SKY_FOCAL, pinchMag, project, skyFocal, unproject, viewerLatLon, type Camera, type TrackResolver } from './view';
 import { Capacitor } from '@capacitor/core';
 import type { BodyDraw } from './renderer/bodies';
 
@@ -737,7 +740,7 @@ function lightningLayer(): LightningManifest | undefined {
   return { ...base, windowMin: LI_WINDOW_MIN, cellDeg: CELL_DEG, count: data.length / 4, data };
 }
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors' | 'buoys';
 
 /** `dataAt`: when the data now held was published, for the feeds dashboard. */
 let meteorManifest: MeteorManifest | undefined;
@@ -756,6 +759,61 @@ function meteorOverlay(): MeteorOverlay | undefined {
     };
   }
   return meteorCache;
+}
+
+// ---- buoys (NOAA OSMC, NDBC, via the pipeline) ----------------------------------------------
+// The dots come from latest.json; a buoy's window needs history.json (~250 KB), fetched only
+// once a window opens, and again when the pipeline has written a newer one.
+
+let buoyManifest: BuoyManifest | undefined;
+let buoyHistory: BuoyHistory | undefined;
+let buoyHistoryLoading = false;
+let buoyCache: BuoyOverlay | undefined;
+let buoyCacheKey = '';
+
+const selectedBuoy = () => (settings.buoy && buoyManifest ? buoyManifest.buoys.find((b) => b.id === settings.buoy) : undefined);
+
+function buoyOverlay(): BuoyOverlay | undefined {
+  if (!buoyManifest || (!settings.buoys && !settings.buoy)) return undefined;
+  const sel = selectedBuoy();
+  const key = `${buoyManifest.generated}|${settings.buoys}|${sel?.id ?? ''}|${buoyHistory?.generated ?? ''}`;
+  if (buoyCache && key === buoyCacheKey) return buoyCache;
+  const s = sel && buoyHistory?.series[sel.id];
+  const track =
+    s?.lat && s.lon
+      ? s.lat.flatMap((lat, i) => (lat !== null && s.lon![i] !== null ? [fromLatLon(lat, s.lon![i]!)] : []))
+      : undefined;
+  buoyCache = {
+    // With the layer off, a buoy opened from the place card or a link still shows where it is.
+    dots: settings.buoys ? buoyManifest.buoys.map((b) => ({ pos: fromLatLon(b.lat, b.lon), color: TYPE_COLOR[b.type] })) : [],
+    selected: sel ? { pos: fromLatLon(sel.lat, sel.lon), color: TYPE_COLOR[sel.type], track } : undefined,
+  };
+  buoyCacheKey = key;
+  return buoyCache;
+}
+
+async function loadBuoyHistory() {
+  if (buoyHistoryLoading || !buoyManifest || (buoyHistory && buoyHistory.generated >= buoyManifest.generated)) return;
+  buoyHistoryLoading = true;
+  try {
+    const h = await fetchJson(new URL('history.json', new URL(settings.buoysrc, location.href)).href);
+    if (!isBuoyHistory(h)) throw new Error('buoys/history.json is not a buoy history');
+    buoyHistory = h;
+  } catch (err) {
+    console.warn('buoy history:', err);
+  } finally {
+    buoyHistoryLoading = false;
+    syncBuoyPanel();
+  }
+}
+
+/** The manifest, whether or not the layer is on (a window or the place card may want it). */
+async function ensureBuoys(): Promise<BuoyManifest | undefined> {
+  if (!buoyManifest) {
+    const m = await fetchJson(pipelineFile(settings.buoysrc));
+    if (isBuoyManifest(m)) buoyManifest = m;
+  }
+  return buoyManifest;
 }
 
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; dataAt: () => string | number | undefined }> = {
@@ -888,6 +946,18 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       tsunamiCache = undefined;
     },
     dataAt: () => tsunamiManifest?.generated,
+  },
+  // OSMC and NDBC via the pipeline (hourly); the browser re-reads it every 15 minutes.
+  buoys: {
+    everyMs: 15 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.buoysrc));
+      if (!isBuoyManifest(m)) throw new Error('buoys/latest.json is not a buoy manifest');
+      buoyManifest = m;
+      if (settings.buoy) void loadBuoyHistory();
+      syncBuoyPanel();
+    },
+    dataAt: () => buoyManifest?.generated,
   },
   // GMN's daily trajectories and CNEOS's fireballs, via the pipeline (hourly; GMN's files
   // change a few times a day).
@@ -1385,6 +1455,7 @@ function layerRows(): ReadoutRow[] {
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
   if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
+  if (settings.buoys && buoyManifest) add('buoys', buoySummary(buoyManifest));
   if (settings.severe && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
   return rows;
 }
@@ -1519,6 +1590,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'severe', label: 'Severe weather', source: 'NWS · SPC', freshMs: 15 * MIN, on: () => settings.severe },
   { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
   // GMN's newest trajectories are hours behind its cameras, and its daily file a day.
+  // The pipeline runs hourly; buoys report every 10 min to a few hours.
+  { key: 'buoys', label: 'Buoys', source: 'NOAA OSMC · NDBC', freshMs: PIPELINE_FRESH, on: () => settings.buoys },
   { key: 'meteors', label: 'Meteors', source: 'GMN · NASA/JPL', freshMs: 12 * 60 * MIN, on: () => settings.meteors },
   // CelesTrak updates elements every 2 h; the pipeline refetches them at most every 3 h.
   { key: 'satellites', label: 'Satellites', source: 'CelesTrak', freshMs: 4 * 60 * MIN, on: () => settings.sats !== 'off', everyMs: SAT_POLL_MS },
@@ -1553,6 +1626,35 @@ const issPanelView = new IssPanelView(
   toasts.add({ id: 'iss', title: 'ISS · NASA live telemetry', order: 1, shrink: 0, onClose: () => update({ isslive: 'off' }) }),
 );
 const feedBoard = new FeedBoard(toasts.add({ id: 'feeds', title: 'Data feeds', order: 2, onClose: () => update({ feeds: false }) }), feedRows);
+const buoyPanel = new BuoyPanelView(
+  toasts.add({ id: 'buoy', title: 'Buoy', order: 4, shrink: 0, onClose: () => update({ buoy: '' }) }),
+);
+
+/** Refresh the buoy window: on a selection, new data, and once a minute (its "x min ago"). */
+function syncBuoyPanel() {
+  const b = selectedBuoy();
+  buoyPanel.update(b, buoyHistory, Date.now(), imperial);
+  if (b && !buoyHistory) void loadBuoyHistory();
+  requestRedraw();
+}
+setInterval(() => settings.buoy && syncBuoyPanel(), 60_000);
+
+/** A click (a press that didn't move) on a buoy's dot opens its window. */
+function pickBuoy(clientX: number, clientY: number) {
+  if (!settings.buoys || !buoyManifest) return;
+  const rect = overlayCanvas.getBoundingClientRect();
+  const camera = cameraFor(settings, simTime(), resolveTrack);
+  const r = radiusCss();
+  const w = overlayCanvas.clientWidth;
+  const h = overlayCanvas.clientHeight;
+  const pts = buoyManifest.buoys.map((b) => {
+    const q = project(camera, fromLatLon(b.lat, b.lon));
+    return q.visible ? { x: w / 2 + q.x * r, y: h / 2 - q.y * r } : { x: -1e6, y: -1e6 };
+  });
+  const i = pickNearest(pts, clientX - rect.left, clientY - rect.top, 12);
+  if (i >= 0) update({ buoy: buoyManifest.buoys[i].id });
+}
+
 const placeToast = toasts.add({
   id: 'place-card',
   title: 'Place',
@@ -1688,6 +1790,14 @@ async function placeAlerts(place: Place): Promise<Required<Pick<PlaceReport, 'al
   return { alerts, checked };
 }
 
+/** The nearest buoy within 150 km, for the place card (the manifest is fetched if the layer is off). */
+async function placeBuoy(place: Place): Promise<Pick<PlaceReport, 'buoy'>> {
+  const m = await ensureBuoys().catch(() => undefined);
+  const near = m && nearestBuoy(m.buoys, place.lat, place.lon, 150);
+  if (!near) return { buoy: null };
+  return { buoy: { text: buoyLine(near.buoy, near.km, near.bearing, imperial), open: () => update({ buoy: near.buoy.id }) } };
+}
+
 /** A place picked in the search: go there, label it, and show what it's like there. */
 function goToSearched(place: Place) {
   setLabelled(addLabelled(labelled, place));
@@ -1699,6 +1809,7 @@ function goToSearched(place: Place) {
     .catch((err) => (console.warn('place card:', err), null))
     .then((weather) => placeCard.fill(place, { weather }, imperial));
   void placeAlerts(place).then((part) => placeCard.fill(place, part, imperial));
+  void placeBuoy(place).then((part) => placeCard.fill(place, part, imperial));
 }
 
 const search = new PlaceSearch(document.getElementById('search') as HTMLElement, { go: goToSearched, recent: () => labelled, toast });
@@ -1890,6 +2001,7 @@ function frame(now: number) {
     storms: stormOverlays(),
     quakes: quakeOverlays(),
     meteors: meteorOverlay(),
+    buoys: buoyOverlay(),
     events: eventOverlays(),
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
@@ -1974,6 +2086,7 @@ let urlTimer: ReturnType<typeof setTimeout> | undefined;
 let radarZoomTimer: ReturnType<typeof setTimeout> | undefined;
 
 function update(patch: Partial<Settings>) {
+  const buoyBefore = settings.buoy;
   const cloudsBefore = settings.clouds;
   const ionoBefore = settings.iono;
   const magBefore = settings.mag;
@@ -1990,6 +2103,7 @@ function update(patch: Partial<Settings>) {
   if (settings.clouds !== cloudsBefore) syncClouds();
   if (settings.imagery !== imageryBefore) syncLive();
   if (settings.iono !== ionoBefore) syncIono();
+  if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
   satTree.refresh(settings, treeCounts());
   drawer.refresh(settings);
@@ -2026,9 +2140,13 @@ const spread = () => {
   return Math.hypot(a.x - b.x, a.y - b.y);
 };
 
+/** Where a one-finger press began, for telling a click (select a buoy) from a drag. */
+let press: { id: number; x: number; y: number } | undefined;
+
 overlayCanvas.addEventListener('pointerdown', (e) => {
   cancelAnimationFrame(glideFrame); // grabbing the globe stops a glide in progress
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  press = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY } : undefined;
   overlayCanvas.setPointerCapture(e.pointerId);
   if (pointers.size >= 2) {
     dragging = false;
@@ -2061,6 +2179,10 @@ overlayCanvas.addEventListener('pointermove', (e) => {
 
 const endDrag = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
+  if (e.type === 'pointerup' && press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) {
+    pickBuoy(e.clientX, e.clientY);
+  }
+  press = undefined;
   if (pointers.size < 2) pinch = null;
   const rest = [...pointers.values()][0];
   if (rest) {
@@ -2180,6 +2302,8 @@ syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 syncLive();
 syncIono();
+// A link with ?buoy= opens that buoy's window, with or without the layer.
+if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
 
 // Installed web app / Android TWA: an offline shell (public/sw.js). Not inside the
 // Capacitor app, whose files are bundled; there, Android's back button closes panels.

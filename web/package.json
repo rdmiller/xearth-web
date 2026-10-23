@@ -24,6 +24,7 @@
     "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
     "ionosphere": "cd ../pipeline && python -m xearth_clouds.ionosphere --out ../web/public/ionosphere",
     "meteors": "cd ../pipeline && python -m xearth_clouds.meteors --out ../web/public/meteors",
+    "buoys": "cd ../pipeline && python -m xearth_clouds.buoys --out ../web/public/buoys",
     "icons": "python scripts/make-icons.py",
     "android:build": "vite build --mode android && cap sync android",
     "android:open": "cap open android",

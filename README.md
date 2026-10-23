@@ -60,6 +60,11 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **US severe weather:** NWS tornado, severe thunderstorm, flash flood and other storm-based
     warnings as the polygons forecasters drew, and the Storm Prediction Center's day-1 outlook
     (marginal to high risk) in SPC's own colours.
+- **Buoys** (Shift+B, off by default): the ~1,900 buoys reporting on NOAA's global network
+  (drifting, moored, tropical, ice and DART tsunami buoys) as dots by type. Click one for its
+  window: waves, water temperature, wind and pressure with their last 24 hours as sparklines,
+  wind and wave direction dials, a drifter's track, a DART buoy's water column. A searched
+  place's card names the nearest buoy, with a button to open it.
 - **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
   window of gauges while the ISS is tracked: signal, orbit sparklines, cabin-air meters, solar-array dials. While
   the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
@@ -239,7 +244,7 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
-snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora, meteors, ionosphere), Hazards (cyclones,
+snow and ice, radar, smoke, buoys, grid), Sky (stars, Sun and Moon, aurora, meteors, ionosphere), Hazards (cyclones,
 fires, quakes, lightning, GDACS alerts, tsunami, severe weather), Space (satellites, with a small button for
 the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
@@ -271,6 +276,7 @@ style. A test checks that every layer hotkey has a button.
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Shift+I` | ionosphere: electron content → HF radio absorption → off |
 | `Shift+M` | meteors (last 24 h) and fireballs on/off |
+| `Shift+B` | buoys on/off (click one for its window) |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` | rain: radar with satellite rain where there's none → radar only → off |
 | `Shift+S` `Shift+T` | smoke, tsunami alerts on/off |
@@ -312,6 +318,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/severe.ts      NWS storm-based warnings and the SPC outlook: decoding, styles, labels
   src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
   src/meteors.ts     GMN meteor trajectories as streaks, CNEOS fireballs, shower colours
+  src/buoys.ts       buoys: decoding, picking, nearest to a place, drift, pressure tendency, wording
+  src/buoyView.ts    a buoy's window: history sparkline tiles and direction dials (the ISS window's parts)
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
@@ -353,6 +361,7 @@ pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
 pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
 pnpm meteors                 # GMN trajectories (last 24 h) + CNEOS fireballs (90 d) → public/meteors/
+pnpm buoys                   # NOAA OSMC + NDBC: buoys, latest + last 24 h → public/buoys/
 pnpm dev
 ```
 
@@ -471,6 +480,7 @@ docker compose down                 # stop (the data volume is kept)
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
+| `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json` and `history.json` | `0`, none, `buoys/` |
 | `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
 | `iono`, `ionosrc` | ionosphere wash: `tec` (GloTEC electron content), `drap` (D-RAP HF absorption) or `0`; folder holding GloTEC's `latest.json` | `0`, `ionosphere/` |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
@@ -629,6 +639,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Space weather | NOAA SWPC Kp, latest flare, solar-wind summaries (< 1 KB each) | browser, with the aurora | 10 min |
 | Ionosphere: electron content | NOAA SWPC GloTEC, 5° × 2.5° (2.5 MB a map at SWPC, ~12 KB gzipped after the pipeline) | pipeline | hourly, browser re-reads every 15 min (only while shown) |
 | Ionosphere: HF absorption | NOAA SWPC D-RAP global frequencies, 4° × 2° text table (2.8 KB gzipped) | browser | 10 min (only while shown) |
+| Buoys | NOAA OSMC (ERDDAP, last 24 h of buoy reports, ~1.4 MB gzipped); NDBC names, latest observations and DART files | pipeline | hourly; browser re-reads the dots every 15 min, the history when a window opens |
 | Meteors | Global Meteor Network daily trajectories (5 MB, trimmed to ~107 KB gzipped); NASA/JPL CNEOS fireballs, 90 days | pipeline | hourly, browser re-reads every 30 min (only while shown) |
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
@@ -647,6 +658,37 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
 | ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
+- **Buoys** (`buoys=1`, Shift+B; `buoy=<id>` opens one's window):
+  - *Sources:* NOAA's Observing System Monitoring Center (OSMC) gathers what every buoy on the
+    global network reports. The pipeline asks its ERDDAP server for the last day, buoys only
+    (drifting, moored, weather, tropical-moored and ice) and the columns it uses: ~130,000 rows,
+    1.4 MB gzipped, ~20 s. Moorings report a temperature profile, so only depths to 1 m count
+    as the surface. NOAA NDBC adds what OSMC lacks for its own stations: names
+    (activestations.xml), gusts and wave period and direction (latest_obs.txt, taken whole when
+    it's newer), and the DART tsunami buoys' water-column height (realtime2/<id>.dart: every
+    15 minutes in standard mode, sent every few hours; 1-minute or 15-second readings in event
+    mode, which the window flags). None of them sends CORS headers.
+  - *Two files:* `latest.json` holds each buoy's position, type and latest readings (1,921
+    buoys on 2026-10-23, 42 KB gzipped: 1,300 drifting, 489 moored, 54 ice, 43 DART, 35
+    tropical); buoys that only report a position are left out. `history.json` holds the last
+    24 hours in hourly bins (each the hour's last value), a drifter's track, and DART heights
+    every 15 minutes (257 KB gzipped); the browser only fetches it once a window opens, and
+    again when the pipeline has written a newer one.
+  - *Picking:* a click (a press that moves under 5 px, not part of a pinch) selects the
+    nearest dot within 12 px. The selected buoy gets a reticle in its type's colour, and a
+    drifting or ice buoy its last day's track as a dashed line. The selection goes in the
+    link, so `?buoy=46026` opens that buoy's window (and shows where it is) with or without the
+    layer on.
+  - *The window* is built from the ISS window's parts and styles: stat tiles for waves (with
+    period), water, wind and pressure, each with its 24-hour sparkline (hover for any hour) and
+    its change over the day; direction dials for wind and waves (where they come from); a
+    footer with the pressure's 3-hour tendency, gusts, and how far a drifter drifted. Tiles and
+    dials a buoy has nothing for hide themselves; a DART buoy has one full-width tile, its
+    water column, where the tide shows as the slow swing. Units follow the browser's locale.
+    The header chip says how old the latest report is, and the window dims after 6 hours.
+  - *Place card:* a searched place lists the nearest buoy within 150 km (not DARTs, which
+    report no weather), e.g. "Buoy 46237 (10 mi WNW): waves 5.2 ft every 8 s · water 60°F",
+    with an Open button.
 - **Meteors** (`meteors=1`, Shift+M):
   - *The data:* GMN's cameras triangulate each meteor two or more sites catch, and publish the
     trajectories (updated every 6 hours): where it lit up and burned out (latitude,
@@ -899,9 +941,9 @@ bottom. Keys and values sit in two columns. A long value wraps at its " · " sep
 ## Toast windows
 
 The panels down the right edge share one look and one place. A toast manager
-(`src/toasts.ts`) gives frame rate, ISS telemetry, data feeds and a searched place's card the
-same window: one width (320 px), the same glass, and a header with the title, a status chip
-(the ISS signal, the feeds summary) and ×. It stacks them in that order in one column from
+(`src/toasts.ts`) gives frame rate, ISS telemetry, data feeds, a searched place's card and a
+buoy's window the same window: one width (320 px), the same glass, and a header with the
+title, a status chip (the ISS signal, the feeds summary, a buoy's last report) and ×. It stacks them in that order in one column from
 the top of the window to the dock, so they never overlap.
 
 - **Space:** when the windows don't fit, the data feeds give up height first and scroll.
@@ -961,6 +1003,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
+- Buoys: NOAA Observing System Monitoring Center (OSMC) and NOAA National Data Buoy Center
+  (NDBC), including the DART tsunami buoys.
 - Meteors: Global Meteor Network (globalmeteornetwork.org), data CC BY 4.0. Vida et al. 2020,
   MNRAS 491, 2688–2705; Vida et al. 2021, "The Global Meteor Network – Methodology and first
   results", MNRAS 506, 5046–5074. Fireballs: NASA/JPL Center for Near Earth Object Studies (CNEOS).
