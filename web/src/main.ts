@@ -75,6 +75,7 @@ import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
+import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
 import { detailRequest, fetchFloodCells, FLOOD_CHECK_MS, FLOOD_H, FLOOD_REFRESH_MS, FLOOD_W, floodPoints, floodSummary, newestFloodDate, withDetail, WORLD, type FloodBox, type FloodCell } from './flood';
 import {
   decodeOutlook,
@@ -1644,6 +1645,7 @@ function layerRows(): ReadoutRow[] {
   }
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
   if (settings.events && floodWorld) add('flood map', floodSummary(floodWorld.date, floodWorld.cells));
+  if (settings.events && usVolcanoes.length) add('US volcanoes', volcanoSummary(usVolcanoes));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
   if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
   if (settings.buoys && buoyManifest) add('buoys', buoySummary(buoyManifest));
@@ -1770,6 +1772,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
   { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // A volcano's notice is the latest about it: daily for the restless ones, years old for some quiet ones.
+  { key: 'hans', label: 'US volcanoes', source: 'USGS HANS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.events, everyMs: HANS_CHECK_MS },
   // A flood day fills in as its passes arrive; dated noon, it's ~6–30 hours old.
   { key: 'flood', label: 'Flood extent', source: 'NASA LANCE VIIRS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.events, everyMs: FLOOD_CHECK_MS },
   // GIBS has a MUR day the next day: dated noon, it's ~30 hours old when it lands.
@@ -1919,6 +1923,10 @@ function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]
       const f = settings.meteors ? meteorManifest?.fireballs.find((f) => f.time === p.id) : undefined;
       return f && { detail: fireballInfo(f, FIREBALL_COLOR, now), pos: at(f.lat, f.lon) };
     }
+    case 'volcano': {
+      const v = settings.events ? usVolcanoes.find((v) => v.hans.vnum === p.id) : undefined;
+      return v && { detail: volcanoInfo(v, volcanoNotice(v)), pos: at(v.lat, v.lon) };
+    }
     case 'warning': {
       const w = settings.severe ? severeWarnings.find((w) => w.id === p.id) : undefined;
       if (!w) return undefined;
@@ -2008,6 +2016,7 @@ function targetAt(clientX: number, clientY: number): string | undefined {
   if (settings.quakes) for (const q of quakes) add(fromLatLon(q.lat, q.lon), Math.max(8, quakeRadius(q.mag) + 3), pickKey('quake', q.id));
   if (settings.storms) for (const st of stormManifest?.storms ?? []) add(fromLatLon(st.pos[1], st.pos[0]), REACH.storm, pickKey('storm', st.id));
   if (settings.events) for (const e of eventManifest?.events ?? []) add(fromLatLon(e.pos[1], e.pos[0]), eventSize(e.alert) + 5, pickKey('event', e.id));
+  if (settings.events) for (const v of usVolcanoes) if (v.hans.vnum) add(fromLatLon(v.lat, v.lon), (alertRank(v.hans.alert_level) >= 1 ? 6 + alertRank(v.hans.alert_level) : 3.5) + 5, pickKey('volcano', v.hans.vnum));
   if (settings.tsunami) {
     for (const b of tsunamiManifest?.bulletins ?? []) if (tsunamiShown(b, now)) add(fromLatLon(b.lat, b.lon), REACH.tsunami, pickKey('tsunami', b.id));
   }
@@ -2231,6 +2240,64 @@ function wantFloodDetail(view: { lat0: number; lat1: number; lon0: number; lon1:
         if (!ac.signal.aborted) console.warn('flood extent (zoomed in):', err);
       });
   }, 400);
+}
+
+// ---- US volcano alert levels (USGS HANS), with the GDACS events ------------------------------
+// HANS's monitored volcanoes, placed at the Smithsonian's positions (usgsVolcanoes.ts); a
+// volcano's latest notice is fetched when its window opens, once per notice.
+
+let usVolcanoes: UsVolcano[] = [];
+let usVolcanoCache: EventOverlay[] | undefined;
+let hansTimer: ReturnType<typeof setInterval> | undefined;
+/** Notices by their data URL: its sections, 'loading', or null when it couldn't be read. */
+const notices = new Map<string, Map<string, NoticeSection> | 'loading' | null>();
+
+function runHans(): Promise<void> {
+  feedLog.begin('hans', Date.now(), HANS_CHECK_MS);
+  return fetchJson(HANS_MONITORED)
+    .then((list) => {
+      if (!isHansList(list)) throw new Error('not a USGS HANS volcano list');
+      usVolcanoes = placeVolcanoes(list).placed;
+      usVolcanoCache = undefined;
+      feedLog.done('hans', Date.now(), newestNotice(list));
+    })
+    .catch((err) => {
+      feedLog.fail('hans', Date.now(), err);
+      console.warn('US volcanoes:', err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncHans() {
+  clearInterval(hansTimer);
+  hansTimer = undefined;
+  if (!settings.events) return feedLog.stop('hans');
+  void runHans();
+  hansTimer = setInterval(() => void runHans(), HANS_CHECK_MS);
+}
+
+function usVolcanoOverlays(): EventOverlay[] {
+  if (!settings.events) return [];
+  return (usVolcanoCache ??= volcanoOverlays(usVolcanoes));
+}
+
+/** A volcano's part of its latest notice: undefined while it loads, null if there's none. */
+function volcanoNotice(v: UsVolcano): NoticeSection | null | undefined {
+  const url = v.hans.notice_data;
+  if (!v.hans.sent_utc || !/^https:\/\/volcanoes\.usgs\.gov\//.test(url)) return null;
+  const have = notices.get(url);
+  if (have === undefined) {
+    notices.set(url, 'loading');
+    fetchJson(url)
+      .then((n) => notices.set(url, noticeSections(n)))
+      .catch((err) => {
+        notices.set(url, null);
+        console.warn('USGS notice:', err);
+      });
+    return undefined;
+  }
+  if (have === 'loading') return undefined;
+  return have?.get(String(v.hans.vnum)) ?? null;
 }
 
 const placeToast = toasts.add({
@@ -2587,7 +2654,7 @@ function frame(now: number) {
     quakes: quakeOverlays(),
     meteors: meteorOverlay(),
     buoys: buoyOverlay(),
-    events: eventOverlays(),
+    events: [...eventOverlays(), ...usVolcanoOverlays()],
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
     severe: severeOverlays().shapes,
@@ -2695,7 +2762,10 @@ function update(patch: Partial<Settings>) {
   if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
   if (settings.ash !== ashBefore) syncAsh();
   if ((settings.sst === 'off') !== (sstBefore === 'off')) syncSst();
-  if (settings.events !== hazardsBefore.events) syncFlood();
+  if (settings.events !== hazardsBefore.events) {
+    syncFlood();
+    syncHans();
+  }
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -2904,6 +2974,7 @@ syncHimawari();
 syncAsh();
 syncSst();
 syncFlood();
+syncHans();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);

@@ -15,7 +15,7 @@ import type { Polygon, SevereWarning } from './severe';
 import type { ToastTone } from './toasts';
 import { TSUNAMI_COLOR, clip, type TsunamiBulletin } from './tsunami';
 
-export const PICK_KINDS = ['sat', 'launch', 'quake', 'storm', 'event', 'tsunami', 'fireball', 'warning'] as const;
+export const PICK_KINDS = ['sat', 'launch', 'quake', 'storm', 'event', 'tsunami', 'fireball', 'warning', 'volcano'] as const;
 export type PickKind = (typeof PICK_KINDS)[number];
 
 export interface Selection {

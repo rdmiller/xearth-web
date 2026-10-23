@@ -49,6 +49,8 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Floods, wildfires, eruptions:** GDACS events with their impact levels; wildfires carry their
     burned area, drawn to scale when zoomed in. With them, NASA's daily flood map (VIIRS): where
     there's water that usually isn't, in blue, the view's own at up to 250 m when zoomed in.
+    And USGS's alert levels for the US volcanoes it monitors, in their aviation colours: the
+    raised ones labelled, each one's latest notice a click away.
   - **Volcanic ash** (Shift+A, off by default): EUMETSAT's Ash RGB, the false-colour infrared
     picture forecasters use for ash and SO2 plumes, over the whole globe day and night, with a
     toast of what its colours mean and GDACS's eruptions, each one press away.
@@ -252,6 +254,29 @@ at 8.7) and blue from the 10.8 µm temperature. Being infrared, it works day and
   day and how long ago, and which picture shows each and how often it's new. On 2026-10-23
   those were Kanlaon and Taal (Philippines, the Geo Ring only) and Krakatau (the Indian Ocean
   disc). Pressing one centres the globe on it.
+
+### US volcano alert levels
+
+USGS's Volcano Hazards Program publishes each monitored US volcano's ground-hazard alert level
+(NORMAL, ADVISORY, WATCH, WARNING) and aviation colour code (GREEN, YELLOW, ORANGE, RED) through
+HANS, its notification service, with CORS: 69 volcanoes on 2026-10-23, four of them raised
+(Great Sitkin WATCH/ORANGE; Shishaldin, Kīlauea and Ahyi Seamount ADVISORY/YELLOW). They're
+drawn with the GDACS events (Y), checked every 15 minutes.
+
+- **Positions from the Smithsonian:** HANS gives none, so they come from the Smithsonian's
+  Volcanoes of the World, joined on the volcano number. Its WFS has no CORS and volcanoes don't
+  move, so `web/scripts/bake-volcanoes.py` bakes the 351 US volcanoes (Holocene, and Pleistocene
+  for the calderas HANS watches: Long Valley, Yellowstone, Coso) into `src/usVolcanoes.ts`.
+  A number the Smithsonian doesn't list is taken as a vent of the volcano numbered the same but
+  for a last 0 (VOTW's convention): Korovin (311161) is drawn at the Atka Volcanic Complex
+  (311160), and its window says so. That places 67 of 69; the other two ("Alaskan Volcanoes",
+  "Cascade Range") are regions with no number.
+- **On the globe:** a cone in the aviation colour, larger and labelled ("GREAT SITKIN · WATCH")
+  when raised, small and unlabelled when normal, most serious first.
+- **A volcano's window:** alert level and colour code, observatory, notice time, elevation,
+  type and last eruption, then its latest notice's synopsis and summary (fetched when the window
+  opens, once per notice, plain text only), and a link to the notice. 13 volcanoes had no notice
+  at all (no time), and say nothing more.
 
 ### Flood extent
 
@@ -510,6 +535,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/ash.ts         volcanic ash: the Ash RGB sources, their no-data mask, and the toast
   src/sst.ts         sea surface temperature: GIBS's MUR colours read back to °C, Niño 3.4
   src/flood.ts       flood extent: GIBS's flood classes to points, world and zoomed in
+  src/usgsVolcanoes.ts  US volcano alert levels (USGS HANS) at the Smithsonian's positions
+  src/usVolcanoes.ts the US volcanoes' positions, baked by scripts/bake-volcanoes.py
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
@@ -834,6 +861,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour Enhanced (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
 | Live clouds (East Asia, west Pacific) | Himawari-9 AHI Band 13 (PNG, ~2.4 MB) and, by day, Band 3 (JPEG, ~340 KB) from NASA GIBS, turned into cloud opacity in a worker | browser, while its disc faces the view | 10 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
+| US volcano alert levels | USGS HANS monitored volcanoes (~45 KB), positions baked from the Smithsonian's Volcanoes of the World; a volcano's latest notice when its window opens | browser, with the GDACS events | 15 min |
 | Flood extent | NASA LANCE VIIRS combined flood, 2-day (NASA GIBS WMS PNG: world 0.088°, ~640 KB; zoomed in, the view at up to 250 m) | browser, with the GDACS events | daily, refreshed every 3 h; checked hourly |
 | Sea surface temperature | GHRSST MUR temperature and anomaly (NASA GIBS WMS PNG, 0.25°, ~880 KB a day) | browser, while the layer is on | daily, a day behind; checked hourly |
 | Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
@@ -1257,6 +1285,9 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Project), distributed by NASA PO.DAAC, via NASA GIBS.
 - Flood extent: NASA LANCE VIIRS (VCDWD) global flood product, NOAA-20 and NOAA-21, via NASA
   GIBS.
+- US volcano alert levels: USGS Volcano Hazards Program (HANS) and its observatories (AVO, CVO,
+  HVO, YVO, CalVO and the Northern Mariana Islands). Volcano positions: Global Volcanism Program,
+  Smithsonian Institution, Volcanoes of the World.
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
 - Satellite rain: NASA GPM IMERG (Huffman et al.), early run, via NASA GIBS.
