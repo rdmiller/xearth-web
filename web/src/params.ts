@@ -26,6 +26,9 @@ export type ImageryMode = 'live' | 'daily' | 'painted';
 /** NASA ISS telemetry panel: while tracking the ISS, always, or off (no connection). */
 export type IssLiveMode = 'track' | 'on' | 'off';
 
+/** The status readout: every row, `short` (the time and the first rows, one line each), or off. */
+export type ReadoutMode = 'on' | 'short' | 'off';
+
 export interface Settings extends ViewSettings {
   /** Disc diameter as a fraction of 90% of the window's shorter side. */
   mag: number;
@@ -41,7 +44,8 @@ export interface Settings extends ViewSettings {
   satshow: string[];
   /** Categories whose satellites carry name labels. */
   satlabels: string[];
-  label: boolean;
+  /** The status readout, top left. */
+  label: ReadoutMode;
   /** Frame-rate display. */
   fps: boolean;
   /** Data-feeds dashboard: each source's last update and next check. */
@@ -168,7 +172,7 @@ export function defaults(): Settings {
     sats: 'all',
     satshow: [...ALL_LEAVES],
     satlabels: [...DEFAULT_LABELS],
-    label: true,
+    label: 'on',
     fps: false,
     feeds: false,
     bodies: true,
@@ -218,6 +222,21 @@ export function defaults(): Settings {
     winds: 'off',
     windsrc: dataSrc('VITE_WINDS_BASE', 'winds/'),
   };
+}
+
+/** Small screens: phones either way up (the CSS's narrow layout is max-width 600px). */
+export const SMALL_SCREEN = '(max-width: 600px), (max-height: 500px)';
+
+/**
+ * What a visit with no query at all starts from: the defaults, adjusted for the screen. A
+ * link is still read and written against defaults() alone, so it shows the same on any
+ * device; this only picks the starting point when there's no link to follow.
+ */
+export function firstLoad(small: boolean): Settings {
+  const d = defaults();
+  if (!small) return d;
+  // A phone's readout, every row of it, covers the top of the globe: start it short.
+  return { ...d, label: 'short' };
 }
 
 function num(q: URLSearchParams, key: string, fallback: number, min = -Infinity, max = Infinity): number {
@@ -288,6 +307,14 @@ function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
   return FALSY.includes(raw) ? 'off' : 'on';
 }
 
+/** `label=short`; otherwise on unless false-ish, as when it was a plain switch. */
+function readoutMode(q: URLSearchParams, fallback: ReadoutMode): ReadoutMode {
+  const raw = q.get('label')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'short') return 'short';
+  return FALSY.includes(raw) ? 'off' : 'on';
+}
+
 /** A comma list of satellite category keys; unknown keys are dropped, `none` is empty. */
 function keyList(q: URLSearchParams, key: string, fallback: string[]): string[] {
   const raw = q.get(key);
@@ -320,7 +347,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     sats: satMode(q, base.sats),
     satshow: keyList(q, 'satshow', base.satshow),
     satlabels: keyList(q, 'satlabels', base.satlabels),
-    label: bool(q, 'label', base.label),
+    label: readoutMode(q, base.label),
     fps: bool(q, 'fps', base.fps),
     feeds: bool(q, 'feeds', base.feeds),
     bodies: bool(q, 'bodies', base.bodies),

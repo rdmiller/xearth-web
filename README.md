@@ -517,7 +517,8 @@ style. A test checks that every layer hotkey has a button.
 
 | Keys | Action |
 |---|---|
-| `C` `N` `G` `M` `L` | clouds, city lights, grid, markers, label |
+| `C` `N` `G` `M` | clouds, city lights, grid, markers |
+| `L` | readout: every row → short (the time and first three rows; click it for every row) → off |
 | `B` | Sun and Moon on/off |
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
@@ -737,6 +738,11 @@ docker compose down                 # stop (the data volume is kept)
 
 ## URL parameters
 
+A link is read against the defaults below on any device, so it shows the same everywhere. A
+visit with no query at all starts from defaults that suit the screen (`firstLoad` in
+`params.ts`): on a small one (narrower than 600 px, or shorter than 500 px: a phone either way
+up) the readout starts short. Changing anything writes the difference into the URL as usual.
+
 | Parameter | Meaning | Default |
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
@@ -769,7 +775,8 @@ docker compose down                 # stop (the data volume is kept)
 | `mag`, `rot` | size, rotation (° counter-clockwise) | 1, 0 |
 | `wait` | seconds between redraws | 60 |
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
-| `clouds`, `lights`, `grid`, `markers`, `label` | `0` / `1` | 1,1,0,1,1 |
+| `clouds`, `lights`, `grid`, `markers` | `0` / `1` | 1,1,0,1 |
+| `label` | the status readout: `1`, `short` (the time and first three rows), `0` | 1 (`short` on a phone's first visit) |
 | `stars` | `1`, `0`, or `photo` (camera-exposure dimming) | 1 |
 | `fps` | `1` shows the frame-rate display | 0 |
 | `feeds` | `1` shows the data-feeds dashboard | 0 |

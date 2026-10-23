@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calloutRect, layoutSatLabels, placeCallout, slideClear, type Rect } from '../overlay';
+import { calloutRect, layoutSatLabels, placeCallout, readoutLines, SHORT_ROWS, slideClear, type Rect } from '../overlay';
 
 const screen = { w: 800, h: 600 };
 
@@ -99,5 +99,35 @@ describe('slideClear', () => {
   it('stays put when there is nowhere clear on that edge', () => {
     const wall = { x: 0, y: 0, w: 100, h: 600 };
     expect(slideClear({ x: 26, y: 300 }, box, [wall], 800, 600, inset)).toEqual({ x: 26, y: 300 });
+  });
+});
+
+describe('readoutLines', () => {
+  // One px per character, so a value "wraps" past maxW characters.
+  const measure = (t: string) => t.length;
+  const rows = [
+    { key: 'view', value: '20.0°N 30.0°E' },
+    { key: 'sun', value: '11.0°S 140.0°W' },
+    { key: 'satellites', value: '11,149 Starlink · 73 weather · 31 GPS' },
+    { key: 'quakes', value: '12 in the last day' },
+    { key: 'fires', value: '4,210 in 12 h' },
+  ];
+
+  it('shows every row, wrapped, when on', () => {
+    const lines = readoutLines('TIME', rows, 'on', 20, measure);
+    expect(lines[0]).toEqual({ key: '', value: 'TIME', head: true });
+    expect(lines.map((l) => l.key)).toEqual(['', 'view', 'sun', 'satellites', '', 'quakes', 'fires']);
+  });
+
+  it('keeps the first rows to a line each when short, and counts the rest', () => {
+    const lines = readoutLines('TIME', rows, 'short', 20, measure);
+    expect(lines).toHaveLength(1 + SHORT_ROWS + 1);
+    expect(lines[3]).toEqual({ key: 'satellites', value: '11,149 Starlink …' });
+    expect(lines.at(-1)).toEqual({ key: '', value: `+${rows.length - SHORT_ROWS} more`, more: true });
+  });
+
+  it('has no "more" line when nothing is left out, and nothing at all when off', () => {
+    expect(readoutLines('TIME', rows.slice(0, 2), 'short', 20, measure).some((l) => l.more)).toBe(false);
+    expect(readoutLines('TIME', rows, 'off', 20, measure)).toEqual([]);
   });
 });

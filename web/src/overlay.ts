@@ -4,6 +4,7 @@
 
 import { CITIES } from './cities';
 import type { CloudStatus } from './cloudSync';
+import type { ReadoutMode } from './params';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
 import { tok } from './tokens';
@@ -53,6 +54,7 @@ export interface Rect {
 }
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+export const inRect = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
 /** Callout geometry: a short 45° elbow up from the marker, then an underline the label sits on. */
 const ELBOW = 6;
@@ -339,7 +341,7 @@ export interface OverlayState {
   viewer: { lat: number; lon: number };
   sun: { lat: number; lon: number };
   markers: boolean;
-  label: boolean;
+  label: ReadoutMode;
   clouds: boolean;
   cloudStatus: CloudStatus;
   /** Shown beside the time when the clock isn't live (e.g. "paused"). */
@@ -1533,10 +1535,33 @@ function readoutRows(s: OverlayState): ReadoutRow[] {
 }
 
 /** One drawn line of the readout: the time across both columns, else a key (first line only) and value. */
-interface ReadoutLine {
+export interface ReadoutLine {
   key: string;
   value: string;
   head?: boolean;
+  /** The short readout's last line, "+9 more": quieter, like the keys. */
+  more?: boolean;
+}
+
+/** Rows the short readout keeps after the time, one line apiece. */
+export const SHORT_ROWS = 3;
+
+/**
+ * The readout's lines: the time, then each row wrapped at `maxW`. Short keeps the first
+ * SHORT_ROWS rows to their first line ("…" where a row went on) and counts the rest.
+ */
+export function readoutLines(head: string, rows: ReadoutRow[], mode: ReadoutMode, maxW: number, measure: (text: string) => number): ReadoutLine[] {
+  if (mode === 'off' || !rows.length) return [];
+  const short = mode === 'short';
+  const lines: ReadoutLine[] = [{ key: '', value: head, head: true }];
+  for (const r of short ? rows.slice(0, SHORT_ROWS) : rows) {
+    const wrapped = wrapValue(r.value, maxW, measure);
+    if (short) lines.push({ key: r.key, value: wrapped.length > 1 ? `${wrapped[0]} …` : wrapped[0] });
+    else lines.push(...wrapped.map((value, i) => ({ key: i ? '' : r.key, value })));
+  }
+  const hidden = rows.length - SHORT_ROWS;
+  if (short && hidden > 0) lines.push({ key: '', value: `+${hidden} more`, more: true });
+  return lines;
 }
 
 const ROW_H = 17;
@@ -1545,8 +1570,8 @@ function readoutValueX(ctx: CanvasRenderingContext2D, lines: ReadoutLine[]): num
   return 24 + Math.max(0, ...lines.map((l) => ctx.measureText(l.key).width)) + 12;
 }
 
-/** Draws the overlay; returns the bottom edge of the status readout (CSS px, 0 when there's none). */
-export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number {
+/** Draws the overlay; returns where the status readout is (CSS px), or null when there's none. */
+export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): Rect | null {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -1561,14 +1586,9 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
   ctx.font = `500 12px ${UI_FONT}`;
   ctx.letterSpacing = '0.05em';
   // Two columns: keys, then values that wrap at READOUT_VALUE_W.
-  const rows = s.label ? readoutRows(s) : [];
   const measure = (text: string) => ctx.measureText(text).width;
-  const lines: ReadoutLine[] = rows.length
-    ? [
-        { key: '', value: `${s.date.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`, head: true },
-        ...rows.flatMap((r) => wrapValue(r.value, READOUT_VALUE_W, measure).map((value, i) => ({ key: i ? '' : r.key, value }))),
-      ]
-    : [];
+  const head = `${s.date.toUTCString().replace('GMT', 'UTC')}${s.clock ? ` — ${s.clock}` : ''}`;
+  const lines = readoutLines(head, s.label === 'off' ? [] : readoutRows(s), s.label, READOUT_VALUE_W, measure);
   const valueX = readoutValueX(ctx, lines);
   const readout: Rect | null = lines.length
     ? {
@@ -1632,10 +1652,10 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
         ctx.fillStyle = HUD.key;
         ctx.fillText(line.key, 24, y);
       }
-      ctx.fillStyle = HUD.text;
+      ctx.fillStyle = line.more ? HUD.key : HUD.text;
       ctx.fillText(line.value, valueX, y);
     });
   }
   ctx.letterSpacing = '0px';
-  return readout ? Math.ceil(readout.y + readout.h) : 0;
+  return readout;
 }

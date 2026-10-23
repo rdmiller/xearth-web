@@ -140,7 +140,7 @@ export const DRAWER: DrawerGroup[] = [
     items: [
       { key: '/', label: 'Find', icon: Search, state: () => ({ on: false }), momentary: true },
       { key: 'm', label: 'Cities', icon: MapPin, state: flag('markers') },
-      { key: 'l', label: 'Readout', icon: AlignLeft, state: flag('label') },
+      { key: 'l', label: 'Readout', icon: AlignLeft, state: (s) => ({ on: s.label !== 'off', tag: s.label === 'short' ? 'SHORT' : undefined }) },
       { key: 'd', label: 'FPS', icon: Gauge, state: flag('fps') },
       { key: 'shift+u', label: 'Feeds', icon: Timer, state: flag('feeds') },
     ],

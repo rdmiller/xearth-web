@@ -204,6 +204,7 @@ import {
   LAUNCH_COLOR,
   PLACE_COLOR,
   UI_FONT,
+  inRect,
   type BodyMarker,
   type EventOverlay,
   type BuoyOverlay,
@@ -215,13 +216,14 @@ import {
   type LaunchOverlay,
   type QuakeOverlay,
   type ReadoutRow,
+  type Rect,
   type SatelliteOverlay,
   type SatLabelOverlay,
   type StormOverlay,
 } from './overlay';
 import { FrameStats, GpuTimer, SlowFrames } from './perf';
 import { publishSeverity } from './tokens';
-import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
+import { DATA_BASE, firstLoad, parseSettings, SMALL_SCREEN, toQuery, type Settings } from './params';
 import { GlobeRenderer, type FrameState } from './renderer/gl';
 import { WindLayer } from './renderer/winds';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
@@ -272,7 +274,8 @@ const help = document.getElementById('help') as HTMLElement;
 const helpKeys = document.getElementById('help-keys') as HTMLElement;
 const toastEl = document.getElementById('toast') as HTMLElement;
 
-let settings: Settings = parseSettings(location.search);
+// A link is followed as it says; a bare visit starts from defaults that suit the screen.
+let settings: Settings = location.search ? parseSettings(location.search) : firstLoad(matchMedia(SMALL_SCREEN).matches);
 let note: string | undefined;
 /** Every polled source's checks, for the feeds dashboard (Shift+U). */
 const feedLog = new FeedLog();
@@ -2917,6 +2920,8 @@ let renderMode = '';
 let redrawEvery = 0;
 /** Last readout bottom edge sent to CSS as --readout-bottom (only written when it changes). */
 let lastReadoutBottom = -1;
+/** Where the status readout was last drawn: a click on it shows every row, or goes back to short. */
+let readoutRect: Rect | null = null;
 /** Too slow for the glass blur: html.lite swaps it for solid panels. */
 const slowFrames = new SlowFrames();
 /** When the last frame drawn back to back (continuous redraws) started, or 0. */
@@ -3059,7 +3064,7 @@ function frame(now: number) {
   if (settings.fps) gpuTimer.end(slot);
   const t2 = performance.now();
 
-  const readoutBottom = drawOverlay(overlayCanvas, {
+  readoutRect = drawOverlay(overlayCanvas, {
     camera,
     radiusPx: radiusCss(),
     date,
@@ -3092,6 +3097,7 @@ function frame(now: number) {
     note,
   });
   // On phones the toast column starts below the readout instead of covering it.
+  const readoutBottom = readoutRect ? Math.ceil(readoutRect.y + readoutRect.h) : 0;
   if (readoutBottom !== lastReadoutBottom) {
     lastReadoutBottom = readoutBottom;
     document.documentElement.style.setProperty('--readout-bottom', `${readoutBottom}px`);
@@ -3276,7 +3282,8 @@ overlayCanvas.addEventListener('pointermove', (e) => {
 const endDrag = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
   if (e.type === 'pointerup' && press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) {
-    pickAt(e.clientX, e.clientY);
+    if (readoutRect && inRect(readoutRect, e.clientX, e.clientY)) update({ label: settings.label === 'short' ? 'on' : 'short' });
+    else pickAt(e.clientX, e.clientY);
   }
   press = undefined;
   if (pointers.size < 2) pinch = null;

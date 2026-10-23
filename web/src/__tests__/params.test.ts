@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaults, parseSettings, timezoneLongitude, toQuery } from '../params';
+import { defaults, firstLoad, parseSettings, timezoneLongitude, toQuery } from '../params';
 
 describe('parseSettings', () => {
   it('returns defaults for an empty query', () => {
@@ -125,5 +125,28 @@ describe('imagery setting', () => {
   it('round-trips through the URL', () => {
     expect(toQuery({ ...defaults(), imagery: 'painted' })).toBe('?imagery=painted');
     expect(parseSettings(toQuery({ ...defaults(), imagery: 'daily' })).imagery).toBe('daily');
+  });
+});
+
+describe('readout setting', () => {
+  it('reads label=short, and the old on/off switch', () => {
+    expect(parseSettings('').label).toBe('on');
+    expect(parseSettings('?label=short').label).toBe('short');
+    expect(parseSettings('?label=0').label).toBe('off');
+    expect(parseSettings('?label=1').label).toBe('on');
+    expect(toQuery({ ...defaults(), label: 'short' })).toBe('?label=short');
+  });
+});
+
+describe('firstLoad', () => {
+  it('is the defaults on a large screen', () => {
+    expect(firstLoad(false)).toEqual(defaults());
+  });
+
+  it('starts the readout short on a small screen, and says so in a link', () => {
+    const s = firstLoad(true);
+    expect(s).toEqual({ ...defaults(), label: 'short' });
+    // Links are written against the plain defaults, so one made on a phone opens the same anywhere.
+    expect(toQuery(s)).toBe('?label=short');
   });
 });

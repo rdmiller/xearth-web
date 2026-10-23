@@ -103,7 +103,6 @@ describe('layer toggles', () => {
     ['n', 'lights'],
     ['g', 'grid'],
     ['m', 'markers'],
-    ['l', 'label'],
   ] as const)('%s toggles %s and says so', (key, field) => {
     const h = harness();
     const before = h.s[field];
@@ -194,6 +193,15 @@ describe('S cycles the star modes', () => {
     const seen = [1, 2, 3].map(() => (h.press('s'), h.s.stars));
     expect(seen).toEqual(['photo', 'off', 'on']);
     expect(h.ctx.toasts).toEqual(['Stars: camera exposure', 'Stars off', 'Stars on']);
+  });
+});
+
+describe('L cycles the readout', () => {
+  it('every row → short → off → every row', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('l'), h.s.label));
+    expect(seen).toEqual(['short', 'off', 'on']);
+    expect(h.ctx.toasts).toEqual(['Readout short (click it for every row)', 'Readout off', 'Readout on']);
   });
 });
 

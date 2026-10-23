@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
+import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type ReadoutMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -92,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors' | 'buoys' | 'relief' | 'ash';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors' | 'buoys' | 'relief' | 'ash';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -129,6 +129,12 @@ export const WIND_LABELS: Record<WindMode, string> = {
   surface: 'Winds at 10 m (NOAA GFS)',
   jet: 'Winds at 250 hPa: the jet stream (NOAA GFS)',
   off: 'Winds off',
+};
+const NEXT_READOUT: Record<ReadoutMode, ReadoutMode> = { on: 'short', short: 'off', off: 'on' };
+export const READOUT_LABELS: Record<ReadoutMode, string> = {
+  on: 'Readout on',
+  short: 'Readout short (click it for every row)',
+  off: 'Readout off',
 };
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
@@ -328,7 +334,17 @@ export const HOTKEYS: readonly Hotkey[] = [
   },
   layer('g', 'grid', 'Grid'),
   layer('m', 'markers', 'City markers'),
-  layer('l', 'label', 'Label'),
+  {
+    keys: ['l'],
+    label: 'L',
+    description: 'Readout: every row → short → off',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_READOUT[ctx.settings.label];
+      ctx.update({ label: next });
+      ctx.toast(READOUT_LABELS[next]);
+    },
+  },
 
   { keys: ['/'], label: '/', description: 'Go to a place (or double-click the globe)', group: 'View', run: (ctx) => ctx.openSearch() },
   { keys: ['1'], label: '1', description: VIEW_LABELS.fixed, group: 'View', run: (ctx) => setView(ctx, 'fixed') },
