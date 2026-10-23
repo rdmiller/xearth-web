@@ -195,7 +195,10 @@ export function quakeDetail(q: Quake, now: number): PickDetail {
     status: { text: quakeAge(now - q.time).toLowerCase(), tone: now - q.time < 3_600_000 ? 'warn' : 'info' },
     tiles,
     notes: [utc(q.time)],
-    link: { href: `https://earthquake.usgs.gov/earthquakes/eventpage/${encodeURIComponent(q.id)}`, text: 'USGS' },
+    link:
+      q.source === 'EMSC'
+        ? { href: `https://www.seismicportal.eu/eventdetails.html?unid=${encodeURIComponent(q.id)}`, text: 'EMSC' }
+        : { href: `https://earthquake.usgs.gov/earthquakes/eventpage/${encodeURIComponent(q.id)}`, text: 'USGS' },
   };
 }
 

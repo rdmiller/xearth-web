@@ -41,8 +41,9 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Fires:** NASA FIRMS VIIRS detections from the last 12 h (`firehours`), plus what Meteosat
     Third Generation saw burning in the last hour over Europe, Africa and the Atlantic (its fire
     radiative power, every 10 minutes), drawn to scale in red-orange.
-  - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
-    by age, with labels on the largest.
+  - **Earthquakes:** USGS M2.5+ from the last 24 h, and EMSC's for Europe and the
+    Mediterranean, pushed as they're published, as rings sized by magnitude and coloured by age,
+    with labels on the largest.
   - **Lightning:** the last 30 minutes of flashes from the GOES-East and GOES-West Geostationary
     Lightning Mappers (the Americas, Atlantic and eastern Pacific) and the Lightning Imager on
     Meteosat Third Generation (Europe, Africa and the Atlantic), as blue-white sparks.
@@ -536,6 +537,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/sst.ts         sea surface temperature: GIBS's MUR colours read back to °C, Niño 3.4
   src/flood.ts       flood extent: GIBS's flood classes to points, world and zoomed in
   src/usgsVolcanoes.ts  US volcano alert levels (USGS HANS) at the Smithsonian's positions
+  src/emsc.ts        EMSC's European and Mediterranean quakes: the day, the push feed, one of each
   src/usVolcanoes.ts the US volcanoes' positions, baked by scripts/bake-volcanoes.py
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
@@ -852,7 +854,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Argo floats | NOAA OSMC ArgoFloats (ERDDAP): 30 days of surfacings (~280 KB gzipped); new profiles since the last run, binned to 50 dbar | pipeline, keeping a profile store between runs | hourly; browser reads `argo.json` when a float's window opens |
 | Meteors | Global Meteor Network daily trajectories (5 MB, trimmed to ~107 KB gzipped); NASA/JPL CNEOS fireballs, 90 days | pipeline | hourly, browser re-reads every 30 min (only while shown) |
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
-| Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
+| Earthquakes | USGS M2.5+ past day (GeoJSON); EMSC M2.5+ in Europe and the Mediterranean, past day (FDSN GeoJSON) | browser | 5 min; EMSC's also pushed as published (WebSocket) |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
 | Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 10 min |
 | Fires (Europe, Africa) | EUMETSAT MTG-I1 FCI Fire Radiative Power, six 10-min slots (EUMETView WFS GeoJSON, ~100 KB gzipped each) | browser | 10 min |
@@ -1011,6 +1013,21 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     5.9k cells. The readout counts FIRMS's detections and MTG's pixels separately.
 - **Earthquakes:** ring size ×1.5 per magnitude. Red within the hour, orange within 6 h, then
   yellow. The largest few, M6+, tsunami-flagged or PAGER-alerted quakes get labels.
+  - *EMSC for Europe and the Mediterranean:* USGS's day feed has few small quakes outside the
+    US: on 2026-10-23 it had 4 M2.5+ in 25–72°N, 30°W–50°E in 24 hours, where the
+    Euro-Mediterranean Seismological Centre had 73. So EMSC's M2.5+ earthquakes in that box are
+    added (its FDSN service, with CORS: known and suspected earthquakes only, not blasts or
+    unconfirmed events), the same threshold as USGS's. A quake both have, within a minute and
+    100 km, is shown once, as USGS's (with its tsunami flag and PAGER alert): USGS's 4 were all
+    among EMSC's 73, within 3 s and 11 km. EMSC's regions are its upper-case Flinn–Engdahl names,
+    written as names; an EMSC quake's window links to EMSC.
+  - *Pushed:* EMSC's push feed, a WebSocket (`wss://www.seismicportal.eu/standing_order/websocket`)
+    that sends each event as it's published or revised (`create` / `update`), is open while
+    quakes are shown, and reconnects 5 s to a minute after a drop. It adds a quake within moments
+    of EMSC putting it out rather than at the next 5-minute poll (published 3–9 minutes after
+    the quake, on 2026-10-23), revises one in place, and drops one revised below M2.5; old events
+    it sends late (an 11 October one, that day) are left out. The day is still fetched every 5
+    minutes with USGS's, so a missed push can't leave a gap. The readout counts EMSC's.
 - **Lightning:** GLM files (one per 20 s per satellite, ~400 KB) are in NOAA's AWS buckets,
   which don't send CORS headers, so the browser can't read them and the pipeline gathers the
   last 30 minutes instead (~180 files, ~70 MB, about a minute). Flashes that fail quality
@@ -1271,7 +1288,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Meteors: Global Meteor Network (globalmeteornetwork.org), data CC BY 4.0. Vida et al. 2020,
   MNRAS 491, 2688–2705; Vida et al. 2021, "The Global Meteor Network – Methodology and first
   results", MNRAS 506, 5046–5074. Fireballs: NASA/JPL Center for Near Earth Object Studies (CNEOS).
-- Aurora, space weather, the ionosphere (GloTEC, D-RAP) and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
+- Aurora, space weather, the ionosphere (GloTEC, D-RAP) and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS, and the Euro-Mediterranean Seismological Centre (EMSC, seismicportal.eu). Tropical cyclones:
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
   Earth Science Data and Information System (ESDIS)."

@@ -281,6 +281,8 @@ export interface Quake {
   tsunami: boolean;
   /** USGS PAGER alert (green / yellow / orange / red), when issued. */
   alert: string | null;
+  /** Where it's from: USGS unless said (EMSC adds Europe and the Mediterranean's smaller ones). */
+  source?: 'EMSC';
 }
 
 interface QuakeFeature {

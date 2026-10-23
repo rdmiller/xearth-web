@@ -75,6 +75,7 @@ import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
+import { EmscPush, EmscQuakes, emscQueryUrl, isEmscFeed, mergeQuakes } from './emsc';
 import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
 import { detailRequest, fetchFloodCells, FLOOD_CHECK_MS, FLOOD_H, FLOOD_REFRESH_MS, FLOOD_W, floodPoints, floodSummary, newestFloodDate, withDetail, WORLD, type FloodBox, type FloodCell } from './flood';
 import {
@@ -722,7 +723,17 @@ let firmsPoints: FirePoints | undefined;
 const frpWindow = new FrpWindow();
 let frpFires: FirePoints | undefined;
 let frpData: number[] = [];
+/** USGS's and EMSC's together (emsc.ts), each quake once. */
 let quakes: Quake[] = [];
+let usgsQuakes: Quake[] = [];
+const emscQuakes = new EmscQuakes();
+/** EMSC's push feed, open while quakes are shown. */
+let emscPush: EmscPush | undefined;
+
+function mergeAllQuakes() {
+  quakes = mergeQuakes(usgsQuakes, emscQuakes.list(Date.now()));
+  requestRedraw();
+}
 /** When USGS generated the feed now shown, ms. */
 let quakesAt: number | undefined;
 let lightningManifest: LightningManifest | undefined;
@@ -978,15 +989,37 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       return Number.isFinite(newest) ? newest : undefined;
     },
   },
+  // USGS's day feed, and EMSC's day in Europe and the Mediterranean, every 5 minutes; between
+  // those, EMSC's push feed adds each quake as it's published. Either one alone still draws.
   quakes: {
     everyMs: 5 * 60_000,
     load: async () => {
-      const f = await fetchJson(USGS_QUAKES_URL);
-      if (!isQuakeFeed(f)) throw new Error('not a USGS earthquake feed');
-      quakes = decodeQuakes(f);
-      quakesAt = (f as { metadata?: { generated?: number } }).metadata?.generated;
+      const now = Date.now();
+      const [usgs, emsc] = await Promise.allSettled([
+        fetchJson(USGS_QUAKES_URL).then((f) => {
+          if (!isQuakeFeed(f)) throw new Error('not a USGS earthquake feed');
+          return f;
+        }),
+        fetchJson(emscQueryUrl(now)).then((f) => {
+          if (!isEmscFeed(f)) throw new Error('not an EMSC event list');
+          return f;
+        }),
+      ]);
+      if (usgs.status === 'fulfilled') {
+        usgsQuakes = decodeQuakes(usgs.value);
+        quakesAt = (usgs.value as { metadata?: { generated?: number } }).metadata?.generated;
+      }
+      if (emsc.status === 'fulfilled') emscQuakes.setDay(emsc.value.features, now);
+      if (usgs.status === 'rejected' && emsc.status === 'rejected') throw usgs.reason;
+      if (usgs.status === 'rejected') console.warn('quakes (USGS):', usgs.reason);
+      if (emsc.status === 'rejected') console.warn('quakes (EMSC):', emsc.reason);
+      mergeAllQuakes();
+      emscPush ??= new EmscPush((f) => {
+        if (emscQuakes.upsert(f, Date.now())) mergeAllQuakes();
+      });
     },
-    dataAt: () => quakesAt,
+    // USGS's feed time, or EMSC's last push if newer.
+    dataAt: () => Math.max(quakesAt ?? 0, emscPush?.lastAt ?? 0) || undefined,
   },
   // GOES from the pipeline (NOAA's buckets have no CORS); MTG from EUMETSAT, which has, every
   // 5 minutes as its frames land. Either one alone still draws.
@@ -1264,6 +1297,10 @@ function runHazard(key: HazardKey, everyMs?: number): Promise<void> {
 function syncHazard(key: HazardKey) {
   clearInterval(hazardTimers[key]);
   delete hazardTimers[key];
+  if (key === 'quakes' && !settings.quakes) {
+    emscPush?.close();
+    emscPush = undefined;
+  }
   if (!settings[key]) return feedLog.stop(key);
   const { everyMs } = HAZARDS[key];
   void runHazard(key, everyMs);
@@ -1636,7 +1673,10 @@ function layerRows(): ReadoutRow[] {
     const mtg = frpFires ? `MTG ${compact(frpWindow.pixels)} in ${FRP_WINDOW_MIN} min` : undefined;
     add('fires', [firms, mtg].filter(Boolean).join(' · '));
   }
-  if (settings.quakes && quakes.length) add('quakes', `${quakes.length} M2.5+ in 24 h`);
+  if (settings.quakes && quakes.length) {
+    const emsc = quakes.filter((q) => q.source === 'EMSC').length;
+    add('quakes', `${quakes.length} M2.5+ in 24 h${emsc ? ` · ${emsc} from EMSC` : ''}`);
+  }
   if (settings.lightning && (lightningManifest || liCells.length)) {
     // GOES counts flashes; MTG's frames give flashes per pixel, so it counts the 0.1° cells lit.
     const goes = lightningManifest ? `GOES ${compact(lightningManifest.flashes)} flashes` : undefined;
@@ -1793,7 +1833,7 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'drap', label: 'HF absorption', source: 'SWPC D-RAP', freshMs: 20 * MIN, on: () => settings.iono === 'drap', everyMs: 10 * MIN },
   { key: 'storms', label: 'Cyclones', source: 'GDACS · NHC', freshMs: PIPELINE_FRESH, on: () => settings.storms },
   { key: 'fires', label: 'Fires', source: 'NASA FIRMS · MTG FRP', freshMs: PIPELINE_FRESH, on: () => settings.fires },
-  { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
+  { key: 'quakes', label: 'Quakes', source: 'USGS · EMSC', freshMs: 10 * MIN, on: () => settings.quakes },
   { key: 'lightning', label: 'Lightning', source: 'GOES GLM · MTG LI', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
   { key: 'severe', label: 'Severe weather', source: 'NWS · SPC', freshMs: 15 * MIN, on: () => settings.severe },
