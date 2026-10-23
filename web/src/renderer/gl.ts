@@ -258,7 +258,7 @@ export class GlobeRenderer {
   /** IMERG rain and snow on the globe's grid, in radar colours, straight alpha (premultiplied on upload). */
   setImerg(image: TexImageSource) {
     const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE12);
+    gl.activeTexture(gl.TEXTURE13);
     gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
@@ -275,7 +275,7 @@ export class GlobeRenderer {
   /** RainViewer's coverage in Web Mercator, like the radar: alpha 1 where no radar sees. */
   setRadarCoverage(image: TexImageSource) {
     const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE13);
+    gl.activeTexture(gl.TEXTURE14);
     gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
@@ -413,12 +413,12 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.radarTex);
     gl.uniform1i(this.u('uRadar'), 8);
     gl.uniform1f(this.u('uRadarOn'), f.radar && this.hasRadar ? 1 : 0);
-    gl.activeTexture(gl.TEXTURE12);
-    gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
-    gl.uniform1i(this.u('uImerg'), 12);
     gl.activeTexture(gl.TEXTURE13);
+    gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
+    gl.uniform1i(this.u('uImerg'), 13);
+    gl.activeTexture(gl.TEXTURE14);
     gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
-    gl.uniform1i(this.u('uRadarCover'), 13);
+    gl.uniform1i(this.u('uRadarCover'), 14);
     // Without the coverage, a 5-hour-old estimate would sit under live radar: wait for it.
     gl.uniform1f(this.u('uImergOn'), f.imerg && this.hasImerg && this.hasCover ? 1 : 0);
     gl.activeTexture(gl.TEXTURE9);
