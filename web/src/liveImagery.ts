@@ -7,9 +7,9 @@
 // WMS with CORS, so the browser asks for a JPEG of each satellite's disc on the globe's own
 // latitude/longitude grid; a new scan lands every 10 minutes. Meteosat-9's Indian Ocean
 // service (IODC, at 45.5°E) fills in east of MTG's limb, over the Indian Ocean and western
-// and central Asia, every 15 minutes: Natural Colour, not GeoColour (the server has no
-// GeoColour for it), so it shows only where MTG can't. East Asia and the west Pacific
-// (Himawari) have no colour product on either server, so the painted globe shows there.
+// and central Asia, every 15 minutes: Natural Colour Enhanced, not GeoColour (the server has
+// none for it), so it shows only where MTG can't. East Asia and the west Pacific (Himawari)
+// have no colour product on either server, so the painted globe shows there.
 //
 // The pictures are already lit by the real Sun, and their night side is a different product
 // (infrared cloud over a static city-lights map), so the shader uses them only where the Sun
@@ -34,7 +34,7 @@ export interface LiveSource {
   /** Shown only where the other satellites leave gaps (a different look, or older and coarser). */
   fill?: boolean;
   /**
-   * The product is empty on the night side (Natural Colour stops ~1–2° after sunset), so a
+   * The product is empty on the night side (Natural Colour stops ~1–3° after sunset), so a
    * blank picture there means night, not an unrendered scan: the newest listed scan is used.
    */
   dayOnly?: boolean;
@@ -51,7 +51,7 @@ export const LIVE_SOURCES: readonly LiveSource[] = [
   { key: 'goes-west', name: 'GOES-West', subLon: -137.2, wms: GIBS_WMS, layer: 'GOES-West_ABI_GeoColor', times: 'gibs' },
   { key: 'goes-east', name: 'GOES-East', subLon: -75.2, wms: GIBS_WMS, layer: 'GOES-East_ABI_GeoColor', times: 'gibs' },
   { key: 'mtg', name: 'MTG', subLon: 0, wms: EUMETSAT_WMS, layer: 'mtg_fd:rgb_geocolour', times: 'eumetsat' },
-  { key: 'iodc', name: 'Meteosat-9', subLon: 45.5, wms: EUMETSAT_WMS, layer: 'msg_iodc:rgb_natural', times: 'eumetsat', fill: true, dayOnly: true },
+  { key: 'iodc', name: 'Meteosat-9', subLon: 45.5, wms: EUMETSAT_WMS, layer: 'msg_iodc:rgb_naturalenhncd', times: 'eumetsat', fill: true, dayOnly: true },
 ];
 
 /** Each disc is fetched as this box around the sub-satellite point; past ~81° there's only space. */

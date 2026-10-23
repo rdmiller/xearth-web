@@ -142,7 +142,7 @@ The older `truecolor=0` / `1` links still work (painted / daily).
 ### Live
 
 - **Sources:** GOES-West (137.2°W) and GOES-East (75.2°W) GeoColor from NASA GIBS, MTG-I1
-  (0°) GeoColour and Meteosat-9 (IODC, 45.5°E) Natural Colour from EUMETSAT's EUMETView. Both
+  (0°) GeoColour and Meteosat-9 (IODC, 45.5°E) Natural Colour Enhanced from EUMETSAT's EUMETView. Both
   are WMS servers with CORS, so the browser asks each for a JPEG of its disc on the globe's own
   latitude/longitude grid (1024–2048 px a side, chosen by how big the globe is on screen;
   ~200 KB each at 1024). Checked every 5 minutes.
@@ -150,13 +150,13 @@ The older `truecolor=0` / `1` links still work (painted / daily).
   Atlantic, Africa, the Indian Ocean and western and central Asia to about 115°E. East Asia and
   the west Pacific are Himawari's, and neither server has a Himawari colour product, so the
   painted globe shows there, blended in over a few degrees.
-- **Meteosat-9 fills in:** EUMETView has no GeoColour for the Indian Ocean satellite, only
-  Natural Colour (0.6, 0.8 and 1.6 µm: green-brown land, ice cloud and snow in cyan), and it
-  scans every 15 minutes at 3 km. So it goes under the other discs and shows only past MTG's
+- **Meteosat-9 fills in:** EUMETView has no GeoColour for the Indian Ocean satellite. Its
+  Natural Colour (0.6, 0.8 and 1.6 µm) draws ice cloud and snow in cyan; the enhanced version
+  used here draws them white, much nearer GeoColour. It scans every 15 minutes at 3 km. So it goes under the other discs and shows only past MTG's
   limb: MTG keeps everything to ~64°E and hands over by ~72°E, over the Arabian Sea, even
   where Meteosat-9 sees more face-on (Nairobi, Dubai). Zoomed in, it's asked for only where
   MTG can't see. Its JPEGs are white where there's no data (the night side and off the disc),
-  which the shader can't tell from cloud, but the product runs until the Sun is ~1–2° below
+  which the shader can't tell from cloud, but the product runs until the Sun is ~1–3° below
   the horizon (measured 2026-10-23 15:45Z) and the shader wants it 6° up, and its disc edge
   (~74°) is past the limb fade; a transparent PNG instead was ~11× the size and took up to 49 s.
   Nor is its night side black, so its newest listed scan is used without GIBS's probe (below).
@@ -701,7 +701,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Fires (Europe, Africa) | EUMETSAT MTG-I1 FCI Fire Radiative Power, six 10-min slots (EUMETView WFS GeoJSON, ~100 KB gzipped each) | browser | 10 min |
 | Lightning (Americas) | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 5 min |
 | Lightning (Europe, Africa) | EUMETSAT MTG-I1 Lightning Imager accumulated flash area, six 5-min frames (EUMETView WMS, ~270 KB each) | browser | 5 min |
-| Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
+| Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour Enhanced (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
@@ -1092,7 +1092,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Live imagery, lightning and fire radiative power over Europe and Africa: EUMETSAT, via
   EUMETView — MTG-I1 FCI GeoColour RGB and Fire Radiative Power, and Lightning Imager
   Accumulated Flash Area; over the Indian Ocean and western Asia, Meteosat-9 (IODC) SEVIRI
-  Natural Colour RGB.
+  Natural Colour Enhanced RGB.
 - Night lights: NASA Black Marble (Román et al.), NOAA-20 VIIRS Day/Night Band gap-filled BRDF
   corrected radiance, via NASA GIBS.
 - Icons: Lucide (ISC License).

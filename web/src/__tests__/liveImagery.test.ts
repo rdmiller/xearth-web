@@ -81,7 +81,7 @@ describe('WMS requests', () => {
     const mtg = new URL(getMapUrl(source('mtg'), '2026-10-23T00:40:00Z', { lon0: -81, lon1: 81, x: 0, width: 1024 }, -81, 81, 1024));
     expect(mtg.host).toBe('view.eumetsat.int');
     const iodc = new URL(getMapUrl(source('iodc'), '2026-10-23T08:00:00Z', wmsParts(discBox(source('iodc')), 1024)[0], -81, 81, 1024));
-    expect(iodc.searchParams.get('LAYERS')).toBe('msg_iodc:rgb_natural');
+    expect(iodc.searchParams.get('LAYERS')).toBe('msg_iodc:rgb_naturalenhncd');
     expect(iodc.searchParams.get('BBOX')).toBe('-81,-35.5,81,126.5');
     expect(mtg.searchParams.get('LAYERS')).toBe('mtg_fd:rgb_geocolour');
   });
@@ -166,14 +166,14 @@ describe('a day-only product', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('takes the newest listed scan without probing it, since its night side is empty', async () => {
-    const xml = `<Layer><Name>rgb_natural</Name><Dimension name="time" default="2026-10-23T15:45:00Z" units="ISO8601" nearestValue="1">2020-08-01T00:00:00.000Z/2026-10-23T15:45:00.000Z/PT15M</Dimension></Layer>`;
+    const xml = `<Layer><Name>rgb_naturalenhncd</Name><Dimension name="time" default="2026-10-23T15:45:00Z" units="ISO8601" nearestValue="1">2020-08-01T00:00:00.000Z/2026-10-23T15:45:00.000Z/PT15M</Dimension></Layer>`;
     const fetch = vi.fn(async () => new Response(xml));
     vi.stubGlobal('fetch', fetch);
     const t = await fetchServedTime(source('iodc'), new Date('2026-10-23T16:15:00Z'));
     expect(t).toBe('2026-10-23T15:45:00Z');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe(
-      'https://view.eumetsat.int/geoserver/msg_iodc/rgb_natural/ows?service=WMS&request=GetCapabilities&version=1.3.0',
+      'https://view.eumetsat.int/geoserver/msg_iodc/rgb_naturalenhncd/ows?service=WMS&request=GetCapabilities&version=1.3.0',
     );
   });
 });
