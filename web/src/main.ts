@@ -10,7 +10,9 @@ import type { SatRec } from 'satellite.js';
 import { subsolarPoint, sunDirection } from './astronomy';
 import { framingViewpoint, MOON_RADIUS_KM, placeBody, skyBodies, type SkyBodies } from './bodies';
 import { describeCadence, redrawInterval } from './cadence';
-import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issReadings } from './isslive';
+import { AOS_MAX_AGE_MS, IssLive, issFromTelemetry, issJoints, issReadings, signal } from './isslive';
+import { issPartMatrices, jointsFromTelemetry, parseGlb, splitIss, sunTrackingJoints } from './issModel';
+import type { ModelDraw } from './renderer/model';
 import { FeedLog, type FeedState } from './feeds';
 import { FeedBoard, type FeedRow } from './feedBoard';
 import { PerfPanel } from './hudPanels';
@@ -1545,13 +1547,69 @@ function issLiveState(date: Date, sun: Vec3) {
   return t && { pos: t.pos, lat: t.lat, lon: t.lon, altKm: t.altKm, speed: t.speed, sunlit: !inShadow(t.pos, sun) };
 }
 
-/** Where the ISS is at `date` and which way it's heading (Earth-fixed), for its camera. */
+/** Earth's rotation, rad/s. */
+const EARTH_SPIN = 7.2921159e-5;
+
+/**
+ * Where the ISS is at `date` (Earth-fixed) and which way it's heading through space: the
+ * ground-relative motion plus the Earth's spin, so the camera's up is the station's forward
+ * axis (LVLH +x), a few degrees off its track over the ground.
+ */
 function issCameraAt(date: Date, sun: Vec3): { pos: Vec3; ahead: Vec3 } | undefined {
   const rec = featuredRecs.get('iss')?.rec;
   const now = rec && positionAt(rec, date);
   const next = rec && positionAt(rec, new Date(date.getTime() + 1000));
   if (!now || !next) return undefined;
-  return { pos: issLiveState(date, sun)?.pos ?? now, ahead: sub(next, now) };
+  const ground = sub(next, now);
+  return { pos: issLiveState(date, sun)?.pos ?? now, ahead: [ground[0] - EARTH_SPIN * now[1], ground[1] + EARTH_SPIN * now[0], ground[2]] };
+}
+
+/** The ISS camera's eye above the station, m: at its opening 70° across, the 109 m station about fills the frame. */
+const ISS_CAM_HEIGHT_M = 120;
+
+/** NASA's ISS model (issModel.ts), fetched the first time the camera opens. */
+let issModelState: 'loading' | 'ready' | 'failed' | undefined;
+
+function loadIssModel() {
+  if (issModelState) return;
+  issModelState = 'loading';
+  fetch(`${BASE}models/iss.glb`)
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.arrayBuffer();
+    })
+    .then((buf) => {
+      renderer.setModel(splitIss(parseGlb(buf)));
+      issModelState = 'ready';
+      requestRedraw();
+    })
+    .catch((err) => {
+      issModelState = 'failed';
+      console.warn('ISS model:', err);
+    });
+}
+
+/**
+ * The ISS posed under its camera `cam` (nadirCamera's frame is the station's LVLH: up is
+ * forward, right is the LVLH y axis, into the screen is down). Its arrays and attitude come
+ * from the telemetry while it has signal and `date` is now; otherwise the arrays face the Sun
+ * squarely, as they mostly do, on a station level in LVLH.
+ */
+function issModelDraw(cam: Camera, pos: Vec3, date: Date, sun: Vec3): ModelDraw & { live: boolean } {
+  const lvlh = (v: Vec3): Vec3 => [dot(v, cam.up), dot(v, cam.right), -dot(v, cam.dir)];
+  const sunL = lvlh(sun);
+  const now = Date.now();
+  const joints = issLiveWanted() && Math.abs(date.getTime() - now) < 60_000 && signal(issLive.values, now)?.aos ? issJoints(issLive.values) : undefined;
+  const pose = joints ? jointsFromTelemetry({ sarjStarboard: joints.sarjStarboard, sarjPort: joints.sarjPort, bga: joints.bga }) : sunTrackingJoints(sunL);
+  return {
+    parts: issPartMatrices(pose, joints?.q),
+    height: ISS_CAM_HEIGHT_M,
+    sun: sunL,
+    lit: inShadow(pos, sun) ? 0 : 1,
+    // Light off the ground below: the day side's, fading out across the terminator.
+    earthshine: Math.max(0, dot(normalize(pos), sun)),
+    live: !!joints,
+  };
 }
 
 function issPanelState(sun: Vec3) {
@@ -1962,7 +2020,8 @@ const toasts = new ToastManager(document.getElementById('toasts') as HTMLElement
 toasts.onChange = () => queueMicrotask(requestRedraw);
 const perfPanel = new PerfPanel(toasts.add({ id: 'perf', title: 'Frame rate', order: 0, shrink: 0, onClose: () => update({ fps: false }) }));
 const issPanelView = new IssPanelView(
-  toasts.add({ id: 'iss', title: 'ISS · NASA live telemetry', order: 1, shrink: 0, onClose: () => update({ isslive: 'off' }) }),
+  // It may shrink (its body scrolls): with the camera open it's taller than a laptop screen leaves room for.
+  toasts.add({ id: 'iss', title: 'ISS · NASA live telemetry', order: 1, shrink: 1, onClose: () => update({ isslive: 'off' }) }),
   (on) => update({ isscam: on }),
   requestRedraw,
 );
@@ -2014,7 +2073,8 @@ const pickPanel = new PickPanelView(
     id: 'pick',
     title: 'Details',
     order: 5,
-    shrink: 0,
+    // As the ISS window: it carries the ISS's telemetry and camera when the ISS is clicked.
+    shrink: 1,
     onClose: () => {
       // The ISS's window carries its telemetry, which (isslive=track) is up while it's followed:
       // closing it lets go of the ISS too, rather than have the telemetry's own window open.
@@ -2803,14 +2863,19 @@ function frame(now: number) {
     relief: reliefStrength(),
     dpr: scale,
   };
-  // The ISS camera: the same layers again, straight down from the station, into its window.
-  // Drawn before the main frame, so reading it back waits only on its own small pass.
+  // The ISS camera: the same layers again, from just above the station looking straight down
+  // past it, and NASA's model of it posed from the telemetry. Drawn before the main frame, so
+  // reading it back waits only on its own small pass.
   const iss = issPanelState(sunDir);
   issPanelView.camera.show(settings.isscam);
   const camSize = iss && issPanelView.camera.size();
   const camAt = camSize && issCameraAt(date, sunDir);
   if (camSize && camAt) {
-    const cam = nadirCamera(camAt.pos, camAt.ahead, issPanelView.camera.fov / 2);
+    loadIssModel();
+    const lift = 1 + ISS_CAM_HEIGHT_M / 1000 / EARTH_RADIUS_KM / Math.hypot(...camAt.pos);
+    const eye: Vec3 = [camAt.pos[0] * lift, camAt.pos[1] * lift, camAt.pos[2] * lift];
+    const cam = nadirCamera(eye, camAt.ahead, issPanelView.camera.fov / 2);
+    const model = issModelState === 'ready' ? issModelDraw(cam, camAt.pos, date, sunDir) : undefined;
     const { width, height } = camSize;
     const view = renderer.renderView(
       {
@@ -2822,11 +2887,12 @@ function frame(now: number) {
         bodies: [],
         satellites: null,
         fires: frameState.fires && { ...frameState.fires, minIntensity: 0 },
+        model,
       },
       width,
       height,
     );
-    issPanelView.camera.draw(view, width, height);
+    issPanelView.camera.draw(view, width, height, model ? (model.live ? 'arrays live' : 'arrays to the Sun') : '');
   } else renderer.releaseView();
 
   const slot = stats.nextSlot;

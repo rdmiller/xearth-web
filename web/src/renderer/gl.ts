@@ -6,6 +6,7 @@ import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
 import { BodyLayer, type BodyDraw } from './bodies';
+import { ModelLayer, type ModelDraw } from './model';
 import { FIRE_STYLE, FLOOD_STYLE, LIGHTNING_STYLE, SurfacePointLayer, type SurfacePoints } from './points';
 import type { AuroraGrid } from '../hazards';
 import { SatLayer, type SatCategoryLook } from './sats';
@@ -73,6 +74,8 @@ export interface FrameState {
    * sampled than radiusPx says. 1 when absent; the ISS camera's ground is ~18× nearer.
    */
   lodScale?: number;
+  /** A model drawn over everything (the ISS under its camera); renderView only. */
+  model?: ModelDraw;
 }
 
 type Slot = 'day' | 'night';
@@ -164,8 +167,10 @@ export class GlobeRenderer {
   private readonly aniso: EXT_texture_filter_anisotropic | null;
   /** 0 → previous cloud map, 1 → current; animated by the caller after setClouds. */
   cloudMix = 1;
-  /** renderView's offscreen frame, at the size last asked for. */
-  private view: { fbo: WebGLFramebuffer; rb: WebGLRenderbuffer; width: number; height: number; pixels: Uint8Array } | null = null;
+  /** renderView's offscreen frame, at the size last asked for, with a depth buffer for models. */
+  private view: { fbo: WebGLFramebuffer; rb: WebGLRenderbuffer; depth: WebGLRenderbuffer; width: number; height: number; pixels: Uint8Array } | null = null;
+  /** The model layer, made when a model is first set. */
+  private modelLayer: ModelLayer | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false });
@@ -648,10 +653,14 @@ export class GlobeRenderer {
       const rb = gl.createRenderbuffer()!;
       gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
       gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, width, height);
+      const depth = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
       const fbo = gl.createFramebuffer()!;
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
-      v = this.view = { fbo, rb, width, height, pixels: new Uint8Array(width * height * 4) };
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+      v = this.view = { fbo, rb, depth, width, height, pixels: new Uint8Array(width * height * 4) };
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, v.fbo);
     this.draw(f, width, height);
@@ -665,7 +674,14 @@ export class GlobeRenderer {
     if (!this.view) return;
     this.gl.deleteFramebuffer(this.view.fbo);
     this.gl.deleteRenderbuffer(this.view.rb);
+    this.gl.deleteRenderbuffer(this.view.depth);
     this.view = null;
+  }
+
+  /** A model for renderView frames to draw (FrameState.model poses it): its parts' triangles. */
+  setModel(parts: Map<string, { positions: Float32Array; normals: Float32Array; colors: Float32Array }>) {
+    this.modelLayer ??= new ModelLayer(this.gl, (vs, fs) => link(this.gl, vs, fs));
+    this.modelLayer.setParts(parts);
   }
 
   private draw(f: FrameState, width: number, height: number) {
@@ -799,6 +815,7 @@ export class GlobeRenderer {
         res,
       );
     }
+    if (f.model) this.modelLayer?.draw(f.model, cam.focal * f.radiusPx, res);
   }
 }
 

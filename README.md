@@ -85,7 +85,12 @@ global cloud layer refreshed every hour from geostationary satellites.
   names the nearest buoy, with a button to open it.
 - **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
   window of gauges while the ISS is tracked: signal, orbit sparklines, cabin-air meters, solar-array dials. While
-  the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
+  the stream is live the ISS is placed from its own GNC state vector instead of SGP4. Clicking
+  the ISS puts the gauges in its details window rather than a second one.
+- **ISS camera:** a Show/Hide frame in the ISS window (`isscam=1`): the station from 120 m
+  above, looking straight down past it at the Earth, travel at the top. The Earth is the
+  globe's own layers; the station is NASA's 3D model with its eight solar array wings and both
+  rotary joints posed from the live telemetry (turned to the Sun when there's no signal).
 - **Satellites:** the ISS, Tiangong and **SAT GUS** (Mark Rober's Space Selfie satellite,
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
@@ -712,6 +717,7 @@ docker compose down                 # stop (the data volume is kept)
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
+| `isscam` | the ISS camera in its window: the station from 120 m above and the Earth below | 0 |
 | `stormsrc`, `firesrc` | folders holding the storm / fire `latest.json` | `storms/`, `fires/` |
 | `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc`, `meteoalarmsrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami / MeteoAlarm `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/`, `meteoalarm/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
@@ -1215,6 +1221,32 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     band and turning amber or red outside it. The bands are approximate, from NASA's
     published cabin norms, not flight rules. Dials show the Sun's β angle and the two solar
     array joints. Chips show the station mode, attitude frame, any maneuver, and Ku-band video.
+    Clicking the ISS moves the instruments into its details window (with the signal chip),
+    and the details' altitude and speed tiles give way to the sparklines.
+  - *Camera:* a second pass of the globe renderer (`GlobeRenderer.renderView`) into an
+    offscreen framebuffer in the same WebGL context, read back into the window's canvas, so it
+    needs none of the 16 texture units. `nadirCamera` (view.ts) puts the eye 120 m above the
+    station, up the LVLH +x (forward) axis; the shader's `uLodScale` makes the textures as
+    sharp as a ground ~18× nearer than the main view's needs. It's drawn before the main frame,
+    so the read-back waits only on its own pass: ~5 ms CPU and ~2 ms GPU a frame. The wheel
+    zooms it from 30° to 120° across; wider, the corners would reach the horizon, where the
+    globe's glow (made for a viewer far out) fogs the sky.
+  - *Station model:* NASA 3D Resources' "International Space Station (ISS) (A)" (NASA Ames,
+    6,642 triangles), baked from its Draco-compressed original (see *Baked data*) to 226 KB
+    and fetched the first time the camera opens. `issModel.ts` reads it (no 3D library), cuts
+    it by triangle into the body, each side outboard of its SARJ, and the eight wings, and poses
+    them: each wing about its mast by its BGA, each side about the truss by its SARJ, and the
+    whole by the LVLH attitude quaternion. It's lit by the Sun (none in the Earth's shadow) and
+    by the day side below.
+  - *Joints:* the stream carries both SARJs (S0000003/4), the eight BGAs (S4000007/8,
+    S6000007/8, P4000007/8, P6000007/8, after the ISS Mimic project's list) and the attitude
+    quaternion (USLAB000018–21). Checked against the Sun on 2026-10-23 (22:19–22:21Z, arrays
+    tracking): the arrays face starboard SARJ + 90° = 90° − port SARJ, as a turn about the body
+    +Y axis from forward, to 0.03°. The two wings on a mast read mirrored BGAs (summing to 360°)
+    about 180° to starboard and 0° to port, so all eight lean alike; that afternoon they leaned
+    46–51° with the Sun only 1° out of the orbit plane, parked off it, so which way a BGA
+    reading leans is the one convention not yet checked (`BGA_SIGN` in issModel.ts). Without
+    signal, or in simulated time, the arrays face the Sun squarely on a level station.
 - Tsunami, severe weather, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
@@ -1242,14 +1274,15 @@ The dashboard ticks once a second while open, and not at all while closed or hid
 
 ## Baked data: re-running by hand
 
-Two datasets change too rarely to fetch each hour, so they're baked into the repo by a
-script run by hand. Neither runs in the pipeline or the deploy; nothing reminds you when
+Three datasets change too rarely to fetch each hour, so they're baked into the repo by a
+script run by hand. None runs in the pipeline or the deploy; nothing reminds you when
 they go stale, so check them now and then (a few times a year is plenty).
 
 | What | Script | Writes | When to re-run | How to tell |
 |---|---|---|---|---|
 | MeteoAlarm's warning regions | `python -I pipeline/scripts/bake_meteoalarm_regions.py` | `pipeline/xearth_clouds/meteoalarm_regions.json.gz` | MeteoAlarm publishes a new `MeteoAlarm_Geocodes_<date>.json` in [its documents repository](https://gitlab.com/meteoalarm-pm-group/documents) (it was `2026_07_31` when baked): update `GEOCODES_FILE` in the script first | `unplaced` in `meteoalarm/latest.json` isn't empty (areas with no outline aren't drawn), or the job's log ends "N areas unplaced" |
 | US volcanoes' positions | `python -I web/scripts/bake-volcanoes.py web/src/usVolcanoes.ts` | `web/src/usVolcanoes.ts` | The Smithsonian adds or renumbers a US volcano | A volcano HANS monitors is missing from the globe (one it can't place is dropped without a message): on 2026-10-23 HANS listed 69 and 67 were placed, the other two being regions with no volcano number |
+| The ISS camera's model | `node web/scripts/bake-iss-model.mjs <tools folder> "International Space Station (ISS) (A).glb" web/public/models/iss.glb` (install the tools first, as the script's header says) | `web/public/models/iss.glb` | NASA updates the model on [NASA 3D Resources](https://science.nasa.gov/3d-resources/international-space-station-iss-a/) | Its parts move apart under the camera: `issModel.ts` cuts it by measured positions (truss line, mast x), so a remodel needs those re-measured |
 
 The MeteoAlarm script fetches the geocodes (33 MB) and Natural Earth's admin-1 file (40 MB),
 or takes paths to copies already downloaded. Before committing a new bake, run the pipeline
@@ -1276,7 +1309,7 @@ title, a status chip (the ISS signal, the feeds summary, a buoy's last report) a
 the top of the window to the dock, so they never overlap.
 
 - **Space:** when the windows don't fit, the data feeds give up height first and scroll.
-  Frame rate and ISS keep their height. A place's card keeps up to half the column, since
+  Frame rate keeps its height; the ISS's windows scroll too, its camera making them tall. A place's card keeps up to half the column, since
   it's what was just asked for.
 - **Truncation:** long titles, chips and rows end in an ellipsis (the full text is in the
   tooltip) rather than wrapping.
@@ -1372,7 +1405,10 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - European weather warnings: MeteoAlarm, data provided by EUMETNET members (CC BY 4.0); region
   outlines from MeteoAlarm's geocodes, and Croatia's counties from Natural Earth (public domain).
 - ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer
-  (lightstreamer-client-web, Apache-2.0).
+  (lightstreamer-client-web, Apache-2.0). Telemetry identifiers for the array joints and
+  attitude from the ISS Mimic project.
+- ISS model: NASA Ames Research Center, via NASA 3D Resources ("International Space Station
+  (ISS) (A)"), free and without copyright per NASA's media usage guidelines.
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
   Ice Analysis at 4 km (NSIDC G02156); Fetterer et al., Sea Ice Index, Version 4 (NSIDC
   G02135).

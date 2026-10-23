@@ -6,8 +6,9 @@
 //   CABIN    meters for pressure, temperature, O2, CO2 and gyroscope momentum, each marking
 //            its normal band and coloured by where the value sits (cyan, amber, red)
 //   ARRAYS   dials for the Sun's beta angle and the two solar array joints
-//   CAMERA   at the user's say-so, the view straight down from the station, travel at the top,
-//            rendered by the globe's renderer from the same layers (the wheel zooms it)
+//   CAMERA   at the user's say-so, the view from 120 m above the station looking straight down
+//            past it, travel at the top: the globe's layers and NASA's model of the station,
+//            its arrays posed from the telemetry (the wheel zooms it)
 //
 // Values only change about once a second, so the DOM is built once and touched only when a
 // reading moves. While the station is out of signal, the instruments dim: the values are
@@ -262,13 +263,14 @@ export class Dial {
  * than ~122° a 16:10 frame's corners pass the horizon, where the globe's glow (made for a
  * viewer far out in space) would fog the sky.
  */
-const CAM_FOV = { start: 100, min: 30, max: 120 };
+const CAM_FOV = { start: 70, min: 30, max: 120 };
 /** The camera frame's width over its height. */
 const CAM_ASPECT = 16 / 10;
 
 /**
- * The camera: what the ISS sees straight down. main.ts renders the frames (GlobeRenderer's
- * renderView); this holds the toggle, the frame and its zoom.
+ * The camera: the ISS from above, and the Earth below it. main.ts renders the frames
+ * (GlobeRenderer's renderView, issModel.ts posing the station); this holds the toggle, the
+ * frame and its zoom.
  */
 export class IssCamera {
   readonly el: HTMLElement;
@@ -292,11 +294,11 @@ export class IssCamera {
     this.toggle = el('button', 'iss-cam-toggle');
     this.toggle.type = 'button';
     this.toggle.addEventListener('click', () => onToggle(!this.on));
-    head.append(label('Camera · nadir'), this.toggle);
+    head.append(label('Camera · 120 m above'), this.toggle);
     this.frame = el('div', 'iss-cam-frame');
     this.canvas = el('canvas', 'iss-cam-canvas');
     this.canvas.setAttribute('role', 'img');
-    this.canvas.setAttribute('aria-label', 'The view straight down from the ISS, rendered');
+    this.canvas.setAttribute('aria-label', 'The ISS from 120 m above, looking down past it at the Earth, rendered');
     this.caption = el('span', 'iss-cam-caption');
     this.frame.append(this.canvas, this.caption);
     this.frame.addEventListener(
@@ -328,8 +330,8 @@ export class IssCamera {
     return { width: Math.round(w * dpr), height: Math.round((w / CAM_ASPECT) * dpr) };
   }
 
-  /** Show a rendered frame: RGBA rows bottom to top, as WebGL reads them back. */
-  draw(pixels: Uint8Array, width: number, height: number) {
+  /** Show a rendered frame: RGBA rows bottom to top, as WebGL reads them back; `note` ends the caption. */
+  draw(pixels: Uint8Array, width: number, height: number, note = '') {
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
@@ -339,7 +341,7 @@ export class IssCamera {
     const row = width * 4;
     for (let y = 0; y < height; y++) image.data.set(pixels.subarray((height - 1 - y) * row, (height - y) * row), y * row);
     this.canvas.getContext('2d')!.putImageData(image, 0, 0);
-    put(this.caption, `${Math.round(this.fov)}° · travel ↑`);
+    put(this.caption, [`${Math.round(this.fov)}°`, 'travel ↑', note].filter(Boolean).join(' · '));
   }
 }
 

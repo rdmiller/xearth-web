@@ -44,6 +44,21 @@ export const ISS_ITEMS = {
   laptops: 'USLAB000087',
   sarjStarboard: 'S0000003',
   sarjPort: 'S0000004',
+  // Each solar array wing's beta gimbal (BGA), named by power channel: 1A, 3A on S4 and 3B, 1B
+  // on S6 (starboard); 2A, 4A on P4 and 4B, 2B on P6 (port). After the ISS Mimic project's list.
+  bga1A: 'S4000007',
+  bga3A: 'S4000008',
+  bga3B: 'S6000007',
+  bga1B: 'S6000008',
+  bga2A: 'P4000007',
+  bga4A: 'P4000008',
+  bga4B: 'P6000007',
+  bga2B: 'P6000008',
+  // The station's attitude relative to LVLH, as a quaternion (scalar first).
+  q0: 'USLAB000018',
+  q1: 'USLAB000019',
+  q2: 'USLAB000020',
+  q3: 'USLAB000021',
   kuVideo: 'USLAB000088',
 } as const;
 export type IssKey = keyof typeof ISS_ITEMS;
@@ -241,6 +256,27 @@ export function issReadings(v: IssValues, now: number, orbit?: { altKm: number; 
     massKg: num(v, 'mass'),
     laptops: num(v, 'laptops'),
   };
+}
+
+const BGA_KEYS = { '1A': 'bga1A', '3A': 'bga3A', '3B': 'bga3B', '1B': 'bga1B', '2A': 'bga2A', '4A': 'bga4A', '4B': 'bga4B', '2B': 'bga2B' } as const;
+
+/**
+ * The solar arrays' joints and the station's attitude, for posing its model (issModel.ts):
+ * both SARJs, each wing's BGA, the LVLH attitude quaternion (scalar first) when all four parts
+ * have come, and when the SARJs were last stamped (ms). Undefined until the SARJs have come.
+ */
+export function issJoints(v: IssValues): { sarjStarboard: number; sarjPort: number; bga: Partial<Record<keyof typeof BGA_KEYS, number>>; q?: number[]; t: number } | undefined {
+  const sarjStarboard = num(v, 'sarjStarboard');
+  const sarjPort = num(v, 'sarjPort');
+  if (sarjStarboard === undefined || sarjPort === undefined) return undefined;
+  const bga: Partial<Record<keyof typeof BGA_KEYS, number>> = {};
+  for (const [wing, key] of Object.entries(BGA_KEYS) as [keyof typeof BGA_KEYS, IssKey][]) {
+    const x = num(v, key);
+    if (x !== undefined) bga[wing] = x;
+  }
+  const q = (['q0', 'q1', 'q2', 'q3'] as const).map((k) => num(v, k));
+  const t = Math.min(v.get('sarjStarboard')!.t, v.get('sarjPort')!.t);
+  return { sarjStarboard, sarjPort, bga, q: q.every((x) => x !== undefined) ? (q as number[]) : undefined, t };
 }
 
 // ---- stream ----------------------------------------------------------------------------

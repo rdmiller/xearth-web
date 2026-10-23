@@ -4,9 +4,9 @@
 // between the top of the window and the dock, so they never overlap or drift apart in style.
 //
 // Space: the column is as tall as the window allows. When the windows don't fit, the ones that
-// may shrink give up height first and their bodies scroll; small fixed panels (frame rate,
-// ISS) keep theirs, and a searched place keeps up to half the column, since it's what was
-// just asked for. Long titles and status chips end in an ellipsis rather than wrap, and a
+// may shrink give up height first and their bodies scroll; the frame rate keeps its height
+// (the ISS's windows scroll, its camera making them tall), and a searched place keeps up to
+// half the column, since it's what was just asked for. Long titles and status chips end in an ellipsis rather than wrap, and a
 // click on a title folds that window down to its header.
 
 export type ToastTone = 'ok' | 'warn' | 'bad' | 'info';

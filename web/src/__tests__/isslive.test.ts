@@ -3,6 +3,7 @@ import {
   geodetic,
   gpsToUtc,
   issFromTelemetry,
+  issJoints,
   issReadings,
   issTime,
   propagate,
@@ -14,7 +15,8 @@ import {
 import { EARTH_RADIUS_KM, positionAt, satrecFor } from '../satellites';
 
 // One snapshot from push.lightstreamer.com / ISSLIVE on 2026-10-21 (TimeStamp hours, Value, CalibratedData).
-const SNAPSHOT: Record<IssKey, [number, string, string]> = {
+// It predates the array joints and attitude (see 'array joints' below), hence Partial.
+const SNAPSHOT: Partial<Record<IssKey, [number, string, string]>> = {
   gmt: [7057.047477222218, '25405370918', '293/01:02:50'],
   svX: [7057.045445555515, '5989.706876034813', '5989.706876035'],
   svY: [7057.045445555515, '2326.9456637276407', '2326.945663728'],
@@ -145,5 +147,40 @@ describe('ISS readings', () => {
     const r = issReadings(v, NOW)!;
     expect(r.co2MmHg).toBeUndefined();
     expect(r.sarjPortDeg).toBeUndefined();
+  });
+});
+
+describe('array joints', () => {
+  // From the live stream at 2026-10-23T22:19:21Z (day 296 of the year: 24 × 296 = 7104 h is 00:00 that day).
+  const at = 7104 + 22 + 19 / 60 + 21 / 3600;
+  const JOINTS: Partial<Record<IssKey, string>> = {
+    sarjStarboard: '57.50667572021484375',
+    sarjPort: '302.471923828125',
+    bga1A: '133.4',
+    bga3A: '226.5',
+    bga2B: '309.4',
+    q0: '0.9971362948417664',
+    q1: '0.006585242692381144',
+    q2: '-0.06696869432926178',
+    q3: '-0.03449666127562523',
+  };
+  const now = Date.parse('2026-10-23T22:19:30Z');
+  const map = (entries: Partial<Record<IssKey, string>>): IssValues =>
+    new Map(Object.entries(entries).map(([k, value]) => [k as IssKey, { value: value!, calibrated: value!, t: issTime(at, now) }]));
+
+  it('reads both SARJs, the BGAs that have come, and the attitude quaternion', () => {
+    const j = issJoints(map(JOINTS))!;
+    expect(j.sarjStarboard).toBeCloseTo(57.507, 3);
+    expect(j.sarjPort).toBeCloseTo(302.472, 3);
+    expect(j.bga).toEqual({ '1A': 133.4, '3A': 226.5, '2B': 309.4 });
+    expect(j.q).toHaveLength(4);
+    expect(new Date(j.t).toISOString()).toBe('2026-10-23T22:19:21.000Z');
+  });
+
+  it('leaves the quaternion out until all four parts have come, and everything until both SARJs have', () => {
+    const { q3: _q3, ...three } = JOINTS;
+    expect(issJoints(map(three))!.q).toBeUndefined();
+    const { sarjPort: _port, ...oneSarj } = JOINTS;
+    expect(issJoints(map(oneSarj))).toBeUndefined();
   });
 });
