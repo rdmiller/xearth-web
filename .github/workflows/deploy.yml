@@ -88,6 +88,9 @@ jobs:
       - name: Ionosphere total electron content (NOAA SWPC GloTEC; 2.5 MB a map, so trimmed here)
         continue-on-error: true
         run: python -m xearth_clouds.ionosphere --out web/public/ionosphere
+      - name: Winds at 10 m and 250 hPa (NOAA GFS via the NOMADS GRIB filter; no CORS, and GRIB)
+        continue-on-error: true
+        run: python -m xearth_clouds.winds --out web/public/winds
       - name: Meteors, last 24 h (Global Meteor Network) and fireballs (NASA/JPL CNEOS)
         continue-on-error: true
         run: python -m xearth_clouds.meteors --out web/public/meteors

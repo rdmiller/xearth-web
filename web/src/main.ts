@@ -75,6 +75,7 @@ import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
+import { isWindManifest, loadWindField, MAX_PARTICLES, WindParticles, windSummary, type WindField, type WindManifest } from './winds';
 import { EmscPush, EmscQuakes, emscQueryUrl, isEmscFeed, mergeQuakes } from './emsc';
 import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
 import { detailRequest, fetchFloodCells, FLOOD_CHECK_MS, FLOOD_H, FLOOD_REFRESH_MS, FLOOD_W, floodPoints, floodSummary, newestFloodDate, withDetail, WORLD, type FloodBox, type FloodCell } from './flood';
@@ -220,6 +221,7 @@ import { FrameStats, GpuTimer, SlowFrames } from './perf';
 import { publishSeverity } from './tokens';
 import { DATA_BASE, parseSettings, toQuery, type Settings } from './params';
 import { GlobeRenderer } from './renderer/gl';
+import { WindLayer } from './renderer/winds';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
   EARTH_RADIUS_KM,
@@ -263,6 +265,7 @@ const TOAST_MS = 1400;
 
 const globeCanvas = document.getElementById('globe') as HTMLCanvasElement;
 const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
+const windCanvas = document.getElementById('winds') as HTMLCanvasElement;
 const help = document.getElementById('help') as HTMLElement;
 const helpKeys = document.getElementById('help-keys') as HTMLElement;
 const toastEl = document.getElementById('toast') as HTMLElement;
@@ -1300,6 +1303,96 @@ function syncIono() {
   ionoTimer = setInterval(() => void runIono(mode), IONO[mode].everyMs);
 }
 
+// ---- winds (NOAA GFS, via the pipeline) ----------------------------------------------------
+// The pipeline writes the coming hour's winds once an hour; only the level shown is fetched.
+// The trails move on a canvas of their own, every display frame while the layer is on,
+// without redrawing the globe. See winds.ts.
+
+const WIND_CHECK_MS = 15 * 60_000;
+let windManifest: WindManifest | undefined;
+let windField: WindField | undefined;
+let windTimer: ReturnType<typeof setInterval> | undefined;
+/** Made the first time the layer has data to show; null if WebGL wouldn't give it a context. */
+let windGl: { layer: WindLayer; particles: WindParticles } | null | undefined;
+let windRaf = 0;
+let windLast = 0;
+
+async function runWinds(): Promise<void> {
+  const mode = settings.winds;
+  if (mode === 'off') return;
+  feedLog.begin('winds', Date.now(), WIND_CHECK_MS);
+  try {
+    const url = pipelineFile(settings.windsrc);
+    const m = await fetchJson(url);
+    if (!isWindManifest(m)) throw new Error('winds/latest.json is not a wind manifest');
+    if (!windField || windField.mode !== mode || windField.valid !== m.valid) {
+      const f = await loadWindField(url, m, mode);
+      // Not if the level was switched while this one loaded.
+      if (settings.winds === mode) windField = f;
+    }
+    windManifest = m;
+    // The run's start: how old the forecast is (it's valid for the coming hour).
+    feedLog.done('winds', Date.now(), m.cycle);
+  } catch (err) {
+    feedLog.fail('winds', Date.now(), err);
+    console.warn('winds:', err);
+  }
+  startWinds();
+  requestRedraw();
+}
+
+function syncWinds() {
+  clearInterval(windTimer);
+  windTimer = undefined;
+  if (windField && windField.mode !== settings.winds) windField = undefined;
+  if (settings.winds === 'off') {
+    feedLog.stop('winds');
+    stopWinds();
+    return;
+  }
+  void runWinds();
+  windTimer = setInterval(() => void runWinds(), WIND_CHECK_MS);
+}
+
+function startWinds() {
+  if (windRaf || settings.winds === 'off' || !windField || document.hidden) return;
+  if (windGl === undefined) {
+    try {
+      windGl = { layer: new WindLayer(windCanvas, MAX_PARTICLES), particles: new WindParticles(MAX_PARTICLES) };
+    } catch (err) {
+      console.warn('winds:', err);
+      windGl = null;
+    }
+  }
+  if (!windGl) return;
+  windGl.particles.reset();
+  windLast = 0;
+  windRaf = requestAnimationFrame(windFrame);
+}
+
+function stopWinds() {
+  cancelAnimationFrame(windRaf);
+  windRaf = 0;
+  windGl?.layer.clear();
+}
+
+function windFrame(now: number) {
+  windRaf = 0;
+  if (settings.winds === 'off' || !windField || !windGl || document.hidden) return stopWinds();
+  // Seconds of animation, not of the clock: winds move the same paused or sped up.
+  const dt = windLast ? Math.min(0.1, (now - windLast) / 1000) : 0;
+  windLast = now;
+  const { layer, particles } = windGl;
+  layer.resize(Math.min(window.devicePixelRatio || 1, 2));
+  const camera = cameraFor(settings, simTime(now), resolveTrack);
+  const radius = radiusCss();
+  particles.step(windField, { camera, radiusPx: radius, width: windCanvas.clientWidth, height: windCanvas.clientHeight }, dt);
+  layer.upload(particles.trail, particles.takeDirty());
+  const scale = windCanvas.width / Math.max(windCanvas.clientWidth, 1);
+  layer.draw({ camera, radiusPx: radius * scale, dpr: scale, mode: windField.mode, head: particles.head, phase: particles.phase });
+  windRaf = requestAnimationFrame(windFrame);
+}
+
 const hazardTimers: Partial<Record<HazardKey, ReturnType<typeof setInterval>>> = {};
 
 /** Load a layer once. `everyMs`: this is its scheduled check, and the next is due that long after. */
@@ -1741,6 +1834,7 @@ function layerRows(): ReadoutRow[] {
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
   if (settings.sst !== 'off' && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
+  if (settings.winds !== 'off' && windManifest && windField) add('winds', windSummary(settings.winds, windManifest));
   if (settings.iono === 'tec' && tecManifest) add('ionosphere', tecSummary(tecManifest));
   if (settings.iono === 'drap' && drap) add('ionosphere', drapSummary(drap));
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
@@ -1898,6 +1992,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'flood', label: 'Flood extent', source: 'NASA LANCE VIIRS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.events, everyMs: FLOOD_CHECK_MS },
   // GIBS has a MUR day the next day: dated noon, it's ~30 hours old when it lands.
   { key: 'sst', label: 'Sea temperature', source: 'GHRSST MUR', freshMs: 3 * 24 * 60 * MIN, on: () => settings.sst !== 'off', everyMs: SST_CHECK_MS },
+  // GFS runs every 6 hours and lands ~4–5 hours after it starts: the newest is up to ~11 hours old.
+  { key: 'winds', label: 'Winds', source: 'NOAA GFS', freshMs: 12 * 60 * MIN, on: () => settings.winds !== 'off', everyMs: WIND_CHECK_MS },
   // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
   { key: 'ash', label: 'Volcanic ash', source: 'EUMETSAT Ash RGB', freshMs: 7 * 60 * MIN, on: () => settings.ash, everyMs: LIVE_CHECK_MS },
   // GIBS draws a Himawari scan about an hour after it's taken.
@@ -2875,6 +2971,7 @@ document.addEventListener('visibilitychange', () => {
   lastAnimatedAt = 0; // the gap while hidden isn't a slow frame
   if (!document.hidden) {
     requestRedraw();
+    startWinds();
     if (settings.clouds) void clouds.check();
   }
 });
@@ -2895,6 +2992,7 @@ function update(patch: Partial<Settings>) {
   const imageryBefore = settings.imagery;
   const ashBefore = settings.ash;
   const sstBefore = settings.sst;
+  const windsBefore = settings.winds;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
@@ -2912,6 +3010,7 @@ function update(patch: Partial<Settings>) {
   }
   if (settings.severe !== hazardsBefore.severe) syncAlarm();
   if (settings.iono !== ionoBefore) syncIono();
+  if (settings.winds !== windsBefore) syncWinds();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
   satTree.refresh(settings, treeCounts());
@@ -3122,6 +3221,7 @@ syncFlood();
 syncHans();
 syncAlarm();
 syncIono();
+syncWinds();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
 

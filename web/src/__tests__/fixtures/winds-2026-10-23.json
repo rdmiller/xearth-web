@@ -1,0 +1,36 @@
+{
+ "generated": "2026-10-23T20:13:44.226Z",
+ "source": "NOAA/NCEP GFS 0.25\u00b0",
+ "cycle": "2026-10-23T12:00:00.000Z",
+ "forecastHour": 9,
+ "valid": "2026-10-23T21:00:00.000Z",
+ "width": 720,
+ "height": 361,
+ "lat0": 90.0,
+ "lon0": 0.0,
+ "step": 0.5,
+ "levels": {
+  "surface": {
+   "image": "surface-20261023T21Z.png",
+   "label": "10 m",
+   "scale": 29.0,
+   "max": {
+    "speed": 30.4,
+    "lat": 25.5,
+    "lon": 123.5
+   },
+   "mean": 6.3
+  },
+  "jet": {
+   "image": "jet-20261023T21Z.png",
+   "label": "250 hPa",
+   "scale": 87.0,
+   "max": {
+    "speed": 87.7,
+    "lat": 54.5,
+    "lon": -32.0
+   },
+   "mean": 23.3
+  }
+ }
+}

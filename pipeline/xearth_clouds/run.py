@@ -42,6 +42,7 @@ JOBS: tuple[tuple[str, str, str], ...] = (
     ("tsunami", "xearth_clouds.tsunami", "tsunami"),
     ("meteoalarm", "xearth_clouds.meteoalarm", "meteoalarm"),
     ("ionosphere", "xearth_clouds.ionosphere", "ionosphere"),
+    ("winds", "xearth_clouds.winds", "winds"),
     ("meteors", "xearth_clouds.meteors", "meteors"),
     ("buoys", "xearth_clouds.buoys", "buoys"),
     ("clouds", "xearth_clouds", "clouds"),
