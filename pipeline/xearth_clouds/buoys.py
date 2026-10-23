@@ -11,7 +11,9 @@
 None of these send CORS headers. Two files come out:
   * latest.json: each buoy's position, type and latest readings (what the globe draws);
   * history.json: the last 24 hours, hourly, per buoy, and 15-minute DART heights (what a
-    buoy's window draws, fetched only when one is opened).
+    buoy's window draws, fetched only when one is opened);
+  * argo.json: Argo floats' latest profiles and tracks (argo.py), fetched only when a float's
+    window opens, and carried over between runs as the profile store.
 
     python -m xearth_clouds.buoys --out web/public/buoys
 """
@@ -34,6 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
+from . import argo
 from .launches import USER_AGENT, iso
 
 OSMC = "https://osmc.noaa.gov/erddap/tabledap/OSMC_30day.csv"
@@ -215,7 +218,8 @@ def summarise(buoys: dict[str, dict], start: dt.datetime) -> tuple[list[dict], d
     return latest, history
 
 
-def build(get: Callable[[str], bytes], now: dt.datetime | None = None, workers: int = 8) -> tuple[dict, dict]:
+def build(get: Callable[[str], bytes], now: dt.datetime | None = None, workers: int = 8, previous_argo: dict | None = None) -> tuple[dict, dict, dict | None]:
+    """latest.json, history.json, and argo.json (None if Argo was unavailable this run)."""
     now = now or dt.datetime.now(dt.timezone.utc)
     hour = now.replace(minute=0, second=0, microsecond=0)
     start = hour + dt.timedelta(hours=1) - WINDOW
@@ -264,6 +268,14 @@ def build(get: Callable[[str], bytes], now: dt.datetime | None = None, workers: 
             latest.append({"id": sid, "type": "dart", "name": st["name"], "lat": st["lat"], "lon": st["lon"], "time": iso(t), "height": round(h, 3), "event": d["event"]})
             dart_history[sid] = {"t": [round((x - start).total_seconds() / 60) for x, _, _ in d["readings"]], "height": [round(y, 3) for _, y, _ in d["readings"]]}
 
+    # Argo floats: a different rhythm (a surfacing every ~10 days), their own file.
+    try:
+        argo_latest, argo_file = argo.floats(get, previous_argo, now)
+        latest += argo_latest
+    except Exception as err:
+        print(f"buoys: Argo floats unavailable ({err})", file=sys.stderr)
+        argo_file = None
+
     latest.sort(key=lambda r: r["id"])
     counts: dict[str, int] = {}
     for r in latest:
@@ -277,7 +289,7 @@ def build(get: Callable[[str], bytes], now: dt.datetime | None = None, workers: 
         "buoys": latest,
     }
     hist = {"generated": iso(now), "from": iso(start), "stepMin": 60, "hours": HOURS, "series": history, "dart": dart_history}
-    return manifest, hist
+    return manifest, hist, argo_file
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -290,10 +302,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="xearth_clouds.buoys", description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
-    manifest, hist = build(_get)
+    try:
+        previous_argo = json.loads((args.out / "argo.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        previous_argo = None  # first run: rebuilt from the last 10 days
+    manifest, hist, argo_file = build(_get, previous_argo=previous_argo)
     args.out.mkdir(parents=True, exist_ok=True)
     # History first: a latest.json never points at a missing or older history.
     write_json(args.out / "history.json", hist)
+    if argo_file:
+        write_json(args.out / "argo.json", argo_file)
     write_json(args.out / "latest.json", manifest)
     counts = ", ".join(f"{n} {k}" for k, n in sorted(manifest["counts"].items(), key=lambda x: -x[1]))
     print(f"wrote {args.out}: {len(manifest['buoys'])} buoys ({counts})")

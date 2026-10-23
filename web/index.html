@@ -248,6 +248,16 @@
       #buoy [hidden] { display: none; }
       #buoy .iss-tile.wide { grid-column: 1 / -1; }
       #buoy .iss-chip { border-color: currentColor; }
+      /* An Argo float's dive: temperature (warm) and salinity (cool) against depth. */
+      #buoy .argo-plot { display: block; width: 100%; height: auto; margin-top: 3px; overflow: visible; cursor: crosshair; touch-action: none; }
+      #buoy .argo-grid line { stroke: rgb(var(--hud-cyan-rgb) / 0.1); stroke-width: 1; }
+      #buoy .argo-grid text, #buoy .argo-range { font-size: 9px; font-variant-numeric: tabular-nums; fill: var(--ink-4); }
+      #buoy .argo-line { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+      #buoy .temp { --c: #ffb36b; }
+      #buoy .psal { --c: #7fd6ff; }
+      #buoy .argo-line { stroke: var(--c); }
+      #buoy .argo-range { fill: var(--c); }
+      #buoy .argo-dot { fill: var(--c); stroke: var(--glass-fill-solid); stroke-width: 1.5; }
       /* Phones: the column spans the width and fills the room between the readout (whose
          height overlay.ts reports as --readout-bottom) and the dock, stacked from the bottom.
          When the windows outgrow it, the column scrolls; "safe" keeps the overflow reachable
@@ -541,7 +551,7 @@
         <li><b>Launches</b> The Space Devs, SpaceX via CelesTrak</li>
         <li><b>Aurora, Sun image, space weather, ionosphere</b> NOAA SWPC (GloTEC, D-RAP)</li>
         <li><b>Meteors</b> Global Meteor Network; fireballs NASA/JPL CNEOS</li>
-        <li><b>Buoys</b> NOAA OSMC, NOAA NDBC (incl. DART)</li>
+        <li><b>Buoys</b> NOAA OSMC, NOAA NDBC (incl. DART); Argo floats: the International Argo Program, via NOAA OSMC</li>
         <li><b>Storms, floods, wildfires, eruptions</b> GDACS, NHC</li>
         <li><b>Fires</b> NASA FIRMS</li>
         <li><b>Quakes</b> USGS</li>

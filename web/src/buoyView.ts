@@ -8,10 +8,14 @@
 //   dials    wind and wave direction (where they come from)
 //   foot     how far a drifter drifted, the pressure's tendency, the source
 //
-// The history comes in a separate file, fetched the first time a window opens; until then
-// the tiles show the latest readings without sparklines.
+// An Argo float's window has its surface water temperature and salinity, and in place of
+// sparklines its latest dive: temperature and salinity down to 2,000 m. Its foot has its
+// cycle, model and programme, and how far it drifted over the last 30 days.
+//
+// The history (and argo.json) come in separate files, fetched the first time a window opens;
+// until then the tiles show the latest readings without sparklines.
 
-import { buoyTitle, degC, drift, metres, ms, tendency, TYPE_COLOR, TYPE_LABEL, type Buoy, type BuoyHistory } from './buoys';
+import { argoDrift, buoyTitle, degC, drift, metres, ms, tendency, TYPE_COLOR, TYPE_LABEL, type ArgoFile, type ArgoProfile, type Buoy, type BuoyHistory } from './buoys';
 import { sparkPath, sparkScale } from './gauges';
 import { attr, Dial, el, label, put, svg } from './issView';
 import type { Toast } from './toasts';
@@ -19,12 +23,13 @@ import type { Toast } from './toasts';
 const SPARK_W = 132;
 const SPARK_H = 26;
 const MIN = 60_000;
-/** Older than this, a buoy's latest report reads as stale. */
+/** Older than this, a buoy's latest report reads as stale; a float surfaces every ~10 days. */
 const STALE_MS = 6 * 3_600_000;
+const ARGO_STALE_MS = 15 * 86_400_000;
 
 const ago = (ms: number) => {
   const min = Math.max(0, Math.round(ms / MIN));
-  return min < 90 ? `${min} min ago` : `${Math.round(min / 60)} h ago`;
+  return min < 90 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} d ago`;
 };
 
 /** A stat tile with a fixed history: label, value, change over the history, a sparkline to read off. */
@@ -122,6 +127,152 @@ class HistoryTile {
   }
 }
 
+const PROF_W = 280;
+const PROF_H = 150;
+const PAD = { left: 34, right: 6, top: 4, bottom: 16 };
+
+/**
+ * An Argo float's latest dive: temperature and salinity against depth, the surface at the top,
+ * each on its own scale across. Hover to read off a depth. Pressure in dbar is within a percent
+ * of depth in metres, so it's labelled as metres.
+ */
+class ProfilePlot {
+  readonly el: HTMLElement;
+  private readonly delta: HTMLElement;
+  private readonly plot: SVGSVGElement;
+  private readonly grid: SVGGElement;
+  private readonly lines: { temp: SVGPathElement; psal: SVGPathElement };
+  private readonly dots: { temp: SVGCircleElement; psal: SVGCircleElement };
+  private readonly cross: SVGLineElement;
+  private readonly ranges: { temp: SVGTextElement; psal: SVGTextElement };
+  private profile: ArgoProfile | undefined;
+  private note = '';
+  private formatTemp: (v: number) => string = (v) => `${v.toFixed(1)}°C`;
+  private maxDepth = 2000;
+  private hover: number | undefined;
+
+  constructor() {
+    this.el = el('div', 'iss-tile wide argo-profile');
+    const head = el('div', 'iss-tile-head');
+    head.append(label('Profile'), (this.delta = el('span', 'iss-delta')));
+    this.plot = svg('svg', { class: 'argo-plot', viewBox: `0 0 ${PROF_W} ${PROF_H}`, 'aria-hidden': 'true' });
+    this.grid = svg('g', { class: 'argo-grid' });
+    this.lines = { temp: svg('path', { class: 'argo-line temp' }), psal: svg('path', { class: 'argo-line psal' }) };
+    this.cross = svg('line', { class: 'spark-cross', x1: PAD.left, x2: PROF_W - PAD.right, visibility: 'hidden' });
+    this.dots = { temp: svg('circle', { class: 'argo-dot temp', r: 2.5, visibility: 'hidden' }), psal: svg('circle', { class: 'argo-dot psal', r: 2.5, visibility: 'hidden' }) };
+    this.ranges = {
+      temp: svg('text', { class: 'argo-range temp', x: PAD.left, y: PROF_H - 3 }),
+      psal: svg('text', { class: 'argo-range psal', x: PROF_W - PAD.right, y: PROF_H - 3, 'text-anchor': 'end' }),
+    };
+    this.plot.append(this.grid, this.lines.psal, this.lines.temp, this.cross, this.dots.psal, this.dots.temp, this.ranges.temp, this.ranges.psal);
+    this.plot.addEventListener('pointermove', (e) => {
+      const r = this.plot.getBoundingClientRect();
+      // The SVG keeps its aspect, so screen y maps straight to its own units.
+      this.hover = r.height ? ((e.clientY - r.top) / r.height) * PROF_H : undefined;
+      this.draw();
+    });
+    this.plot.addEventListener('pointerleave', () => {
+      this.hover = undefined;
+      this.draw();
+    });
+    this.el.append(head, this.plot);
+  }
+
+  /** The profile (undefined while argo.json loads, or if the float hasn't one), a note for the head. */
+  set(p: ArgoProfile | undefined, note: string, formatTemp: (v: number) => string) {
+    if (p !== this.profile) {
+      this.profile = p;
+      this.maxDepth = p ? Math.max(500, Math.ceil(Math.max(...p.pres) / 500) * 500) : 2000;
+      this.drawGrid();
+    }
+    this.note = note;
+    this.formatTemp = formatTemp;
+    this.draw();
+  }
+
+  private y(dbar: number) {
+    return PAD.top + (dbar / this.maxDepth) * (PROF_H - PAD.top - PAD.bottom);
+  }
+
+  /** One reading's scale across the plot: its min..max over the profile, with a little room. */
+  private scale(values: readonly (number | null)[], minSpan: number) {
+    const v = values.filter((x): x is number => x !== null);
+    if (!v.length) return undefined;
+    let lo = Math.min(...v);
+    let hi = Math.max(...v);
+    if (hi - lo < minSpan) [lo, hi] = [(lo + hi - minSpan) / 2, (lo + hi + minSpan) / 2];
+    const w = PROF_W - PAD.left - PAD.right;
+    return { lo, hi, x: (x: number) => PAD.left + ((x - lo) / (hi - lo)) * w };
+  }
+
+  private drawGrid() {
+    this.grid.replaceChildren();
+    const step = this.maxDepth > 1000 ? 500 : 250;
+    for (let d = 0; d <= this.maxDepth; d += step) {
+      const y = this.y(d).toFixed(1);
+      this.grid.append(
+        svg('line', { x1: PAD.left, x2: PROF_W - PAD.right, y1: y, y2: y }),
+        Object.assign(svg('text', { x: PAD.left - 4, y, 'text-anchor': 'end', 'dominant-baseline': 'middle' }), { textContent: `${d.toLocaleString('en-US')} m` }),
+      );
+    }
+  }
+
+  private draw() {
+    const p = this.profile;
+    const hidden = (...nodes: Element[]) => nodes.forEach((n) => attr(n, 'visibility', 'hidden'));
+    if (!p) {
+      for (const k of ['temp', 'psal'] as const) attr(this.lines[k], 'd', '');
+      put(this.ranges.temp, '');
+      put(this.ranges.psal, '');
+      hidden(this.cross, this.dots.temp, this.dots.psal);
+      put(this.delta, this.note);
+      return;
+    }
+    const sc = { temp: this.scale(p.temp, 2), psal: this.scale(p.psal, 0.4) };
+    for (const k of ['temp', 'psal'] as const) {
+      const s = sc[k];
+      let d = '';
+      let pen = false;
+      p[k].forEach((v, i) => {
+        if (v === null || !s) return void (pen = false);
+        d += `${pen ? 'L' : 'M'}${s.x(v).toFixed(1)} ${this.y(p.pres[i]).toFixed(1)}`;
+        pen = true;
+      });
+      attr(this.lines[k], 'd', d);
+    }
+    put(this.ranges.temp, sc.temp ? `${this.formatTemp(sc.temp.lo)} – ${this.formatTemp(sc.temp.hi)}` : '');
+    put(this.ranges.psal, sc.psal ? `${sc.psal.lo.toFixed(1)} – ${sc.psal.hi.toFixed(1)} PSU` : '');
+
+    if (this.hover === undefined) {
+      hidden(this.cross, this.dots.temp, this.dots.psal);
+      put(this.delta, this.note);
+      return;
+    }
+    // The level nearest the pointer's depth.
+    const want = ((this.hover - PAD.top) / (PROF_H - PAD.top - PAD.bottom)) * this.maxDepth;
+    let i = 0;
+    p.pres.forEach((d, j) => Math.abs(d - want) < Math.abs(p.pres[i] - want) && (i = j));
+    const y = this.y(p.pres[i]).toFixed(1);
+    attr(this.cross, 'y1', y);
+    attr(this.cross, 'y2', y);
+    attr(this.cross, 'visibility', 'visible');
+    const parts = [`${p.pres[i].toLocaleString('en-US')} m`];
+    for (const k of ['temp', 'psal'] as const) {
+      const v = p[k][i];
+      const s = sc[k];
+      if (v === null || !s) {
+        hidden(this.dots[k]);
+        continue;
+      }
+      attr(this.dots[k], 'cx', s.x(v).toFixed(1));
+      attr(this.dots[k], 'cy', y);
+      attr(this.dots[k], 'visibility', 'visible');
+      parts.push(k === 'temp' ? this.formatTemp(v) : `${v.toFixed(2)} PSU`);
+    }
+    put(this.delta, parts.join(' · '));
+  }
+}
+
 const signed = (x: number, digits: number, unit: string) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(digits)}${unit}`;
 
 /** Hourly bins → the non-null ones, as times (ms) and values. */
@@ -146,6 +297,8 @@ export class BuoyPanelView {
   private readonly wind: HistoryTile;
   private readonly pressure: HistoryTile;
   private readonly column: HistoryTile;
+  private readonly salinity: HistoryTile;
+  private readonly profile = new ProfilePlot();
   private readonly dials = { wind: new Dial('Wind from', 'joint'), waves: new Dial('Waves from', 'joint') };
   private readonly dialRow: HTMLElement;
   private readonly foot: HTMLElement;
@@ -165,8 +318,9 @@ export class BuoyPanelView {
     this.column = new HistoryTile('Water column', (v) => `${v.toFixed(3)} m`, (d) => signed(d, 3, ' m'), 0.05);
     // A DART buoy's one tile spans the window, so its tide gets the room.
     this.column.el.classList.add('wide');
+    this.salinity = new HistoryTile('Salinity', (v) => `${v.toFixed(2)} PSU`, (d) => signed(d, 2, ''), 0.2);
     const tiles = el('div', 'iss-tiles buoy-tiles');
-    tiles.append(this.waves.el, this.water.el, this.wind.el, this.pressure.el, this.column.el);
+    tiles.append(this.waves.el, this.water.el, this.wind.el, this.pressure.el, this.salinity.el, this.column.el, this.profile.el);
     this.dialRow = el('div', 'iss-dials');
     this.dialRow.append(this.dials.wind.el, this.dials.waves.el);
     this.foot = el('div', 'iss-note');
@@ -174,15 +328,17 @@ export class BuoyPanelView {
     toast.body.append(this.content);
   }
 
-  /** Show a buoy (or close with undefined); `history` once it has arrived. */
-  update(b: Buoy | undefined, history: BuoyHistory | undefined, now: number, imperial: boolean) {
+  /** Show a buoy (or close with undefined); `history` and `argo` once they've arrived. */
+  update(b: Buoy | undefined, history: BuoyHistory | undefined, argo: ArgoFile | undefined, now: number, imperial: boolean) {
     this.toast.show(!!b);
     if (!b) return;
     this.imperial = imperial;
     this.toast.setTitle(buoyTitle(b));
+    const float = b.type === 'argo';
     const age = now - Date.parse(b.time);
-    this.toast.setStatus(ago(age), age > STALE_MS ? 'warn' : 'ok');
-    this.content.classList.toggle('los', age > STALE_MS);
+    const stale = age > (float ? ARGO_STALE_MS : STALE_MS);
+    this.toast.setStatus(ago(age), stale ? 'warn' : 'ok');
+    this.content.classList.toggle('los', stale);
     put(this.kind, TYPE_LABEL[b.type]);
     this.kind.style.color = TYPE_COLOR[b.type];
     put(this.where, `${Math.abs(b.lat).toFixed(2)}°${b.lat >= 0 ? 'N' : 'S'} ${Math.abs(b.lon).toFixed(2)}°${b.lon >= 0 ? 'E' : 'W'}`);
@@ -205,6 +361,14 @@ export class BuoyPanelView {
     const t0 = history ? Date.parse(history.from) : 0;
     // Tiles with neither a latest value nor history hide themselves (a DART has no waves; a mooring no column).
     this.column.set(dart ? b.height : null, d ? d.t.map((m) => t0 + m * MIN) : [], d ? d.height : [], (v) => `${v.toFixed(3)} m`);
+    // Argo: surface salinity, and the dive it came from.
+    this.salinity.set(float ? b.sal : null, [], [], (v) => `${v.toFixed(2)} PSU`);
+    const prof = argo?.profiles[b.id];
+    this.profile.el.hidden = !float;
+    if (float) {
+      const note = prof ? `cycle ${prof.cycle} · ${ago(now - Date.parse(prof.time))}` : argo ? `none in ${argo.trackDays} days` : 'loading…';
+      this.profile.set(prof, note, (v) => degC(v, im));
+    }
 
     this.dials.wind.update(b.wdir ?? undefined);
     this.dials.waves.update(b.mwd ?? undefined);
@@ -218,9 +382,12 @@ export class BuoyPanelView {
       [
         dart && b.event ? 'EVENT MODE: reporting every minute or faster' : '',
         b.type === 'drifting' || b.type === 'ice' ? drift(s, history?.stepMin) ?? '' : '',
+        float ? argoDrift(argo?.tracks[b.id]) ?? '' : '',
+        float && b.model ? b.model : '',
+        float && b.project ? b.project : '',
         tend ? `pressure ${tend.word} ${Math.abs(tend.hPa).toFixed(1)} hPa / 3 h` : '',
         b.gust != null ? `gusts ${ms(b.gust, im)}` : '',
-        history ? '' : 'loading the last 24 hours…',
+        float || history ? '' : 'loading the last 24 hours…',
       ]
         .filter(Boolean)
         .join(' · '),

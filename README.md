@@ -63,8 +63,10 @@ global cloud layer refreshed every hour from geostationary satellites.
 - **Buoys** (Shift+B, off by default): the ~1,900 buoys reporting on NOAA's global network
   (drifting, moored, tropical, ice and DART tsunami buoys) as dots by type. Click one for its
   window: waves, water temperature, wind and pressure with their last 24 hours as sparklines,
-  wind and wave direction dials, a drifter's track, a DART buoy's water column. A searched
-  place's card names the nearest buoy, with a button to open it.
+  wind and wave direction dials, a drifter's track, a DART buoy's water column. The ~4,000
+  Argo floats are there too (violet): one's window has its latest dive, temperature and
+  salinity down to 2,000 m, and its track over the last 30 days. A searched place's card
+  names the nearest buoy, with a button to open it.
 - **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
   window of gauges while the ISS is tracked: signal, orbit sparklines, cabin-air meters, solar-array dials. While
   the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
@@ -319,7 +321,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
   src/meteors.ts     GMN meteor trajectories as streaks, CNEOS fireballs, shower colours
   src/buoys.ts       buoys: decoding, picking, nearest to a place, drift, pressure tendency, wording
-  src/buoyView.ts    a buoy's window: history sparkline tiles and direction dials (the ISS window's parts)
+  src/buoyView.ts    a buoy's window: history sparkline tiles, direction dials (the ISS window's parts), an Argo float's profile
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
@@ -361,7 +363,7 @@ pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
 pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
 pnpm meteors                 # GMN trajectories (last 24 h) + CNEOS fireballs (90 d) → public/meteors/
-pnpm buoys                   # NOAA OSMC + NDBC: buoys, latest + last 24 h → public/buoys/
+pnpm buoys                   # NOAA OSMC + NDBC: buoys, latest + last 24 h, and Argo floats → public/buoys/
 pnpm dev
 ```
 
@@ -480,7 +482,7 @@ docker compose down                 # stop (the data volume is kept)
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
-| `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json` and `history.json` | `0`, none, `buoys/` |
+| `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json`, `history.json` and `argo.json` | `0`, none, `buoys/` |
 | `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
 | `iono`, `ionosrc` | ionosphere wash: `tec` (GloTEC electron content), `drap` (D-RAP HF absorption) or `0`; folder holding GloTEC's `latest.json` | `0`, `ionosphere/` |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
@@ -640,6 +642,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Ionosphere: electron content | NOAA SWPC GloTEC, 5° × 2.5° (2.5 MB a map at SWPC, ~12 KB gzipped after the pipeline) | pipeline | hourly, browser re-reads every 15 min (only while shown) |
 | Ionosphere: HF absorption | NOAA SWPC D-RAP global frequencies, 4° × 2° text table (2.8 KB gzipped) | browser | 10 min (only while shown) |
 | Buoys | NOAA OSMC (ERDDAP, last 24 h of buoy reports, ~1.4 MB gzipped); NDBC names, latest observations and DART files | pipeline | hourly; browser re-reads the dots every 15 min, the history when a window opens |
+| Argo floats | NOAA OSMC ArgoFloats (ERDDAP): 30 days of surfacings (~280 KB gzipped); new profiles since the last run, binned to 50 dbar | pipeline, keeping a profile store between runs | hourly; browser reads `argo.json` when a float's window opens |
 | Meteors | Global Meteor Network daily trajectories (5 MB, trimmed to ~107 KB gzipped); NASA/JPL CNEOS fireballs, 90 days | pipeline | hourly, browser re-reads every 30 min (only while shown) |
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
@@ -687,8 +690,32 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     water column, where the tide shows as the slow swing. Units follow the browser's locale.
     The header chip says how old the latest report is, and the window dims after 6 hours.
   - *Place card:* a searched place lists the nearest buoy within 150 km (not DARTs, which
-    report no weather), e.g. "Buoy 46237 (10 mi WNW): waves 5.2 ft every 8 s · water 60°F",
-    with an Open button.
+    report no weather, nor Argo floats, whose surface reading can be days old), e.g. "Buoy
+    46237 (10 mi WNW): waves 5.2 ft every 8 s · water 60°F", with an Open button.
+  - *Argo floats:* ~4,000 robots that drift at 1,000 m, dive to 2,000 m every ~10 days and
+    rise measuring temperature and salinity, then report by satellite from the surface. From
+    OSMC's `ArgoFloats` ERDDAP dataset (no CORS either), in `argo.py`:
+    - *Positions:* each run asks for the last 30 days of surfacings (`distinct()`, ~10 s,
+      ~280 KB gzipped): ~4,350 floats. The latest one goes in `latest.json` as a buoy of type
+      `argo`, with its cycle, float model, programme, and surface temperature and salinity
+      (the profile's shallowest reading, if within 10 dbar); the rest are its track.
+    - *Profiles:* all of them every hour is too much (a 10-day query times out at the server),
+      but only ~300 come in a day. So the pipeline keeps a store, each float's newest profile,
+      in `argo.json`, and each run fetches only those since the last (plus 3 h of overlap),
+      binned by ERDDAP's `orderByClosest` to one level per 50 dbar (~41 levels). Levels whose
+      QC flag is 3 or 4 (probably bad, bad) are dropped; real-time salinity especially has
+      sensors that drift to nonsense. Profiles older than 30 days are pruned. With no store,
+      it's rebuilt from the last 10 days, a day at a time (5–10 min, once). The deploy
+      workflow carries `web/public/buoys` between runs with actions/cache; Docker's volume
+      keeps it anyway. A failed request is retried once after 20 s (the server returns an
+      occasional 500); if Argo is down for a run, the buoys go out without floats, and the
+      store is left as it was.
+    - *The window:* surface water and salinity tiles, and the dive as a chart: temperature
+      (orange) and salinity (blue) against depth, each on its own scale, with their ranges
+      underneath; hover to read off any depth. The footer says how far the float drifted over
+      30 days, its model and programme. It dims after 15 days without surfacing. `argo.json`
+      (~3,900 profiles and ~4,350 tracks, ~700 KB gzipped) is fetched once a float's window
+      opens; its track is drawn as a dashed line.
 - **Meteors** (`meteors=1`, Shift+M):
   - *The data:* GMN's cameras triangulate each meteor two or more sites catch, and publish the
     trajectories (updated every 6 hours): where it lit up and burned out (latitude,
@@ -1004,7 +1031,10 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
 - Buoys: NOAA Observing System Monitoring Center (OSMC) and NOAA National Data Buoy Center
-  (NDBC), including the DART tsunami buoys.
+  (NDBC), including the DART tsunami buoys. Argo floats: the Argo programme
+  (https://argo.ucsd.edu), part of the Global Ocean Observing System; data collected and made
+  freely available by the International Argo Program and the national programs that
+  contribute to it, via the Coriolis GDAC and NOAA OSMC.
 - Meteors: Global Meteor Network (globalmeteornetwork.org), data CC BY 4.0. Vida et al. 2020,
   MNRAS 491, 2688–2705; Vida et al. 2021, "The Global Meteor Network – Methodology and first
   results", MNRAS 506, 5046–5074. Fireballs: NASA/JPL Center for Near Earth Object Studies (CNEOS).

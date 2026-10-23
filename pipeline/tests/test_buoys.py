@@ -1,6 +1,6 @@
 import datetime as dt
 
-from xearth_clouds import buoys
+from xearth_clouds import argo, buoys
 
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 10, 23, 10, 40, tzinfo=UTC)
@@ -62,7 +62,7 @@ def test_reads_surface_reports_of_buoys():
 
 
 def test_latest_hourly_history_and_ndbc_extras():
-    manifest, hist = buoys.build(get, now=NOW, workers=1)
+    manifest, hist, _ = buoys.build(get, now=NOW, workers=1)
     by = {r["id"]: r for r in manifest["buoys"]}
     # 61221 reported nothing but positions; the DART without a file is skipped.
     assert set(by) == {"46026", "4402591", "21415"}
@@ -80,6 +80,77 @@ def test_latest_hourly_history_and_ndbc_extras():
 
 
 def test_manifest_counts_types():
-    manifest, _ = buoys.build(get, now=NOW, workers=1)
-    assert manifest["counts"] == {"moored": 1, "drifting": 1, "dart": 1}
+    manifest, _, argo_file = buoys.build(get, now=NOW, workers=1)
+    # Argo unavailable (the stub 404s everything of its): the rest goes on without it.
+    assert manifest["counts"] == {"moored": 1, "drifting": 1, "dart": 1} and argo_file is None
     assert manifest["from"] == "2026-10-22T11:00:00.000Z"
+
+
+# OSMC's ArgoFloats as served on 2026-10-23: surfacings (distinct()) and binned profiles.
+ARGO_POSITIONS = """platform_number,cycle_number,time,latitude,longitude,platform_type,project_name
+,,UTC,degrees_north,degrees_east,,
+1901514,543,2026-10-05T01:20:00Z,1.5,44.5,APEX,US ARGO PROJECT
+1901514,544,2026-10-15T01:23:36Z,1.626,44.64,APEX,US ARGO PROJECT
+6990001,12,2026-10-22T22:00:00Z,-40.0,10.0,ARVOR,ARGO FRANCE
+"""
+ARGO_PROFILES = """platform_number,cycle_number,time,pres,temp,temp_qc,psal,psal_qc
+,,UTC,decibar,degree_Celsius,,PSU,
+6990001,12,2026-10-22T22:00:00Z,50.0,11.2,1,34.9,1
+6990001,12,2026-10-22T22:00:00Z,4.1,12.5,1,34.8,1
+6990001,12,2026-10-22T22:00:00Z,100.0,10.1,1,103.9,4
+6990001,11,2026-10-12T22:00:00Z,4.0,13.0,1,35.0,1
+"""
+
+
+def with_argo(calls):
+    def get_all(url):
+        if not url.startswith(argo.ARGO):
+            return get(url)
+        calls.append(url)
+        if "distinct()" in url:
+            return ARGO_POSITIONS.encode()
+        if "time%3E=2026-10-22T" in url:
+            return ARGO_PROFILES.encode()
+        raise OSError("HTTP Error 404: Not Found")  # ERDDAP's "no matching results"
+
+    return get_all
+
+
+def test_argo_queries_encode_operators_and_bin_profiles():
+    url = argo.profiles_url(START, NOW)
+    assert "time%3E=2026-10-22T11" in url and "time%3C2026-10-23T10" in url and "pres%3C=2000" in url
+    assert "orderByClosest(%22platform_number,cycle_number,pres,50%22)" in url
+
+
+def test_argo_keeps_each_floats_newest_profile_without_bad_values():
+    p = argo.parse_profiles(ARGO_PROFILES)
+    assert p["6990001"]["cycle"] == 12
+    assert p["6990001"]["pres"] == [4, 50, 100]  # shallowest first
+    assert p["6990001"]["psal"] == [34.8, 34.9, None]  # flagged bad (4)
+    assert argo.surface(p["6990001"]) == (12.5, 34.8)
+
+
+def test_argo_floats_in_the_manifest_and_their_own_file():
+    calls = []
+    manifest, _, af = buoys.build(with_argo(calls), now=NOW, workers=1)
+    by = {r["id"]: r for r in manifest["buoys"]}
+    f = by["6990001"]
+    assert (f["type"], f["cycle"], f["model"], f["sst"], f["sal"]) == ("argo", 12, "ARVOR", 12.5, 34.8)
+    # A float with no profile in the store still shows where it surfaced.
+    assert (by["1901514"]["lat"], by["1901514"]["sst"]) == (1.626, None)
+    assert manifest["counts"]["argo"] == 2
+    assert af["tracks"]["1901514"]["lat"] == [1.5, 1.626]
+    assert set(af["profiles"]) == {"6990001"}
+    # No store yet: rebuilt from the last 10 days, a day at a time (plus the positions query).
+    assert sum(1 for u in calls if "orderByClosest" in u) == 10
+
+
+def test_argo_store_carries_over_and_is_pruned():
+    old = {"time": "2026-09-01T00:00:00.000Z", "cycle": 1, "pres": [5], "temp": [20.0], "psal": [35.0]}
+    kept = {"time": "2026-10-20T00:00:00.000Z", "cycle": 7, "pres": [5], "temp": [21.0], "psal": [35.1]}
+    calls = []
+    store = {"updated": "2026-10-23T09:40:00.000Z", "profiles": {"1": old, "2": kept}}
+    out = argo.update_profiles(with_argo(calls), store, NOW)
+    # Only the time since the last run, and the overlap, is fetched.
+    assert len(calls) == 1 and "time%3E=2026-10-23T06%3A40%3A00Z" in calls[0]
+    assert set(out["profiles"]) == {"2"} and out["updated"] == "2026-10-23T10:40:00.000Z"

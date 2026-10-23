@@ -47,7 +47,7 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
-import { buoyLine, buoySummary, isBuoyHistory, isBuoyManifest, nearestBuoy, pickNearest, TYPE_COLOR, type BuoyHistory, type BuoyManifest } from './buoys';
+import { buoyLine, buoySummary, isArgoFile, isBuoyHistory, isBuoyManifest, nearestBuoy, pickNearest, TYPE_COLOR, type ArgoFile, type BuoyHistory, type BuoyManifest } from './buoys';
 import { BuoyPanelView } from './buoyView';
 import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
@@ -763,11 +763,16 @@ function meteorOverlay(): MeteorOverlay | undefined {
 
 // ---- buoys (NOAA OSMC, NDBC, via the pipeline) ----------------------------------------------
 // The dots come from latest.json; a buoy's window needs history.json (~250 KB), fetched only
-// once a window opens, and again when the pipeline has written a newer one.
+// once a window opens, and again when the pipeline has written a newer one. An Argo float's
+// window needs argo.json (~700 KB: every float's latest profile and track) in the same way.
 
 let buoyManifest: BuoyManifest | undefined;
 let buoyHistory: BuoyHistory | undefined;
-let buoyHistoryLoading = false;
+let argoFile: ArgoFile | undefined;
+// Which manifest each was last fetched for: once per pipeline run, even if that fails or
+// (argo.json, when Argo was down for a run) it's older than the manifest.
+let buoyHistoryFor = '';
+let argoFor = '';
 let buoyCache: BuoyOverlay | undefined;
 let buoyCacheKey = '';
 
@@ -776,11 +781,14 @@ const selectedBuoy = () => (settings.buoy && buoyManifest ? buoyManifest.buoys.f
 function buoyOverlay(): BuoyOverlay | undefined {
   if (!buoyManifest || (!settings.buoys && !settings.buoy)) return undefined;
   const sel = selectedBuoy();
-  const key = `${buoyManifest.generated}|${settings.buoys}|${sel?.id ?? ''}|${buoyHistory?.generated ?? ''}`;
+  const key = `${buoyManifest.generated}|${settings.buoys}|${sel?.id ?? ''}|${buoyHistory?.generated ?? ''}|${argoFile?.generated ?? ''}`;
   if (buoyCache && key === buoyCacheKey) return buoyCache;
   const s = sel && buoyHistory?.series[sel.id];
-  const track =
-    s?.lat && s.lon
+  // A float's track is its surfacings over the last 30 days; a drifter's, its last 24 hours.
+  const at = sel?.type === 'argo' ? argoFile?.tracks[sel.id] : undefined;
+  const track = at
+    ? at.lat.map((lat, i) => fromLatLon(lat, at.lon[i]))
+    : s?.lat && s.lon
       ? s.lat.flatMap((lat, i) => (lat !== null && s.lon![i] !== null ? [fromLatLon(lat, s.lon![i]!)] : []))
       : undefined;
   buoyCache = {
@@ -793,18 +801,29 @@ function buoyOverlay(): BuoyOverlay | undefined {
 }
 
 async function loadBuoyHistory() {
-  if (buoyHistoryLoading || !buoyManifest || (buoyHistory && buoyHistory.generated >= buoyManifest.generated)) return;
-  buoyHistoryLoading = true;
+  if (!buoyManifest || buoyHistoryFor === buoyManifest.generated) return;
+  buoyHistoryFor = buoyManifest.generated;
   try {
     const h = await fetchJson(new URL('history.json', new URL(settings.buoysrc, location.href)).href);
     if (!isBuoyHistory(h)) throw new Error('buoys/history.json is not a buoy history');
     buoyHistory = h;
   } catch (err) {
     console.warn('buoy history:', err);
-  } finally {
-    buoyHistoryLoading = false;
-    syncBuoyPanel();
   }
+  syncBuoyPanel();
+}
+
+async function loadArgo() {
+  if (!buoyManifest || argoFor === buoyManifest.generated) return;
+  argoFor = buoyManifest.generated;
+  try {
+    const a = await fetchJson(new URL('argo.json', new URL(settings.buoysrc, location.href)).href);
+    if (!isArgoFile(a)) throw new Error('buoys/argo.json is not an Argo file');
+    argoFile = a;
+  } catch (err) {
+    console.warn('Argo floats:', err);
+  }
+  syncBuoyPanel();
 }
 
 /** The manifest, whether or not the layer is on (a window or the place card may want it). */
@@ -954,7 +973,6 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       const m = await fetchJson(pipelineFile(settings.buoysrc));
       if (!isBuoyManifest(m)) throw new Error('buoys/latest.json is not a buoy manifest');
       buoyManifest = m;
-      if (settings.buoy) void loadBuoyHistory();
       syncBuoyPanel();
     },
     dataAt: () => buoyManifest?.generated,
@@ -1633,8 +1651,10 @@ const buoyPanel = new BuoyPanelView(
 /** Refresh the buoy window: on a selection, new data, and once a minute (its "x min ago"). */
 function syncBuoyPanel() {
   const b = selectedBuoy();
-  buoyPanel.update(b, buoyHistory, Date.now(), imperial);
-  if (b && !buoyHistory) void loadBuoyHistory();
+  buoyPanel.update(b, buoyHistory, argoFile, Date.now(), imperial);
+  // Each is fetched once per manifest (so again after the pipeline's next run).
+  if (b?.type === 'argo') void loadArgo();
+  else if (b) void loadBuoyHistory();
   requestRedraw();
 }
 setInterval(() => settings.buoy && syncBuoyPanel(), 60_000);

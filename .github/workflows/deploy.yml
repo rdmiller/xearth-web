@@ -88,7 +88,16 @@ jobs:
       - name: Meteors, last 24 h (Global Meteor Network) and fireballs (NASA/JPL CNEOS)
         continue-on-error: true
         run: python -m xearth_clouds.meteors --out web/public/meteors
-      - name: Buoys and their last 24 h (NOAA OSMC + NDBC, DART)
+      # Argo floats' latest profiles arrive a few hundred a day; buoys/argo.json is the
+      # store they're kept in, so carry it between runs (without it, the job rebuilds it
+      # from the last 10 days, which takes ~10 min).
+      - name: Restore previous Argo profiles
+        uses: actions/cache@v4
+        with:
+          path: web/public/buoys
+          key: buoys-${{ github.run_id }}
+          restore-keys: buoys-
+      - name: Buoys and their last 24 h (NOAA OSMC + NDBC, DART), and Argo floats
         continue-on-error: true
         run: python -m xearth_clouds.buoys --out web/public/buoys
 

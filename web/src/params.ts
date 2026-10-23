@@ -107,7 +107,7 @@ export interface Settings extends ViewSettings {
   tsunamisrc: string;
   /** Where the pipeline's meteors latest.json lives. */
   meteorsrc: string;
-  /** Where the pipeline's buoys latest.json and history.json live. */
+  /** Where the pipeline's buoys latest.json, history.json and argo.json live. */
   buoysrc: string;
   /** The ionosphere wash (off by default: it tints the whole globe). */
   iono: IonoMode;

@@ -1,11 +1,13 @@
 // Buoys: the ocean's weather stations, from NOAA's OSMC and NDBC via the pipeline (buoys.py).
 // latest.json puts each on the globe with its latest readings; history.json holds the last
-// 24 hours for a buoy's window, and is only fetched once one is opened. Decoding, picking
-// and wording here; the window is buoyView.ts.
+// 24 hours for a buoy's window, and is only fetched once one is opened. Argo floats (they
+// surface every ~10 days) are in latest.json too; argo.json holds their latest temperature
+// and salinity profiles and their tracks, fetched once a float's window opens. Decoding,
+// picking and wording here; the window is buoyView.ts.
 
 import { compass, distanceKm, speed, temp } from './locale';
 
-export type BuoyType = 'moored' | 'drifting' | 'tropical' | 'ice' | 'dart';
+export type BuoyType = 'moored' | 'drifting' | 'tropical' | 'ice' | 'dart' | 'argo';
 
 export interface Buoy {
   id: string;
@@ -30,6 +32,11 @@ export interface Buoy {
   /** DART: water-column height m, and whether it's reporting in event (tsunami) mode. */
   height?: number;
   event?: boolean;
+  /** Argo: its latest surfacing's cycle, the float's model and its programme, and surface salinity (PSU). */
+  cycle?: number;
+  model?: string;
+  project?: string;
+  sal?: number | null;
 }
 
 export interface BuoyManifest {
@@ -55,6 +62,28 @@ export interface BuoyHistory {
   dart: Record<string, { t: number[]; height: number[] }>;
 }
 
+/** An Argo float's newest profile: pressure (dbar, ≈ m deep), temperature °C and salinity PSU. */
+export interface ArgoProfile {
+  cycle: number;
+  time: string;
+  pres: number[];
+  temp: (number | null)[];
+  psal: (number | null)[];
+}
+
+export interface ArgoFile {
+  generated: string;
+  trackDays: number;
+  profiles: Record<string, ArgoProfile>;
+  /** Its surfacings over the last `trackDays`: unix seconds and positions, oldest first. */
+  tracks: Record<string, { t: number[]; lat: number[]; lon: number[] }>;
+}
+
+export function isArgoFile(v: unknown): v is ArgoFile {
+  const a = v as Partial<ArgoFile> | null;
+  return !!a && typeof a.profiles === 'object' && typeof a.tracks === 'object' && typeof a.generated === 'string';
+}
+
 export function isBuoyManifest(v: unknown): v is BuoyManifest {
   const m = v as Partial<BuoyManifest> | null;
   return !!m && Array.isArray(m.buoys) && typeof m.from === 'string';
@@ -71,6 +100,7 @@ export const TYPE_COLOR: Record<BuoyType, string> = {
   tropical: '#ffd27f',
   ice: '#e8f3ff',
   dart: '#ff8fa3',
+  argo: '#c9a6ff',
 };
 
 export const TYPE_LABEL: Record<BuoyType, string> = {
@@ -79,6 +109,7 @@ export const TYPE_LABEL: Record<BuoyType, string> = {
   tropical: 'Tropical mooring',
   ice: 'Ice buoy',
   dart: 'DART tsunami buoy',
+  argo: 'Argo float',
 };
 
 /** "46026 · San Francisco" from NDBC's "SAN FRANCISCO - 18NM West of San Francisco, CA"; else the id. */
@@ -103,7 +134,8 @@ export function pickNearest(points: readonly { x: number; y: number }[], x: numb
 export function nearestBuoy(buoys: readonly Buoy[], lat: number, lon: number, maxKm: number): { buoy: Buoy; km: number; bearing: number } | undefined {
   let best: { buoy: Buoy; km: number; bearing: number } | undefined;
   for (const b of buoys) {
-    if (b.type === 'dart') continue;
+    // A DART has no weather; an Argo float's surface reading can be days old.
+    if (b.type === 'dart' || b.type === 'argo') continue;
     const d = distanceKm(lat, lon, b.lat, b.lon);
     if (d.km <= maxKm && (!best || d.km < best.km)) best = { buoy: b, ...d };
   }
@@ -129,6 +161,15 @@ export function drift(series: BuoyHistory['series'][string] | undefined, stepMin
   const hours = Math.round(((Math.max(lat.i1, lon.i1) - Math.min(lat.i0, lon.i0)) * stepMin) / 60);
   if (d.km < 0.5) return `stayed put over ${hours} h`;
   return `drifted ${d.km < 10 ? d.km.toFixed(1) : Math.round(d.km)} km toward ${compass(d.bearing)} in ${hours} h`;
+}
+
+/** How far and which way a float went over its track: "drifted 140 km toward W in 28 d". */
+export function argoDrift(track: ArgoFile['tracks'][string] | undefined): string | undefined {
+  if (!track || track.t.length < 2) return undefined;
+  const n = track.t.length - 1;
+  const d = distanceKm(track.lat[0], track.lon[0], track.lat[n], track.lon[n]);
+  const days = Math.round((track.t[n] - track.t[0]) / 86_400);
+  return `drifted ${Math.round(d.km)} km toward ${compass(d.bearing)} in ${days} d`;
 }
 
 /** Pressure's change over the last 3 hours (the forecaster's tendency): "falling 2.1 hPa / 3 h". */
@@ -159,7 +200,7 @@ export function buoyLine(b: Buoy, km: number, bearing: number, imperial: boolean
   return `Buoy ${b.id} (${dist} ${compass(bearing)}): ${parts.join(' · ') || 'no recent readings'}`;
 }
 
-/** "1,921 reporting · 1,300 drifting · 489 moored · 43 DART". */
+/** "1,921 reporting · 1,300 drifting · 489 moored · 43 DART · 4,352 Argo floats". */
 export function buoySummary(m: BuoyManifest): string {
   const order: [BuoyType, string][] = [
     ['drifting', 'drifting'],
@@ -169,5 +210,8 @@ export function buoySummary(m: BuoyManifest): string {
     ['dart', 'DART'],
   ];
   const parts = order.filter(([k]) => m.counts[k]).map(([k, w]) => `${m.counts[k]!.toLocaleString('en-US')} ${w}`);
-  return [`${m.buoys.length.toLocaleString('en-US')} reporting`, ...parts].join(' · ');
+  // Floats surfaced some time in the last 30 days, so they aren't "reporting" in the same sense.
+  const argo = m.counts.argo ?? 0;
+  if (argo) parts.push(`${argo.toLocaleString('en-US')} Argo floats`);
+  return [`${(m.buoys.length - argo).toLocaleString('en-US')} reporting`, ...parts].join(' · ');
 }

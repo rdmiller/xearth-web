@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  argoDrift,
   buoyLine,
   buoySummary,
   buoyTitle,
   drift,
   ends,
+  isArgoFile,
   isBuoyHistory,
   isBuoyManifest,
   nearestBuoy,
@@ -95,6 +97,26 @@ describe('buoys', () => {
 
   it('summarises what’s reporting', () => {
     expect(buoySummary(M)).toBe('3 reporting · 1 drifting · 1 moored · 1 DART');
+  });
+});
+
+describe('Argo floats', () => {
+  const FLOAT: Buoy = { id: '6990001', type: 'argo', lat: 37.7, lon: -123.5, time: '2026-10-22T22:00:00.000Z', cycle: 12, model: 'ARVOR', project: 'ARGO FRANCE', sst: 12.5, sal: 34.8 };
+
+  it('counts floats apart from the buoys reporting now', () => {
+    const m = { ...M, counts: { ...M.counts, argo: 1 }, buoys: [...M.buoys, FLOAT] };
+    expect(buoySummary(m)).toBe('3 reporting · 1 drifting · 1 moored · 1 DART · 1 Argo floats');
+    // Its surface reading can be days old: not the place card's "nearest buoy".
+    expect(nearestBuoy(m.buoys, 37.7, -123.5, 150)?.buoy.id).toBe('46026');
+    expect(buoyTitle(FLOAT)).toBe('Argo float 6990001');
+  });
+
+  it('recognises argo.json and says how far a float went', () => {
+    const track = { t: [1_760_000_000, 1_760_000_000 + 20 * 86_400], lat: [-40, -40], lon: [10, 11] };
+    expect(isArgoFile({ generated: 'x', trackDays: 30, profiles: {}, tracks: { 1: track } })).toBe(true);
+    expect(isArgoFile({ generated: 'x' })).toBe(false);
+    expect(argoDrift(track)).toBe('drifted 85 km toward E in 20 d');
+    expect(argoDrift({ t: [1], lat: [0], lon: [0] })).toBeUndefined();
   });
 });
 
