@@ -101,6 +101,11 @@ export const ISSLIVE_LABELS: Record<IssLiveMode, string> = {
   on: 'ISS telemetry always',
   off: 'ISS telemetry off',
 };
+export const RAIN_LABELS = {
+  both: 'Radar (RainViewer), and satellite rain where there’s none (NASA IMERG)',
+  radar: 'Radar only (RainViewer)',
+  off: 'Radar off',
+};
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
   photo: 'Stars: camera exposure',
@@ -216,7 +221,18 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('z', 'lightning', 'Lightning (GOES, 30 min)'),
   layer('y', 'events', 'Floods, wildfires, eruptions (GDACS)'),
   layer('i', 'snow', 'Snow and ice (today)'),
-  layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
+  {
+    keys: ['shift+r'],
+    label: 'Shift+R',
+    description: 'Rain: radar with satellite rain where there’s none → radar only → off',
+    group: 'Layers',
+    run(ctx) {
+      const { radar, imerg } = ctx.settings;
+      const next = !radar ? { radar: true, imerg: true } : imerg ? { radar: true, imerg: false } : { radar: false, imerg };
+      ctx.update(next);
+      ctx.toast(RAIN_LABELS[!next.radar ? 'off' : next.imerg ? 'both' : 'radar']);
+    },
+  },
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
   layer('shift+p', 'truecolor', 'True-colour imagery when zoomed in (NASA GIBS)'),

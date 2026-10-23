@@ -70,6 +70,46 @@ export function dropWeakEchoes(rgba: Uint8ClampedArray): number {
   return dropped;
 }
 
+/**
+ * Where RainViewer has radars at all, as the same Web Mercator tiles: opaque black where
+ * none sees, clear where one does. IMERG (imerg.ts) fills in only where there's none. It
+ * hardly changes, so it's fetched at zoom 2 and kept for the day.
+ */
+export const COVERAGE_ZOOM = 2;
+export const COVERAGE_EVERY_MS = 24 * 3_600_000;
+
+export function coverageUrls(host: string, zoom = COVERAGE_ZOOM): { x: number; y: number; url: string }[] {
+  const n = 2 ** zoom;
+  const out = [];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) out.push({ x, y, url: `${host}/v2/coverage/0/${TILE_PX}/${zoom}/${x}/${y}/0/0_0.png` });
+  }
+  return out;
+}
+
+/** The coverage tiles as one canvas; a tile that fails counts as no radar (opaque), so IMERG shows there. */
+export async function composeCoverage(host: string, fetchBlob: (url: string) => Promise<Blob>): Promise<OffscreenCanvas> {
+  const n = 2 ** COVERAGE_ZOOM;
+  const canvas = new OffscreenCanvas(n * TILE_PX, n * TILE_PX);
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await Promise.allSettled(
+    coverageUrls(host).map(async (t) => {
+      const bmp = await createImageBitmap(await fetchBlob(t.url), { premultiplyAlpha: 'none' });
+      ctx.clearRect(t.x * TILE_PX, t.y * TILE_PX, TILE_PX, TILE_PX);
+      ctx.drawImage(bmp, t.x * TILE_PX, t.y * TILE_PX);
+      bmp.close();
+    }),
+  );
+  return canvas;
+}
+
+/** The API's tile host, e.g. https://tilecache.rainviewer.com. */
+export function apiHost(json: unknown): string | undefined {
+  return (json as WeatherMaps | null)?.host;
+}
+
 /** Latitude → Mercator v (0 at the top edge, ±85.05° at the edges). */
 export function mercatorV(latDeg: number): number {
   const phi = (latDeg * Math.PI) / 180;

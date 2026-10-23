@@ -31,6 +31,8 @@ export interface FrameState {
   snowIce: boolean;
   /** RainViewer radar composite. */
   radar: boolean;
+  /** NASA IMERG satellite rain where RainViewer has no radar (needs its coverage). */
+  imerg: boolean;
   /** NOAA HMS smoke plumes. */
   smoke: boolean;
   /** GIBS true-colour detail (when one has been set). */
@@ -67,6 +69,10 @@ export class GlobeRenderer {
   private readonly radarTex: WebGLTexture;
   private hasRadar = false;
   private readonly smokeTex: WebGLTexture;
+  private readonly imergTex: WebGLTexture;
+  private hasImerg = false;
+  private readonly coverTex: WebGLTexture;
+  private hasCover = false;
   private hasSmoke = false;
   private readonly detailTex: WebGLTexture;
   private readonly reliefTex: WebGLTexture;
@@ -107,6 +113,8 @@ export class GlobeRenderer {
     this.smokeTex = empty();
     this.detailTex = empty();
     this.reliefTex = empty();
+    this.imergTex = empty();
+    this.coverTex = empty();
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -247,6 +255,38 @@ export class GlobeRenderer {
     this.hasRadar = true;
   }
 
+  /** IMERG rain and snow on the globe's grid, in radar colours, straight alpha (premultiplied on upload). */
+  setImerg(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE12);
+    gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasImerg = true;
+  }
+
+  /** RainViewer's coverage in Web Mercator, like the radar: alpha 1 where no radar sees. */
+  setRadarCoverage(image: TexImageSource) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE13);
+    gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.hasCover = true;
+  }
+
   /** Smoke density on the globe's grid (red: 0, ⅓, ⅔, 1 = none, light, medium, heavy). */
   setSmoke(image: TexImageSource) {
     const gl = this.gl;
@@ -373,6 +413,14 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.radarTex);
     gl.uniform1i(this.u('uRadar'), 8);
     gl.uniform1f(this.u('uRadarOn'), f.radar && this.hasRadar ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE12);
+    gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
+    gl.uniform1i(this.u('uImerg'), 12);
+    gl.activeTexture(gl.TEXTURE13);
+    gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
+    gl.uniform1i(this.u('uRadarCover'), 13);
+    // Without the coverage, a 5-hour-old estimate would sit under live radar: wait for it.
+    gl.uniform1f(this.u('uImergOn'), f.imerg && this.hasImerg && this.hasCover ? 1 : 0);
     gl.activeTexture(gl.TEXTURE9);
     gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
     gl.uniform1i(this.u('uSmoke'), 9);

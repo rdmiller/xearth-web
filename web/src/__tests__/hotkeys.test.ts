@@ -49,7 +49,7 @@ describe('matchHotkey', () => {
   });
 
   it('uses a Shift binding when there is one, else the plain key', () => {
-    expect(matchHotkey({ key: 'R', shiftKey: true })?.description).toBe('Weather radar (RainViewer)');
+    expect(matchHotkey({ key: 'R', shiftKey: true })?.description).toMatch(/^Rain: radar/);
     expect(matchHotkey({ key: 'S', shiftKey: true })?.description).toBe('Smoke plumes (NOAA HMS)');
     expect(matchHotkey({ key: 'r' })?.description).toBe('Check for new clouds now');
     expect(matchHotkey({ key: 'C', shiftKey: true })?.description).toBe('Clouds');

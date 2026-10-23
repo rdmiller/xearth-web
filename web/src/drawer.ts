@@ -73,7 +73,7 @@ export const DRAWER: DrawerGroup[] = [
       { key: 'shift+e', label: 'Terrain', icon: Mountain, state: flag('relief') },
       { key: 'n', label: 'Lights', icon: Lightbulb, state: flag('lights') },
       { key: 'i', label: 'Snow', icon: Snowflake, state: flag('snow') },
-      { key: 'shift+r', label: 'Radar', icon: Radar, state: flag('radar') },
+      { key: 'shift+r', label: 'Radar', icon: Radar, state: (s) => ({ on: s.radar, tag: s.radar && !s.imerg ? 'ONLY' : undefined }) },
       { key: 'shift+s', label: 'Smoke', icon: Haze, state: flag('smoke') },
       { key: 'g', label: 'Grid', icon: Grid3x3, state: flag('grid') },
     ],

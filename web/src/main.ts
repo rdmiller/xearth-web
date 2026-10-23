@@ -65,7 +65,8 @@ import {
   type NwsTsunamiAlert,
   type TsunamiManifest,
 } from './tsunami';
-import { composeRadar, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
+import { apiHost, composeCoverage, composeRadar, COVERAGE_EVERY_MS, latestFrame, RAINVIEWER_API, radarZoom, type RadarFrame } from './radar';
+import { IMERG_CHECK_MS, IMERG_COLORMAP, loadImerg, parseColormap, type ImergMap, type RateTable } from './imerg';
 import { fetchSpaceWeather, spaceWeatherSummary, SUVI_LIMB, SUVI_URL, type SpaceWeather } from './spaceweather';
 import {
   burnedRadiusKm,
@@ -630,6 +631,11 @@ const zoneCentroids = new Map<string, [number, number] | null>();
 const announced = new Set<string>();
 let radarFrame: RadarFrame | undefined;
 let radarZoomShown = 0;
+/** Where RainViewer has radars (refetched daily), and NASA IMERG for everywhere it hasn't. */
+let coverageAt = 0;
+let imerg: ImergMap | undefined;
+let imergCheckedAt = 0;
+let imergTable: RateTable | undefined;
 const radarCredit = document.getElementById('radar-credit') as HTMLElement;
 const credits = document.getElementById('credits') as HTMLElement;
 // The footer's "All credits" opens the help panel, where the full list is (H does the same).
@@ -809,7 +815,9 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
     everyMs: 5 * 60_000,
     load: async () => {
       if (document.hidden) return;
-      const frame = latestFrame(await fetchJson(RAINVIEWER_API));
+      const maps = await fetchJson(RAINVIEWER_API);
+      void loadRainFill(maps);
+      const frame = latestFrame(maps);
       if (!frame) throw new Error('RainViewer lists no radar frames');
       const zoom = radarZoom(settings.mag);
       if (frame.time === radarFrame?.time && zoom === radarZoomShown) return;
@@ -827,6 +835,46 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
     dataAt: () => radarFrame && radarFrame.time * 1000,
   },
 };
+
+/**
+ * Satellite rain where there's no radar: RainViewer's coverage once a day, IMERG every 15
+ * minutes. Each on its own, so neither failing holds up the radar. IMERG has its own card.
+ */
+async function loadRainFill(maps: unknown) {
+  const host = apiHost(maps);
+  if (host && Date.now() - coverageAt >= COVERAGE_EVERY_MS) {
+    try {
+      renderer.setRadarCoverage(
+        await composeCoverage(host, async (u) => {
+          const r = await fetch(u);
+          if (!r.ok) throw new Error(`${r.status} ${u}`);
+          return r.blob();
+        }),
+      );
+      coverageAt = Date.now();
+    } catch (err) {
+      console.warn('radar coverage:', err);
+    }
+  }
+  if (!settings.imerg || Date.now() - imergCheckedAt < IMERG_CHECK_MS) return;
+  imergCheckedAt = Date.now();
+  feedLog.begin('imerg', imergCheckedAt, IMERG_CHECK_MS);
+  try {
+    if (!imergTable) {
+      const r = await fetch(IMERG_COLORMAP);
+      if (!r.ok) throw new Error(`${r.status} GIBS colour map`);
+      imergTable = parseColormap(await r.text());
+    }
+    const m = await loadImerg(imergTable);
+    if (m.time !== imerg?.time) renderer.setImerg(m.image);
+    imerg = m;
+    feedLog.done('imerg', Date.now(), m.time);
+  } catch (err) {
+    feedLog.fail('imerg', Date.now(), err);
+    console.warn('IMERG:', err);
+  }
+  requestRedraw();
+}
 
 const hazardTimers: Partial<Record<HazardKey, ReturnType<typeof setInterval>>> = {};
 
@@ -1029,6 +1077,9 @@ function layerRows(): ReadoutRow[] {
     const km = (0.5625 / 2 ** detail.level) * 111.32;
     add('imagery', `${day} · ${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`);
   }
+  if (settings.radar && settings.imerg && imerg) {
+    add('rain', `radar now · satellite ${imerg.time.slice(11, 16)} UTC where no radar`);
+  }
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
@@ -1155,6 +1206,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
   { key: 'radar', label: 'Radar', source: 'RainViewer', freshMs: 20 * MIN, on: () => settings.radar },
+  // The early run lands ~5 h after its half hour.
+  { key: 'imerg', label: 'Satellite rain', source: 'NASA IMERG', freshMs: 6 * 60 * MIN, on: () => settings.radar && settings.imerg, everyMs: IMERG_CHECK_MS },
   { key: 'smoke', label: 'Smoke', source: 'NOAA HMS', freshMs: PIPELINE_FRESH, on: () => settings.smoke },
   { key: 'sun', label: 'Sun image', source: 'GOES SUVI', freshMs: 30 * MIN, on: () => settings.bodies && feedLog.get('sun').startedAt !== undefined, everyMs: SUN_IMAGE_EVERY_MS },
   { key: 'aurora', label: 'Aurora', source: 'NOAA SWPC', freshMs: 20 * MIN, on: () => settings.aurora },
@@ -1510,6 +1563,7 @@ function frame(now: number) {
     lightning: settings.lightning && lightningManifest ? { windowMin: lightningManifest.windowMin } : null,
     snowIce: settings.snow,
     radar: settings.radar,
+    imerg: settings.radar && settings.imerg,
     smoke: settings.smoke,
     detail: settings.truecolor && !!detail,
     relief: reliefStrength(),
@@ -1613,6 +1667,7 @@ let radarZoomTimer: ReturnType<typeof setTimeout> | undefined;
 function update(patch: Partial<Settings>) {
   const cloudsBefore = settings.clouds;
   const magBefore = settings.mag;
+  const imergBefore = settings.imerg;
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
@@ -1629,6 +1684,12 @@ function update(patch: Partial<Settings>) {
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
   // Zooming past the radar's detail threshold fetches the finer tiles (once it settles).
+  // Satellite rain switched back on: load it now rather than at the next radar check.
+  if (settings.radar && settings.imerg && !imergBefore) {
+    imergCheckedAt = 0;
+    void runHazard('radar');
+  }
+  if (!settings.imerg || !settings.radar) feedLog.stop('imerg');
   if (settings.radar && radarZoom(settings.mag) !== radarZoom(magBefore)) {
     clearTimeout(radarZoomTimer);
     radarZoomTimer = setTimeout(() => void runHazard('radar'), 800);

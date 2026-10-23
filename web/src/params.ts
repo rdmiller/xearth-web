@@ -52,6 +52,8 @@ export interface Settings extends ViewSettings {
   snow: boolean;
   /** RainViewer weather radar. */
   radar: boolean;
+  /** NASA IMERG satellite rain where there's no radar (shown with the radar). */
+  imerg: boolean;
   /** NOAA tsunami bulletins and NWS tsunami alerts. */
   tsunami: boolean;
   /** NASA GIBS true-colour imagery when zoomed in. */
@@ -137,6 +139,7 @@ export function defaults(): Settings {
     events: true,
     snow: true,
     radar: true,
+    imerg: true,
     smoke: true,
     tsunami: true,
     truecolor: true,
@@ -241,6 +244,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     events: bool(q, 'events', base.events),
     snow: bool(q, 'snow', base.snow),
     radar: bool(q, 'radar', base.radar),
+    imerg: bool(q, 'imerg', base.imerg),
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
     truecolor: bool(q, 'truecolor', base.truecolor),
