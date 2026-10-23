@@ -1240,6 +1240,23 @@ Cards slide in and out as layers are switched on and off, and flash when new dat
 The Sun-image card appears once the Sun has been in frame (that's the only time it's fetched).
 The dashboard ticks once a second while open, and not at all while closed or hidden.
 
+## Baked data: re-running by hand
+
+Two datasets change too rarely to fetch each hour, so they're baked into the repo by a
+script run by hand. Neither runs in the pipeline or the deploy; nothing reminds you when
+they go stale, so check them now and then (a few times a year is plenty).
+
+| What | Script | Writes | When to re-run | How to tell |
+|---|---|---|---|---|
+| MeteoAlarm's warning regions | `python -I pipeline/scripts/bake_meteoalarm_regions.py` | `pipeline/xearth_clouds/meteoalarm_regions.json.gz` | MeteoAlarm publishes a new `MeteoAlarm_Geocodes_<date>.json` in [its documents repository](https://gitlab.com/meteoalarm-pm-group/documents) (it was `2026_07_31` when baked): update `GEOCODES_FILE` in the script first | `unplaced` in `meteoalarm/latest.json` isn't empty (areas with no outline aren't drawn), or the job's log ends "N areas unplaced" |
+| US volcanoes' positions | `python -I web/scripts/bake-volcanoes.py web/src/usVolcanoes.ts` | `web/src/usVolcanoes.ts` | The Smithsonian adds or renumbers a US volcano | A volcano HANS monitors is missing from the globe (one it can't place is dropped without a message): on 2026-10-23 HANS listed 69 and 67 were placed, the other two being regions with no volcano number |
+
+The MeteoAlarm script fetches the geocodes (33 MB) and Natural Earth's admin-1 file (40 MB),
+or takes paths to copies already downloaded. Before committing a new bake, run the pipeline
+tests (`python -m pytest`), and run the job once (`pnpm meteoalarm`) to see that `unplaced`
+is empty. If a country's names no longer match, the script's `RENAMES` and the job's
+`BE_NUTS2` and `IE_FIPS` tables are where to fix them.
+
 ## Status readout
 
 The block at the top left says what's on screen: the time, then a row per kind of thing
