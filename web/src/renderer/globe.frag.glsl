@@ -32,6 +32,9 @@ uniform sampler2D uSnowIce;  // r = snow on land, g = ice concentration (NOAA IM
 uniform float uSnowIceOn;
 uniform sampler2D uRadar;    // RainViewer composite, Web Mercator ±85.05°, premultiplied
 uniform float uRadarOn;
+uniform sampler2D uImerg;    // NASA IMERG rain and snow, equirectangular, radar colours, premultiplied (imerg.ts)
+uniform float uImergOn;
+uniform sampler2D uRadarCover; // RainViewer coverage, Web Mercator like uRadar: alpha 1 = no radar there
 uniform sampler2D uSmoke;    // HMS smoke density: 0, ⅓, ⅔, 1 = none, light, medium, heavy
 uniform float uSmokeOn;
 uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
@@ -231,13 +234,27 @@ void main() {
   }
   // Sun 6° up and the pictures start to show; 14°, they're all there is.
   float liveW = smoothstep(0.1, 0.25, k);
-  col = col * (1.0 - liveA * liveW) + livePre * liveW;  liveA *= liveW;
+  col = col * (1.0 - liveA * liveW) + livePre * liveW;
+  liveA *= liveW;
+
+  // Satellite rain (IMERG) where no radar sees, a little fainter than radar: it's an
+  // estimate, and ~5 hours old. Under the radar, so the two never double up at the edge.
+  bool merc = abs(lat) < 1.4844;
+  vec2 ruv = vec2(uv.x, 0.5 - log(tan(PI / 4.0 + lat / 2.0)) / (2.0 * PI));
+  if (uImergOn > 0.5) {
+    float noRadar = merc ? textureLod(uRadarCover, ruv, 0.0).a : 1.0;
+    vec4 m = textureLod(uImerg, uv, lodFor(uImerg, mu, coslat));
+    float a = m.a * noRadar;
+    if (a > 0.004) {
+      vec3 echo = toLinear(m.rgb / m.a) * mix(0.55, 1.0, dayW);
+      col = mix(col, echo, a * 0.65);
+    }
+  }
 
   // Radar on top of the clouds, as on a weather map (it shows the rain beneath
   // them). The texture is Web Mercator, so latitude maps through ln tan; its
   // texel size on the ground shrinks with cos(latitude), which sets the mip level.
-  if (uRadarOn > 0.5 && abs(lat) < 1.4844) {
-    vec2 ruv = vec2(uv.x, 0.5 - log(tan(PI / 4.0 + lat / 2.0)) / (2.0 * PI));
+  if (uRadarOn > 0.5 && merc) {
     float texPerRad = float(textureSize(uRadar, 0).x) / (2.0 * PI) / max(coslat, 0.05);
     vec4 r = textureLod(uRadar, ruv, log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)), 1.0)));
     if (r.a > 0.004) {

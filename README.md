@@ -42,7 +42,9 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
   - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,
-    drawn over the clouds the way a weather map shows rain.
+    drawn over the clouds the way a weather map shows rain. Where no radar reaches (the oceans,
+    most of Africa, much of Asia and South America), NASA's IMERG satellite estimate fills in,
+    in the same colours, a little fainter: it's about five hours old.
   - **Smoke:** NOAA's Hazard Mapping System smoke plumes (light, medium, heavy) over North
     America, as a grey-brown haze on the sunlit ground.
   - **Tsunami alerts:** bulletins from NOAA's two Tsunami Warning Centers at the earthquake's
@@ -237,7 +239,8 @@ style. A test checks that every layer hotkey has a button.
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
-| `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
+| `Shift+R` | rain: radar with satellite rain where there's none → radar only → off |
+| `Shift+S` `Shift+T` | smoke, tsunami alerts on/off |
 | `Shift+W` | US severe weather warnings and SPC outlook on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
@@ -283,6 +286,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
   src/liveImagery.ts live GOES and MTG pictures: discs, newest drawn scan, zoomed-in requests
   src/mtgLightning.ts  MTG Lightning Imager frames → 0.1° cells, merged with GOES's
+  src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
   scripts/twa.mjs    Bubblewrap TWA manifest and assetlinks.json
@@ -435,6 +439,7 @@ docker compose down                 # stop (the data volume is kept)
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
 | `imagery` | `live` GOES/MTG pictures by day, `daily` yesterday's VIIRS when zoomed in, `painted` neither (`truecolor=0/1` still read) | `live` |
 | `severe` | US severe weather: NWS storm-based warnings and the SPC day-1 outlook | 1 |
+| `imerg` | with the radar, NASA IMERG satellite rain where there's no radar | 1 |
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
@@ -593,6 +598,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
+| Satellite rain | NASA GPM IMERG early run, 30-min rate, via GIBS (15 tiles, ~0.5 MB); RainViewer coverage tiles | browser | 30 min, ~5 h late, checked every 15 min; coverage daily |
 | Smoke | NOAA/NESDIS HMS smoke polygons (KML) | pipeline | through the day, hourly; browser re-reads every 30 min |
 | Tsunami (US alerts) | NWS alerts API: active Tsunami Warning / Watch / Advisory, plus sampled zone geometry | browser | 2 min |
 | Severe weather (US) | NWS alerts API: storm-based warning polygons; SPC day-1 categorical outlook (GeoJSON) | browser | 2 min (outlook 15 min) |
@@ -685,6 +691,27 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     Tiles are only fetched for a new frame or a finer zoom, never while the tab is hidden.
     The free tier gives the past two hours of frames in one fixed colour scheme, with no
     nowcast.
+- **Satellite rain (IMERG):** NASA's Integrated Multi-satellitE Retrievals for GPM merge every
+  passing microwave satellite with geostationary infrared into a global rain and snow rate
+  every half hour. The near-real-time "early" run reaches GIBS ~5 hours after its half hour
+  (20:30Z was the newest at 02:10Z on 2026-10-23).
+  - *Only where there's no radar:* RainViewer publishes where its radars reach, as the same
+    Web Mercator tiles (opaque where none sees). The app fetches them once a day and the
+    shader draws IMERG only there, under the radar, at 65% where radar is 85%. Over radar
+    a five-hour-old estimate would put rain where there's none now, so IMERG waits for the
+    coverage before it shows anywhere. Storms near the edge of coverage have moved on in
+    five hours, so the two can disagree there.
+  - *Same colours:* GIBS draws IMERG in its own palette, so the app reads each colour back to
+    a rate through GIBS's colour map (fetched once; separate rain and snow ranges, in mm/h),
+    turns it into the reflectivity a radar would see (Marshall–Palmer Z = 200 R^1.6 for rain,
+    the US radar network's Z = 75 S² for snow), and colours that from RainViewer's Universal
+    Blue table, rain and snow apart, with the radar's own cut: rain under 15 dBZ (~0.3 mm/h)
+    and snow under 10 dBZ are dropped.
+  - *Resolution:* GIBS's 2 km tile set at level 2, 5×3 tiles of 512 px, 0.14° a pixel (IMERG
+    itself is 0.1°, ~11 km), so up close it's blockier than radar.
+  - A newest half hour GIBS lists but hasn't tiled yet (a 404) falls back half an hour at a
+    time, up to an hour and a half. The readout says how old the estimate is, the data-feeds window
+    has its own card, and Shift+R's middle step (or `imerg=0`) turns it off.
 - **Smoke:** HMS analysts outline plumes on GOES imagery through the day, classed light,
   medium or heavy. The pipeline reads the day's KML (yesterday's early in the UTC day, before
   today's has any plumes) and rasterises it onto a 4096×2048 single-channel PNG: 85 / 170 /
@@ -857,6 +884,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
+- Satellite rain: NASA GPM IMERG (Huffman et al.), early run, via NASA GIBS.
 - Smoke: NOAA/NESDIS Hazard Mapping System (HMS) fire and smoke analysis.
 - Tsunami: NOAA National Tsunami Warning Center and Pacific Tsunami Warning Center
   (tsunami.gov); NOAA National Weather Service alerts.
