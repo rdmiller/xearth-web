@@ -63,6 +63,8 @@ export interface Settings extends ViewSettings {
   tsunami: boolean;
   /** Live geostationary pictures, yesterday's VIIRS mosaic when zoomed in, or neither. */
   imagery: ImageryMode;
+  /** US severe weather: NWS storm-based warnings and the SPC day-1 outlook. */
+  severe: boolean;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
   relief: boolean;
   /** Relief strength: 1 = the default vertical exaggeration. */
@@ -147,6 +149,7 @@ export function defaults(): Settings {
     smoke: true,
     tsunami: true,
     imagery: 'live',
+    severe: true,
     relief: true,
     reliefscale: 1,
     isslive: 'track',
@@ -260,6 +263,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
     imagery: imageryMode(q, base.imagery),
+    severe: bool(q, 'severe', base.severe),
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),

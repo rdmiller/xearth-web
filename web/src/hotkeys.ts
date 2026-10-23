@@ -92,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'relief';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'relief';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -225,6 +225,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
+  layer('shift+w', 'severe', 'Severe weather warnings and outlook (US: NWS, SPC)'),
   {
     keys: ['shift+p'],
     label: 'Shift+P',

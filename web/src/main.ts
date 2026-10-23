@@ -51,6 +51,25 @@ import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, visibleBox, type Deta
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import {
+  decodeOutlook,
+  decodeWarnings,
+  densify,
+  largestRing,
+  NWS_WARNINGS_URL,
+  outlookRows,
+  outlookTop,
+  ringCentre,
+  severeSummary,
+  SPC_DAY1_URL,
+  WARNING_COLOR,
+  WARNING_EVENTS,
+  warningLabelled,
+  warningRows,
+  type Outlook,
+  type Polygon,
+  type SevereWarning,
+} from './severe';
+import {
   decodeNwsAlerts,
   isAlertCategory,
   isTsunamiManifest,
@@ -134,6 +153,8 @@ import {
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
+  type SevereLabel,
+  type SevereShape,
   type TsunamiOverlay,
   type ZoneOverlay,
   type LaunchOverlay,
@@ -629,6 +650,11 @@ let snowIce: SnowIceManifest | undefined;
 let smoke: SmokeManifest | undefined;
 let tsunamiManifest: TsunamiManifest | undefined;
 let nwsTsunami: NwsTsunamiAlert[] = [];
+let severeWarnings: SevereWarning[] = [];
+let spcOutlook: Outlook | null = null;
+/** When the SPC outlook was last fetched: it changes a few times a day, so every 15 minutes is plenty. */
+let spcCheckedAt = 0;
+const SPC_EVERY_MS = 15 * 60_000;
 /** NWS zone URL → centroid [lon, lat] (null: no geometry). Zones don't move, so this is kept. */
 const zoneCentroids = new Map<string, [number, number] | null>();
 /** NWS alerts already announced with a toast. */
@@ -702,7 +728,7 @@ function lightningLayer(): LightningManifest | undefined {
   return { ...base, windowMin: LI_WINDOW_MIN, cellDeg: CELL_DEG, count: data.length / 4, data };
 }
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe';
 
 /** `dataAt`: when the data now held was published, for the feeds dashboard. */
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; dataAt: () => string | number | undefined }> = {
@@ -836,6 +862,30 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
     },
     dataAt: () => tsunamiManifest?.generated,
   },
+  // NWS storm-based warnings every 2 minutes (a tornado warning lasts ~30–45), SPC's outlook
+  // every 15. Both CORS-enabled. A new tornado or extreme wind warning raises a toast.
+  severe: {
+    everyMs: 2 * 60_000,
+    load: async () => {
+      const wantSpc = Date.now() - spcCheckedAt >= SPC_EVERY_MS;
+      const [nws, spc] = await Promise.allSettled([fetchJson(NWS_WARNINGS_URL), wantSpc ? fetchJson(SPC_DAY1_URL) : Promise.resolve(undefined)]);
+      if (spc.status === 'fulfilled' && spc.value !== undefined) {
+        spcOutlook = decodeOutlook(spc.value);
+        spcCheckedAt = Date.now();
+      } else if (spc.status === 'rejected') console.warn('SPC outlook:', spc.reason);
+      if (nws.status === 'rejected') throw nws.reason;
+      severeWarnings = decodeWarnings(nws.value);
+      const fresh = severeWarnings.filter((w) => (w.event === 'Tornado Warning' || w.event === 'Extreme Wind Warning') && !announced.has(w.id));
+      for (const w of fresh) announced.add(w.id);
+      if (fresh.length > 3) toast(`${fresh.length} new tornado and extreme wind warnings`);
+      else for (const w of fresh) toast(`${w.event} — ${w.areaDesc.split(';')[0]}`);
+      severeCache = undefined;
+    },
+    dataAt: () => {
+      const t = [...severeWarnings.map((w) => Date.parse(w.sent)), spcOutlook ? Date.parse(spcOutlook.issued) : NaN].filter(Number.isFinite);
+      return t.length ? Math.max(...t) : undefined;
+    },
+  },
   // RainViewer publishes a frame every 10 min. Its tiles are fetched only for a new
   // frame (or a finer zoom), never while the tab is hidden: the free API asks for caching.
   radar: {
@@ -954,6 +1004,39 @@ function eventOverlays(): EventOverlay[] {
 }
 
 /** Tsunami markers change only with their data (and statements' label windows), so built per load. */
+/** Polygons on the globe, built once per load: SPC's areas under NWS's warnings, the worst on top. */
+let severeCache: { shapes: SevereShape[]; labels: SevereLabel[] } | undefined;
+function severeOverlays(): { shapes: SevereShape[]; labels: SevereLabel[] } {
+  if (!settings.severe) return { shapes: [], labels: [] };
+  if (severeCache) return severeCache;
+  const toGlobe = (polygons: Polygon[]) => polygons.map((p) => p.map((ring) => densify(ring).map(([lon, lat]) => fromLatLon(lat, lon))));
+  const shapes: SevereShape[] = [];
+  const labels: SevereLabel[] = [];
+  for (const a of spcOutlook?.areas ?? []) {
+    // General thunder covers half the country most days: a faint dashed edge, no fill.
+    const tstm = a.level === 'TSTM';
+    shapes.push({ polygons: toGlobe(a.polygons), stroke: a.stroke, fill: tstm ? undefined : a.fill, fillAlpha: 0.22, lineWidth: tstm ? 1 : 1.4, dashed: tstm });
+  }
+  const top = outlookTop(spcOutlook);
+  const topRing = top && largestRing(top.polygons);
+  if (spcOutlook && top && topRing) {
+    const [lon, lat] = ringCentre(topRing);
+    labels.push({ anchor: fromLatLon(lat, lon), color: top.stroke, rows: outlookRows(spcOutlook, top), optional: true });
+  }
+  const order = (w: SevereWarning) => WARNING_EVENTS.indexOf(w.event);
+  for (const w of [...severeWarnings].sort((a, b) => order(a) - order(b))) {
+    const color = WARNING_COLOR[w.event];
+    shapes.push({ polygons: toGlobe(w.polygons), stroke: color, fill: color, fillAlpha: 0.28, lineWidth: w.event === 'Tornado Warning' ? 2 : 1.5 });
+    const ring = largestRing(w.polygons);
+    if (ring && warningLabelled(w)) {
+      const [lon, lat] = ringCentre(ring);
+      labels.push({ anchor: fromLatLon(lat, lon), color, rows: warningRows(w) });
+    }
+  }
+  severeCache = { shapes, labels };
+  return severeCache;
+}
+
 let tsunamiCache: { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[]; at: number } | undefined;
 function tsunamiOverlays(): { bulletins: TsunamiOverlay[]; zones: ZoneOverlay[] } {
   if (!settings.tsunami) return { bulletins: [], zones: [] };
@@ -1137,6 +1220,7 @@ function layerRows(): ReadoutRow[] {
   }
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
+  if (settings.severe && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
   return rows;
 }
 
@@ -1263,6 +1347,7 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
   { key: 'lightning', label: 'Lightning', source: 'GOES GLM · MTG LI', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
+  { key: 'severe', label: 'Severe weather', source: 'NWS · SPC', freshMs: 15 * MIN, on: () => settings.severe },
   { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
   // CelesTrak updates elements every 2 h; the pipeline refetches them at most every 3 h.
   { key: 'satellites', label: 'Satellites', source: 'CelesTrak', freshMs: 4 * 60 * MIN, on: () => settings.sats !== 'off', everyMs: SAT_POLL_MS },
@@ -1633,6 +1718,8 @@ function frame(now: number) {
     events: eventOverlays(),
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
+    severe: severeOverlays().shapes,
+    severeLabels: severeOverlays().labels,
     bottomInset: drawerInset,
     panels: [...toasts.rects(), ...domRects(credits, radarCredit)],
     target: target && target.until > Date.now() ? target : undefined,

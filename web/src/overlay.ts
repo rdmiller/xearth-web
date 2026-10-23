@@ -352,6 +352,9 @@ export interface OverlayState {
   /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
   tsunami?: TsunamiOverlay[];
   tsunamiZones?: ZoneOverlay[];
+  /** US severe weather: NWS warning polygons and SPC outlook areas, drawn under everything else. */
+  severe?: SevereShape[];
+  severeLabels?: SevereLabel[];
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
   satLabels?: SatLabelOverlay[];
   /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
@@ -789,6 +792,87 @@ function tsunamiRequests(s: OverlayState): CalloutRequest[] {
       optional: !t.alert,
     }));
   return [...zones, ...bulletins];
+}
+
+// ---- severe weather (NWS warnings, SPC outlook) -------------------------------------------
+
+export interface SevereShape {
+  /** Polygons, each an outline then any holes, as points on the globe. */
+  polygons: Vec3[][][];
+  stroke: string;
+  /** Translucent fill (even-odd, so holes stay open), or none. */
+  fill?: string;
+  fillAlpha?: number;
+  lineWidth: number;
+  dashed?: boolean;
+}
+
+export interface SevereLabel {
+  anchor: Vec3;
+  color: string;
+  rows: string[];
+  /** Gives way to other labels when there's no room (the SPC outlook does; warnings don't). */
+  optional?: boolean;
+}
+
+/**
+ * A polygon wholly on the near side is filled and outlined; one crossing the limb has only
+ * its visible edges stroked (a fill would wrap across the disc).
+ */
+function drawSevere(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number) {
+  if (!s.severe?.length) return;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  for (const shape of s.severe) {
+    const whole = new Path2D();
+    const edges = new Path2D();
+    let any = false;
+    for (const polygon of shape.polygons) {
+      const rings = polygon.map((ring) =>
+        ring.map((p) => {
+          const q = project(s.camera, p);
+          return { x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, visible: q.visible };
+        }),
+      );
+      const allVisible = rings.every((r) => r.every((q) => q.visible));
+      for (const r of rings) {
+        if (allVisible) {
+          r.forEach((q, i) => (i ? whole.lineTo(q.x, q.y) : whole.moveTo(q.x, q.y)));
+          whole.closePath();
+          any = true;
+          continue;
+        }
+        for (let i = 1; i < r.length; i++) {
+          if (!r[i - 1].visible || !r[i].visible) continue;
+          edges.moveTo(r[i - 1].x, r[i - 1].y);
+          edges.lineTo(r[i].x, r[i].y);
+          any = true;
+        }
+      }
+    }
+    if (!any) continue;
+    if (shape.fill) {
+      ctx.globalAlpha = shape.fillAlpha ?? 0.2;
+      ctx.fillStyle = shape.fill;
+      ctx.fill(whole, 'evenodd');
+    }
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = shape.stroke;
+    ctx.lineWidth = shape.lineWidth;
+    ctx.setLineDash(shape.dashed ? [4, 3] : []);
+    ctx.stroke(whole);
+    ctx.stroke(edges);
+  }
+  ctx.restore();
+}
+
+function severeRequests(s: OverlayState): CalloutRequest[] {
+  return (s.severeLabels ?? []).map((l) => ({
+    anchor: l.anchor,
+    rows: l.rows.map((text, i) => [{ text, color: i === 0 ? l.color : HUD.dim }]),
+    gap: 10,
+    optional: l.optional,
+  }));
 }
 
 // ---- satellite name labels ----------------------------------------------------------------
@@ -1332,15 +1416,17 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
   // Labels keep clear of the status readout and, while it's pinned, the layer dock.
   const inset = s.bottomInset ?? 0;
   const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : []), ...(s.panels ?? [])];
-  // Priority for label space: tsunami alerts, launches, storms, quakes, GDACS events, then cities.
+  // Priority for label space: tsunami alerts, severe weather warnings, launches, storms, quakes,
+  // GDACS events, then cities (the SPC outlook's label gives way to all of them).
   const callouts = placeCallouts(
     ctx,
     s,
     w,
     h,
-    [...targetRequests(s), ...tsunamiRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
+    [...targetRequests(s), ...tsunamiRequests(s), ...severeRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
     reserved,
   );
+  drawSevere(ctx, s, w, h);
   drawEvents(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawTsunami(ctx, s, w, h, dpr);

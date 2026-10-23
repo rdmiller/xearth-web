@@ -35,6 +35,7 @@ import {
   Timer,
   Tornado,
   TriangleAlert,
+  CloudLightning,
   Waves,
   Zap,
   type IconNode,
@@ -95,6 +96,7 @@ export const DRAWER: DrawerGroup[] = [
     title: 'Hazards',
     items: [
       { key: 'w', label: 'Cyclones', icon: Tornado, state: flag('storms') },
+      { key: 'shift+w', label: 'Severe', icon: CloudLightning, state: flag('severe') },
       { key: 'x', label: 'Fires', icon: Flame, state: flag('fires') },
       { key: 'q', label: 'Quakes', icon: Activity, state: flag('quakes') },
       { key: 'z', label: 'Lightning', icon: Zap, state: flag('lightning') },

@@ -47,6 +47,9 @@ global cloud layer refreshed every hour from geostationary satellites.
     America, as a grey-brown haze on the sunlit ground.
   - **Tsunami alerts:** bulletins from NOAA's two Tsunami Warning Centers at the earthquake's
     epicentre, and live NWS tsunami warnings, watches and advisories lit along US coasts.
+  - **US severe weather:** NWS tornado, severe thunderstorm, flash flood and other storm-based
+    warnings as the polygons forecasters drew, and the Storm Prediction Center's day-1 outlook
+    (marginal to high risk) in SPC's own colours.
 - **ISS live telemetry:** NASA's public ISSLive stream (Mission Control console data) in a
   window of gauges while the ISS is tracked: signal, orbit sparklines, cabin-air meters, solar-array dials. While
   the stream is live the ISS is placed from its own GNC state vector instead of SGP4.
@@ -204,7 +207,7 @@ side switches to yesterday's real colour: NASA GIBS's daily VIIRS mosaic from NO
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
 snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora), Hazards (cyclones,
-fires, quakes, lightning, GDACS alerts, tsunami), Space (satellites, with a small button for
+fires, quakes, lightning, GDACS alerts, tsunami, severe weather), Space (satellites, with a small button for
 the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
 - **No panel:** the buttons rise in as the mouse comes within ~160 px of the bottom of the
@@ -235,6 +238,7 @@ style. A test checks that every layer hotkey has a button.
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
+| `Shift+W` | US severe weather warnings and SPC outlook on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
 | `Shift+P` | imagery: live (GOES, MTG) → yesterday's when zoomed in (VIIRS) → painted |
@@ -269,6 +273,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/bodies.ts      Sun/Moon positions, sizes, Moon phase and orientation, framing views
   src/launches.ts    launch phases, synthesised ascent, predicted coast and deployment
   src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
+  src/severe.ts      NWS storm-based warnings and the SPC outlook: decoding, styles, labels
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
@@ -429,6 +434,7 @@ docker compose down                 # stop (the data volume is kept)
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
 | `imagery` | `live` GOES/MTG pictures by day, `daily` yesterday's VIIRS when zoomed in, `painted` neither (`truecolor=0/1` still read) | `live` |
+| `severe` | US severe weather: NWS storm-based warnings and the SPC day-1 outlook | 1 |
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
@@ -589,6 +595,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
 | Smoke | NOAA/NESDIS HMS smoke polygons (KML) | pipeline | through the day, hourly; browser re-reads every 30 min |
 | Tsunami (US alerts) | NWS alerts API: active Tsunami Warning / Watch / Advisory, plus sampled zone geometry | browser | 2 min |
+| Severe weather (US) | NWS alerts API: storm-based warning polygons; SPC day-1 categorical outlook (GeoJSON) | browser | 2 min (outlook 15 min) |
 | Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
 | ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
@@ -698,6 +705,26 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     ~90 KB of polygon each), so up to 24, spread evenly along the list, are fetched once each
     and drawn as dots along the coast. A new alert also raises a toast.
   - Tsunami labels take precedence over every other callout.
+- **US severe weather:**
+  - *Warnings:* tornado, extreme wind, severe thunderstorm, flash flood, snow squall and dust
+    storm warnings are "storm-based": NWS draws a polygon around the threat itself rather than
+    warning whole counties, and the alerts API carries it. Watches and river flood warnings
+    cover counties and zones, so they're left out. Real alerts only (`status=actual`), checked
+    every two minutes. Each is outlined and lightly filled: red for tornado and extreme wind,
+    orange severe thunderstorm, blue flash flood (the GDACS flood colour), with tornadoes on top.
+  - *Labels:* tornado and extreme wind warnings always get one; others only when NWS tags the
+    threat as destructive, considerable (tornado) or catastrophic. A label leads with NWS's own
+    tags ("OBSERVED", "60 MPH", "1.75 IN HAIL") and ends with the expiry. A new tornado or
+    extreme wind warning raises a toast (one toast for more than three at once).
+  - *Outlook:* SPC's day-1 categorical outlook, the "non-layered" GeoJSON, where each risk
+    level is a ring with a hole where the next sits, so it's filled even-odd. Marginal and up
+    are filled in SPC's colours; general thunderstorms, which cover half the country most days,
+    are a faint dashed edge. The highest area gets a label from Slight Risk up, which gives way
+    to every other label. Fetched every 15 minutes (SPC issues it five times a day).
+  - Long edges are split every degree so they follow the globe's curve. A polygon crossing the
+    limb is drawn as an outline only.
+  - On 2026-10-23 at 02:00Z that was 5 severe thunderstorm and 14 flash flood warnings over
+    the Southwest, inside a Slight Risk over Arizona and New Mexico.
 - **ISS live telemetry:** NASA publishes Mission Control's ISS console data through a
   Lightstreamer server (adapter set `ISSLIVE` at push.lightstreamer.com); the symbol list is
   NASA's PUIList.xml. The client library (~50 KB gzipped) is loaded only when wanted, and by
@@ -722,7 +749,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     band and turning amber or red outside it. The bands are approximate, from NASA's
     published cabin norms, not flight rules. Dials show the Sun's β angle and the two solar
     array joints. Chips show the station mode, attitude frame, any maneuver, and Ku-band video.
-- Tsunami, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
+- Tsunami, severe weather, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
 
@@ -833,6 +860,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Smoke: NOAA/NESDIS Hazard Mapping System (HMS) fire and smoke analysis.
 - Tsunami: NOAA National Tsunami Warning Center and Pacific Tsunami Warning Center
   (tsunami.gov); NOAA National Weather Service alerts.
+- Severe weather: NOAA National Weather Service alerts (api.weather.gov) and the NOAA Storm
+  Prediction Center's day-1 convective outlook.
 - ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer
   (lightstreamer-client-web, Apache-2.0).
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
