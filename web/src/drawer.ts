@@ -42,6 +42,7 @@ import {
   TriangleAlert,
   CloudLightning,
   Waves,
+  Wind,
   Zap,
   type IconNode,
 } from 'lucide';
@@ -88,6 +89,7 @@ export const DRAWER: DrawerGroup[] = [
       { key: 'shift+s', label: 'Smoke', icon: Haze, state: flag('smoke') },
       { key: 'shift+b', label: 'Buoys', icon: LifeBuoy, state: flag('buoys') },
       { key: 'shift+h', label: 'Sea temp', icon: Thermometer, state: (s) => ({ on: s.sst !== 'off', tag: s.sst === 'temp' ? 'SST' : s.sst === 'anomaly' ? 'ANOM' : undefined }) },
+      { key: 'shift+v', label: 'Winds', icon: Wind, state: (s) => ({ on: s.winds !== 'off', tag: s.winds === 'surface' ? '10 M' : s.winds === 'jet' ? 'JET' : undefined }) },
       { key: 'g', label: 'Grid', icon: Grid3x3, state: flag('grid') },
     ],
   },

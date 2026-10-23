@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type SatMode, type Settings, type SstMode, type StarMode } from './params';
+import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -123,6 +123,12 @@ export const SST_LABELS: Record<SstMode, string> = {
   temp: 'Sea surface temperature (GHRSST MUR)',
   anomaly: 'Sea surface temperature anomaly: El Niño, marine heatwaves (GHRSST MUR)',
   off: 'Sea temperature off',
+};
+const NEXT_WINDS: Record<WindMode, WindMode> = { off: 'surface', surface: 'jet', jet: 'off' };
+export const WIND_LABELS: Record<WindMode, string> = {
+  surface: 'Winds at 10 m (NOAA GFS)',
+  jet: 'Winds at 250 hPa: the jet stream (NOAA GFS)',
+  off: 'Winds off',
 };
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
@@ -253,6 +259,17 @@ export const HOTKEYS: readonly Hotkey[] = [
       const next = NEXT_SST[ctx.settings.sst];
       ctx.update({ sst: next });
       ctx.toast(SST_LABELS[next]);
+    },
+  },
+  {
+    keys: ['shift+v'],
+    label: 'Shift+V',
+    description: 'Winds at 10 m → the jet stream (250 hPa) → off (NOAA GFS)',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_WINDS[ctx.settings.winds];
+      ctx.update({ winds: next });
+      ctx.toast(WIND_LABELS[next]);
     },
   },
   layer('w', 'storms', 'Tropical cyclones'),

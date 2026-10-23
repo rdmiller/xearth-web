@@ -5,9 +5,10 @@ import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
 import type { IonoMode } from './ionosphere';
 import type { SstMode } from './sst';
+import type { WindMode } from './winds';
 
 /** The ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
-export type { IonoMode, SstMode };
+export type { IonoMode, SstMode, WindMode };
 
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
 export type StarMode = 'on' | 'off' | 'photo';
@@ -124,6 +125,10 @@ export interface Settings extends ViewSettings {
   sst: SstMode;
   /** Where the pipeline's GloTEC latest.json lives. */
   ionosrc: string;
+  /** Global winds (NOAA GFS) as moving trails: off, at 10 m, or the jet stream's level (250 hPa). */
+  winds: WindMode;
+  /** Where the pipeline's winds latest.json and its PNGs live. */
+  windsrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -210,6 +215,8 @@ export function defaults(): Settings {
     iono: 'off',
     sst: 'off',
     ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
+    winds: 'off',
+    windsrc: dataSrc('VITE_WINDS_BASE', 'winds/'),
   };
 }
 
@@ -264,6 +271,14 @@ function sstMode(q: URLSearchParams, fallback: SstMode): SstMode {
   if (raw === undefined) return fallback;
   if (raw === 'temp' || raw === 'anomaly') return raw;
   return FALSY.includes(raw) ? 'off' : 'anomaly';
+}
+
+/** `winds=surface|jet|off`; anything else true-ish means the surface winds. */
+function windMode(q: URLSearchParams, fallback: WindMode): WindMode {
+  const raw = q.get('winds')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'surface' || raw === 'jet') return raw;
+  return FALSY.includes(raw) ? 'off' : 'surface';
 }
 
 function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
@@ -352,6 +367,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     iono: ionoMode(q, base.iono),
     sst: sstMode(q, base.sst),
     ionosrc: q.get('ionosrc') ?? base.ionosrc,
+    winds: windMode(q, base.winds),
+    windsrc: q.get('windsrc') ?? base.windsrc,
   };
 }
 

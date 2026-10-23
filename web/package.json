@@ -24,6 +24,7 @@
     "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
     "meteoalarm": "cd ../pipeline && python -m xearth_clouds.meteoalarm --out ../web/public/meteoalarm",
     "ionosphere": "cd ../pipeline && python -m xearth_clouds.ionosphere --out ../web/public/ionosphere",
+    "winds": "cd ../pipeline && python -m xearth_clouds.winds --out ../web/public/winds",
     "meteors": "cd ../pipeline && python -m xearth_clouds.meteors --out ../web/public/meteors",
     "buoys": "cd ../pipeline && python -m xearth_clouds.buoys --out ../web/public/buoys",
     "icons": "python scripts/make-icons.py",

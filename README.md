@@ -343,6 +343,39 @@ NASA GIBS serves it, and its anomaly from usual, as coloured PNGs with CORS.
   freed the unit SST uses; temperature and anomaly share that one texture, so switching between
   them costs nothing.
 
+### Winds
+
+NOAA's Global Forecast System as particles carried along by the wind (`Shift+V`, `winds=surface`
+or `winds=jet`): at 10 m, the wind of a weather map, or at 250 hPa (~10 km up), where the jet
+streams run. Off by default.
+
+- **From the pipeline:** NCEP runs GFS four times a day (00, 06, 12, 18Z) at 0.25° with hourly
+  output, each run on NOMADS ~3.5–5 h after it starts. NOMADS's GRIB filter cuts a file down to
+  u and v at the two levels (~3 MB) but sends no CORS headers, and browsers can't read GRIB, so
+  `xearth_clouds.winds` takes the newest run that has the coming hour (stepping back a run while
+  the newest is still being published), smooths it to 0.5° and writes each level as a 720 × 361
+  PNG: red = eastward, green = northward, 128 = calm, ±127 = the level's strongest component
+  (~0.25 m/s a step at 10 m, ~0.7 at 250 hPa). ~250 KB a level; only the level shown is fetched.
+- **GRIB in numpy:** GFS packs each field with complex packing and second-order spatial
+  differencing (GRIB2 template 5.3). `xearth_clouds/grib.py` decodes that (and simple packing)
+  in vectorised numpy rather than adding eccodes, a compiled library, for four
+  messages an hour; its tests compare it with eccodes 2.50's values for real NOMADS files, and
+  on a whole 0.25° file the two agree to 3 × 10⁻⁶ m/s.
+- **The trails** are drawn on a WebGL canvas of their own between the globe and the labels.
+  They need every display frame, and the globe shader (16 textures) would rather not be redrawn
+  that often, so the globe keeps its own cadence while the winds animate at 60 fps. It takes no
+  texture unit: each of up to 7,000 particles (one per 90 px² of globe on screen) is moved on
+  the CPU by the bilinear wind under it, on the sphere, so the poles are no trouble and trails
+  stay on the ground as the view turns; its last 14 positions, 1/30 s apart, are a trail of
+  instanced quads read straight from one vertex buffer, fading toward the tail.
+- **Speed:** particles move the same number of pixels a second at any zoom (4.5 px/s per m/s
+  at 10 m, 1.6 at 250 hPa, whose winds are about three times as fast). Colour runs from a faint
+  calm blue through cyan and white (a breeze), yellow, orange and red to magenta past hurricane
+  force (33 m/s, 120 km/h); at 250 hPa the same colours stand for three times the speed.
+- **The readout** names the level, the colour scale, the strongest wind on the grid and where,
+  and the hour the forecast is for. The data-feeds card ages it by the run's start (the newest
+  is up to ~11 h old: forecasts, not observations).
+
 ### Yesterday's (daily)
 
 Zoom in past what the monthly Blue Marble can show (about 0.09° a screen pixel) and the day
@@ -458,7 +491,7 @@ checked as the mouse moves and every 300 ms while it rests, since satellites mov
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
-snow and ice, radar, smoke, buoys, grid), Sky (stars, Sun and Moon, aurora, meteors, ionosphere), Hazards (cyclones,
+snow and ice, radar, smoke, buoys, sea temperature, winds, grid), Sky (stars, Sun and Moon, aurora, meteors, ionosphere), Hazards (cyclones,
 fires, quakes, lightning, GDACS alerts, tsunami, severe weather), Space (satellites, with a small button for
 the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
@@ -489,6 +522,7 @@ style. A test checks that every layer hotkey has a button.
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Shift+I` | ionosphere: electron content → HF radio absorption → off |
+| `Shift+V` | winds at 10 m → the jet stream (250 hPa) → off |
 | `Shift+M` | meteors (last 24 h) and fireballs on/off |
 | `Shift+B` | buoys on/off (click one for its window) |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
@@ -532,6 +566,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/severe.ts      NWS storm-based warnings and the SPC outlook: decoding, styles, labels
   src/meteoalarm.ts  MeteoAlarm's European warnings (pipeline): region levels, window, labels
   src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
+  src/winds.ts       GFS winds (pipeline): the PNG decoded to u/v, the particles and their trails
+  src/renderer/winds.ts  the wind trails on their own WebGL canvas: instanced quads, no textures
   src/meteors.ts     GMN meteor trajectories as streaks, CNEOS fireballs, shower colours
   src/buoys.ts       buoys: decoding, picking, nearest to a place, drift, pressure tendency, wording
   src/buoyView.ts    a buoy's window: history sparkline tiles, direction dials (the ISS window's parts), an Argo float's profile
@@ -585,6 +621,7 @@ pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
 pnpm meteoalarm              # MeteoAlarm warnings, 38 countries, with region outlines → public/meteoalarm/
 pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
+pnpm winds                   # NOAA GFS winds at 10 m and 250 hPa, the coming hour → public/winds/
 pnpm meteors                 # GMN trajectories (last 24 h) + CNEOS fireballs (90 d) → public/meteors/
 pnpm buoys                   # NOAA OSMC + NDBC: buoys, latest + last 24 h, and Argo floats → public/buoys/
 pnpm dev
@@ -708,6 +745,7 @@ docker compose down                 # stop (the data volume is kept)
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json`, `history.json` and `argo.json` | `0`, none, `buoys/` |
 | `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
+| `winds`, `windsrc` | winds as moving trails: `surface` (10 m), `jet` (250 hPa) or `0`; folder holding their `latest.json` and PNGs | `0`, `winds/` |
 | `iono`, `ionosrc` | ionosphere wash: `tec` (GloTEC electron content), `drap` (D-RAP HF absorption) or `0`; folder holding GloTEC's `latest.json` | `0`, `ionosphere/` |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
@@ -881,6 +919,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
 | US volcano alert levels | USGS HANS monitored volcanoes (~45 KB), positions baked from the Smithsonian's Volcanoes of the World; a volcano's latest notice when its window opens | browser, with the GDACS events | 15 min |
 | Flood extent | NASA LANCE VIIRS combined flood, 2-day (NASA GIBS WMS PNG: world 0.088°, ~640 KB; zoomed in, the view at up to 250 m) | browser, with the GDACS events | daily, refreshed every 3 h; checked hourly |
+| Winds | NOAA/NCEP GFS 0.25°: u and v at 10 m and 250 hPa from the NOMADS GRIB filter (~3 MB), the coming hour of the newest run, written at 0.5° as one PNG a level (~250 KB) | pipeline | GFS every 6 h, the forecast hour hourly; browser re-reads every 15 min (only while shown) |
 | Sea surface temperature | GHRSST MUR temperature and anomaly (NASA GIBS WMS PNG, 0.25°, ~880 KB a day) | browser, while the layer is on | daily, a day behind; checked hourly |
 | Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
@@ -1399,6 +1438,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Meteors: Global Meteor Network (globalmeteornetwork.org), data CC BY 4.0. Vida et al. 2020,
   MNRAS 491, 2688–2705; Vida et al. 2021, "The Global Meteor Network – Methodology and first
   results", MNRAS 506, 5046–5074. Fireballs: NASA/JPL Center for Near Earth Object Studies (CNEOS).
+- Winds: NOAA/NCEP Global Forecast System (GFS), via NOMADS.
 - Aurora, space weather, the ionosphere (GloTEC, D-RAP) and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS, and the Euro-Mediterranean Seismological Centre (EMSC, seismicportal.eu). Tropical cyclones:
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
