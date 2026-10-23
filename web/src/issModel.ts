@@ -1,6 +1,6 @@
 // The ISS for its camera (issView.ts): NASA's model (public/models/iss.glb, from NASA 3D
-// Resources' "International Space Station (ISS) (A)", NASA Ames; see scripts/bake-iss-model.mjs)
-// cut into the parts that move, and posed from the telemetry.
+// Resources' "International Space Station (ISS) (B)", NASA / Michael D. Carbajal; see
+// scripts/bake-iss-model.mjs) cut into the parts that move, and posed from the telemetry.
 //
 //   body     everything inboard of the solar alpha rotary joints (SARJs)
 //   port     the port truss outboard of its SARJ, which turns about the truss to follow the
@@ -8,10 +8,12 @@
 //   wings    the eight solar array wings on them, each turned about its own mast by its beta
 //            gimbal (BGA), named by power channel (1A, 3A, 3B, 1B starboard; 2A, 4A, 4B, 2B port)
 //
-// Model space, after the file's node transform, as measured from the model: x along the
-// truss (+x port), y zenith, z forward. The truss runs along y = 1.49, z = 0.27; the wings lie
-// in the plane z ≈ 0.27 on masts at x = ±8.35 (P4/S4) and ±11.69 (P6/S6), one wing toward
-// zenith and one toward nadir on each. 25.6 units tip to tip, the real station's ~109 m.
+// Model space, after the file's node transforms, as measured from the model: x nadir, y
+// forward, z along the truss (+z starboard: Kibo, with its exposed platform, is at −z). The
+// truss runs along x = −1.09, y = 10.80; the sixteen blankets lie in the plane x ≈ −1.09 in
+// pairs either side of masts at z = −21.165 (P6), −14.875 (P4), 14.685 (S4) and 20.985 (S6),
+// one wing reaching forward and one aft on each, all facing zenith as modelled. 45.5 units tip
+// to tip, the real station's ~109 m.
 //
 // The joint angles' conventions, from the live stream on 2026-10-23 while the arrays tracked
 // the Sun (22:19–22:21Z): the direction the arrays face, as a turn about the body's +Y
@@ -26,24 +28,30 @@ export type Wing = '1A' | '3A' | '3B' | '1B' | '2A' | '4A' | '4B' | '2B';
 export type IssPart = 'body' | 'port' | 'stbd' | Wing;
 type Side = 'port' | 'stbd';
 
-/** The truss line (y, z) in model space; the SARJs turn the outboard truss about it. */
-const TRUSS_Y = 1.49;
-const TRUSS_Z = 0.27;
-/** Outboard of this |x|, the truss turns with its SARJ. */
-const SARJ_X = 5.5;
-/** Model units to metres: 25.62 units tip to tip, ~109 m on the station. */
-export const ISS_METRES_PER_UNIT = 109 / 25.62;
+/** The truss line (x, y) in model space; the SARJs turn the outboard truss about it. */
+const TRUSS_X = -1.09;
+const TRUSS_Y = 10.8;
+/** Outboard of this |z|, the truss turns with its SARJ (the batteries and radiators inboard don't). */
+const SARJ_Z = 12;
+/** The blankets' material. */
+const BLANKETS = 'lambert7SG.001';
+/** Model units to metres: 45.54 units tip to tip, ~109 m on the station. */
+export const ISS_METRES_PER_UNIT = 109 / 45.54;
+/** Where the arrays face as modelled (zenith: −model x, the body's −Z), as `facing` measures it. */
+const MODELLED_FACING = 90;
+/** The blankets' face as modelled, model space: toward zenith. */
+export const ISS_BLANKET_NORMAL: Vec3 = [-1, 0, 0];
 
-/** Each wing: its side, its mast's x, and whether it reaches toward zenith (+y) as modelled. */
-export const WINGS: readonly { wing: Wing; side: Side; mastX: number; up: boolean }[] = [
-  { wing: '1A', side: 'stbd', mastX: -8.35, up: true },
-  { wing: '3A', side: 'stbd', mastX: -8.35, up: false },
-  { wing: '3B', side: 'stbd', mastX: -11.69, up: true },
-  { wing: '1B', side: 'stbd', mastX: -11.69, up: false },
-  { wing: '2A', side: 'port', mastX: 8.35, up: true },
-  { wing: '4A', side: 'port', mastX: 8.35, up: false },
-  { wing: '4B', side: 'port', mastX: 11.69, up: true },
-  { wing: '2B', side: 'port', mastX: 11.69, up: false },
+/** Each wing: its side, its mast's z, and whether it reaches forward (+y) as modelled. */
+export const WINGS: readonly { wing: Wing; side: Side; mastZ: number; fore: boolean }[] = [
+  { wing: '1A', side: 'stbd', mastZ: 14.685, fore: true },
+  { wing: '3A', side: 'stbd', mastZ: 14.685, fore: false },
+  { wing: '3B', side: 'stbd', mastZ: 20.985, fore: true },
+  { wing: '1B', side: 'stbd', mastZ: 20.985, fore: false },
+  { wing: '2A', side: 'port', mastZ: -14.875, fore: true },
+  { wing: '4A', side: 'port', mastZ: -14.875, fore: false },
+  { wing: '4B', side: 'port', mastZ: -21.165, fore: true },
+  { wing: '2B', side: 'port', mastZ: -21.165, fore: false },
 ];
 
 /**
@@ -61,7 +69,7 @@ export interface MeshPrimitive {
   /** Model space (the node transforms applied). */
   positions: Float32Array;
   normals: Float32Array;
-  indices: Uint16Array | Uint32Array | Uint8Array;
+  indices: Uint32Array;
 }
 
 interface GltfJson {
@@ -70,7 +78,7 @@ interface GltfJson {
   nodes: { mesh?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
   meshes: { primitives: { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }[] }[];
   materials?: { name?: string; pbrMetallicRoughness?: { baseColorFactor?: number[] } }[];
-  accessors: { bufferView: number; byteOffset?: number; componentType: number; count: number; type: string }[];
+  accessors: { bufferView: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean }[];
   bufferViews: { byteOffset?: number; byteLength: number; byteStride?: number }[];
 }
 
@@ -100,21 +108,43 @@ function nodeMatrix(n: GltfJson['nodes'][number]): Mat4 {
 
 const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 
-function readAccessor(json: GltfJson, bin: DataView, index: number): Float32Array | Uint32Array | Uint16Array | Uint8Array {
+type TypedArrayOf = Float32ArrayConstructor | Uint32ArrayConstructor | Uint16ArrayConstructor | Int16ArrayConstructor | Uint8ArrayConstructor | Int8ArrayConstructor;
+
+/** Each component type: its array, size, and largest value (what a normalized one divides by). */
+const COMPONENT_TYPES: Record<number, { array: TypedArrayOf; size: number; max: number }> = {
+  5126: { array: Float32Array, size: 4, max: 1 },
+  5125: { array: Uint32Array, size: 4, max: 4294967295 },
+  5123: { array: Uint16Array, size: 2, max: 65535 },
+  5122: { array: Int16Array, size: 2, max: 32767 },
+  5121: { array: Uint8Array, size: 1, max: 255 },
+  5120: { array: Int8Array, size: 1, max: 127 },
+};
+
+/**
+ * An accessor's values: indices as integers, everything else as floats, normalized integers
+ * (KHR_mesh_quantization's positions and normals) turned back into −1…1.
+ */
+function readAccessor(json: GltfJson, bin: DataView, index: number): Float32Array | Uint32Array {
   const a = json.accessors[index];
   const view = json.bufferViews[a.bufferView];
   const n = COMPONENTS[a.type];
-  const size = { 5126: 4, 5125: 4, 5123: 2, 5121: 1 }[a.componentType];
-  if (!n || !size) throw new Error(`glb: accessor ${index} has an unsupported type`);
-  const stride = view.byteStride ?? n * size;
-  const base = (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
-  const out =
-    a.componentType === 5126 ? new Float32Array(a.count * n) : a.componentType === 5125 ? new Uint32Array(a.count * n) : a.componentType === 5123 ? new Uint16Array(a.count * n) : new Uint8Array(a.count * n);
+  const t = COMPONENT_TYPES[a.componentType];
+  if (!n || !t) throw new Error(`glb: accessor ${index} has an unsupported type`);
+  const stride = view.byteStride ?? n * t.size;
+  const start = bin.byteOffset + (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
+  // glTF aligns accessors to their component size, so the data reads as a typed array (in
+  // elements: stride / size apart), little-endian like every browser's.
+  if (start % t.size || stride % t.size) throw new Error(`glb: accessor ${index} isn't aligned`);
+  // (The binary chunk is a view of the fetched ArrayBuffer, never shared memory.)
+  const src = new t.array(bin.buffer as ArrayBuffer, start, ((a.count - 1) * stride) / t.size + n);
+  const step = stride / t.size;
+  const integer = a.type === 'SCALAR' && !a.normalized && a.componentType !== 5126;
+  const out = integer ? new Uint32Array(a.count * n) : new Float32Array(a.count * n);
+  const scale = a.normalized ? 1 / t.max : 1;
   for (let i = 0; i < a.count; i++) {
     for (let k = 0; k < n; k++) {
-      const at = base + i * stride + k * size;
-      out[i * n + k] =
-        a.componentType === 5126 ? bin.getFloat32(at, true) : a.componentType === 5125 ? bin.getUint32(at, true) : a.componentType === 5123 ? bin.getUint16(at, true) : bin.getUint8(at);
+      const v = src[i * step + k] * scale;
+      out[i * n + k] = a.normalized && v < -1 ? -1 : v;
     }
   }
   return out;
@@ -148,15 +178,21 @@ export function parseGlb(buffer: ArrayBuffer): MeshPrimitive[] {
         const pos = readAccessor(json!, bin!, p.attributes.POSITION) as Float32Array;
         const nrm = readAccessor(json!, bin!, p.attributes.NORMAL) as Float32Array;
         const count = pos.length / 3;
-        const indices = p.indices !== undefined ? (readAccessor(json!, bin!, p.indices) as Uint16Array | Uint32Array | Uint8Array) : Uint32Array.from({ length: count }, (_, i) => i);
-        for (let i = 0; i < count; i++) {
-          const [x, y, z] = [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
-          for (let r = 0; r < 3; r++) pos[i * 3 + r] = m[r] * x + m[4 + r] * y + m[8 + r] * z + m[12 + r];
-          // Normals turn with the node (scale is uniform in this model), then are made unit again.
-          const [nx, ny, nz] = [nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]];
-          const t = [0, 1, 2].map((r) => m[r] * nx + m[4 + r] * ny + m[8 + r] * nz);
-          const len = Math.hypot(t[0], t[1], t[2]) || 1;
-          for (let r = 0; r < 3; r++) nrm[i * 3 + r] = t[r] / len;
+        const indices = p.indices !== undefined ? (readAccessor(json!, bin!, p.indices) as Uint32Array) : Uint32Array.from({ length: count }, (_, i) => i);
+        for (let i = 0; i < count * 3; i += 3) {
+          const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+          pos[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+          pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+          pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+          // Normals turn with the node (its scale is uniform, as quantization's is), then are made unit again.
+          const nx = nrm[i], ny = nrm[i + 1], nz = nrm[i + 2];
+          const tx = m[0] * nx + m[4] * ny + m[8] * nz;
+          const ty = m[1] * nx + m[5] * ny + m[9] * nz;
+          const tz = m[2] * nx + m[6] * ny + m[10] * nz;
+          const len = Math.hypot(tx, ty, tz) || 1;
+          nrm[i] = tx / len;
+          nrm[i + 1] = ty / len;
+          nrm[i + 2] = tz / len;
         }
         const mat = p.material !== undefined ? json!.materials?.[p.material] : undefined;
         const c = mat?.pbrMetallicRoughness?.baseColorFactor ?? [0.8, 0.8, 0.8, 1];
@@ -173,40 +209,100 @@ export function parseGlb(buffer: ArrayBuffer): MeshPrimitive[] {
 
 /** Which part a triangle belongs to, by its centre (model space) and its material. */
 export function partOf(c: Vec3, material: string): IssPart {
-  if (Math.abs(c[0]) < SARJ_X) return 'body';
-  const side: Side = c[0] > 0 ? 'port' : 'stbd';
-  // A wing: its blankets and mast, clear of the truss and in the arrays' plane (the radiators
-  // beside the masts lie just above the truss and reach forward, so they stay on the SARJ).
-  const off = c[1] - TRUSS_Y;
-  if ((material === 'ISSSolarPanels' || material === 'ISSMetal1') && Math.abs(c[2] - TRUSS_Z) < 0.6 && Math.abs(off) > 0.75) {
-    const w = WINGS.find((w) => w.side === side && w.up === off > 0 && Math.abs(c[0] - w.mastX) < 1.3);
-    if (w) return w.wing;
+  // A wing is its blankets: the nearest mast's, forward or aft of the truss. (The hubs, mast
+  // canisters and radiators at the masts stay on the SARJ.)
+  if (material === BLANKETS) {
+    const fore = c[1] > TRUSS_Y;
+    const near = WINGS.filter((w) => w.fore === fore).reduce((a, b) => (Math.abs(c[2] - b.mastZ) < Math.abs(c[2] - a.mastZ) ? b : a));
+    return near.wing;
   }
-  return side;
+  if (Math.abs(c[2]) <= SARJ_Z) return 'body';
+  return c[2] > 0 ? 'stbd' : 'port';
 }
 
 /** Each part's triangles, unindexed: positions, normals and linear colours, three floats each. */
 export type IssParts = Map<IssPart, { positions: Float32Array; normals: Float32Array; colors: Float32Array }>;
 
+/**
+ * The model's colours (linear RGB). Its materials are all the same flat grey, so the main ones
+ * get the station's own: copper-gold arrays, white radiators and modules, light grey nodes.
+ */
+const COLORS: Record<string, Vec3> = {
+  'lambert7SG.001': [0.2, 0.11, 0.035], // the main arrays' blankets
+  'lambert4SG.001': [0.02, 0.03, 0.08], // Zvezda's and Zarya's arrays: dark blue cells
+  'lambert3SG.001': [0.75, 0.75, 0.73], // the big radiators
+  'soyuz_blinn4SG.001': [0.75, 0.75, 0.73], // the radiators by the masts
+  'anisotropic1SG.001': [0.6, 0.6, 0.58], // the truss, Columbus, Kibo, the drums and canisters
+  'blinn1SG.001': [0.6, 0.6, 0.6], // the Lab, the nodes, the Russian modules
+};
+
+/** A vertex normal this far off its triangle's face (cosine) is a box corner's average: use the face's. */
+const SMOOTH_COS = 0.7;
+
 export function splitIss(prims: MeshPrimitive[]): IssParts {
-  const acc = new Map<IssPart, { p: number[]; n: number[]; c: number[] }>();
-  for (const prim of prims) {
-    const { positions: P, normals: N, indices: I, color } = prim;
-    for (let t = 0; t + 2 < I.length; t += 3) {
-      const v = [I[t], I[t + 1], I[t + 2]];
-      const mid = (k: number) => (P[v[0] * 3 + k] + P[v[1] * 3 + k] + P[v[2] * 3 + k]) / 3;
-      const c: Vec3 = [mid(0), mid(1), mid(2)];
-      const part = partOf(c, prim.material);
-      let a = acc.get(part);
-      if (!a) acc.set(part, (a = { p: [], n: [], c: [] }));
-      for (const i of v) {
-        a.p.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
-        a.n.push(N[i * 3], N[i * 3 + 1], N[i * 3 + 2]);
-        a.c.push(...color);
+  // Two passes, so each part's arrays are made once at their size (the model has ~172,000
+  // triangles: growing plain arrays took ~0.4 s): which part each triangle is, then the copy.
+  const keys: IssPart[] = [];
+  const index = new Map<IssPart, number>();
+  const counts: number[] = [];
+  const of = prims.map((prim) => {
+    const { positions: P, indices: I } = prim;
+    const parts = new Uint8Array(I.length / 3);
+    for (let t = 0; t < parts.length; t++) {
+      const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+      const part = partOf([(P[a] + P[b] + P[c]) / 3, (P[a + 1] + P[b + 1] + P[c + 1]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3], prim.material);
+      let k = index.get(part);
+      if (k === undefined) {
+        index.set(part, (k = keys.length));
+        keys.push(part);
+        counts.push(0);
+      }
+      parts[t] = k;
+      counts[k]++;
+    }
+    return parts;
+  });
+  const out = keys.map((_, k) => ({ positions: new Float32Array(counts[k] * 9), normals: new Float32Array(counts[k] * 9), colors: new Float32Array(counts[k] * 9), at: 0 }));
+  prims.forEach((prim, pi) => {
+    const { positions: P, normals: N, indices: I } = prim;
+    const color = COLORS[prim.material] ?? prim.color;
+    const parts = of[pi];
+    for (let t = 0; t < parts.length; t++) {
+      const o = out[parts[t]];
+      const v0 = I[t * 3] * 3, v1 = I[t * 3 + 1] * 3, v2 = I[t * 3 + 2] * 3;
+      // The face's own normal, for vertex normals that are a box corner's average (the model
+      // smooths its boxes' corners, which would shade a flat face in diagonal halves).
+      const e1x = P[v1] - P[v0], e1y = P[v1 + 1] - P[v0 + 1], e1z = P[v1 + 2] - P[v0 + 2];
+      const e2x = P[v2] - P[v0], e2y = P[v2 + 1] - P[v0 + 1], e2z = P[v2 + 2] - P[v0 + 2];
+      let fx = e1y * e2z - e1z * e2y, fy = e1z * e2x - e1x * e2z, fz = e1x * e2y - e1y * e2x;
+      const flen = Math.hypot(fx, fy, fz) || 1;
+      fx /= flen;
+      fy /= flen;
+      fz /= flen;
+      for (const v of [v0, v1, v2]) {
+        const at = o.at;
+        o.positions[at] = P[v];
+        o.positions[at + 1] = P[v + 1];
+        o.positions[at + 2] = P[v + 2];
+        const d = N[v] * fx + N[v + 1] * fy + N[v + 2] * fz;
+        if (Math.abs(d) >= SMOOTH_COS) {
+          o.normals[at] = N[v];
+          o.normals[at + 1] = N[v + 1];
+          o.normals[at + 2] = N[v + 2];
+        } else {
+          const sign = d < 0 ? -1 : 1;
+          o.normals[at] = fx * sign;
+          o.normals[at + 1] = fy * sign;
+          o.normals[at + 2] = fz * sign;
+        }
+        o.colors[at] = color[0];
+        o.colors[at + 1] = color[1];
+        o.colors[at + 2] = color[2];
+        o.at += 3;
       }
     }
-  }
-  return new Map([...acc].map(([k, a]) => [k, { positions: new Float32Array(a.p), normals: new Float32Array(a.n), colors: new Float32Array(a.c) }]));
+  });
+  return new Map(keys.map((key, k) => [key, { positions: out[k].positions, normals: out[k].normals, colors: out[k].colors }]));
 }
 
 // ---- posing it ---------------------------------------------------------------------------
@@ -215,7 +311,7 @@ export function splitIss(prims: MeshPrimitive[]): IssParts {
 export interface IssJointAngles {
   /** Where each side's arrays face: a turn about the body's +Y axis from +X (forward). */
   facing: Record<Side, number>;
-  /** Each wing's tilt about its mast (toward +x in model space for a wing facing forward). */
+  /** Each wing's tilt about its mast: how far its blankets' face leans out of the X–Z plane, toward the body's −Y. */
   tilt: Record<Wing, number>;
 }
 
@@ -235,7 +331,7 @@ export function jointsFromTelemetry(r: IssJointReadings): IssJointAngles {
   for (const w of WINGS) {
     const reading = r.bga[w.wing];
     // Starboard reads about 180°, port about 0° and mirrored; a mast's two wings mirror again.
-    tilt[w.wing] = reading === undefined ? 0 : BGA_SIGN * (w.side === 'stbd' ? 1 : -1) * (w.up ? 1 : -1) * wrap180(reading - (w.side === 'stbd' ? 180 : 0));
+    tilt[w.wing] = reading === undefined ? 0 : BGA_SIGN * (w.side === 'stbd' ? 1 : -1) * (w.fore ? 1 : -1) * wrap180(reading - (w.side === 'stbd' ? 180 : 0));
   }
   return { facing, tilt };
 }
@@ -244,7 +340,7 @@ export function jointsFromTelemetry(r: IssJointReadings): IssJointAngles {
 export function sunTrackingJoints(sun: Vec3): IssJointAngles {
   const len = Math.hypot(...sun) || 1;
   const a = (Math.atan2(-sun[2], sun[0]) * 180) / Math.PI;
-  // Model +x is the body's −Y, so the Sun's −Y component is how far the blankets tip toward +x.
+  // The Sun's −Y component is how far the blankets must lean out of the X–Z plane.
   const lean = (Math.asin(Math.max(-1, Math.min(1, -sun[1] / len))) * 180) / Math.PI;
   const tilt = {} as Record<Wing, number>;
   for (const w of WINGS) tilt[w.wing] = lean;
@@ -264,20 +360,21 @@ const compose = (a: Affine, b: Affine): Affine => {
   return { r, t: [row(0), row(1), row(2)] };
 };
 const translate = (t: Vec3): Affine => ({ r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t });
-const about = (axis: 'x' | 'y', deg: number, through: Vec3): Affine => {
+const about = (axis: 'x' | 'y' | 'z', deg: number, through: Vec3): Affine => {
   const c = Math.cos((deg * Math.PI) / 180);
   const s = Math.sin((deg * Math.PI) / 180);
-  const r = axis === 'x' ? [1, 0, 0, 0, c, -s, 0, s, c] : [c, 0, s, 0, 1, 0, -s, 0, c];
+  const r = axis === 'x' ? [1, 0, 0, 0, c, -s, 0, s, c] : axis === 'y' ? [c, 0, s, 0, 1, 0, -s, 0, c] : [c, -s, 0, s, c, 0, 0, 0, 1];
   return compose(translate(through), compose({ r, t: [0, 0, 0] }, translate([-through[0], -through[1], -through[2]])));
 };
 
 /**
  * Model space to the body frame (x forward, y starboard, z nadir) in metres, about the truss's
- * middle: body x = model z, body y = −model x, body z = −model y.
+ * middle (z = −0.09, halfway between the array tips): body x = model y, body y = model z,
+ * body z = model x.
  */
 const MODEL_TO_BODY: Affine = compose(
-  { r: [0, 0, 1, -1, 0, 0, 0, -1, 0].map((v) => v * ISS_METRES_PER_UNIT), t: [0, 0, 0] },
-  translate([0, -TRUSS_Y, -TRUSS_Z]),
+  { r: [0, 1, 0, 0, 0, 1, 1, 0, 0].map((v) => v * ISS_METRES_PER_UNIT), t: [0, 0, 0] },
+  translate([-TRUSS_X, -TRUSS_Y, 0.09]),
 );
 
 /** LVLH from the body frame: the transpose of the attitude quaternion's matrix (scalar first). */
@@ -304,15 +401,15 @@ const toMat4 = (a: Affine) => new Float32Array([a.r[0], a.r[3], a.r[6], 0, a.r[1
  */
 export function issPartMatrices(j: IssJointAngles, q?: readonly number[]): Map<IssPart, Float32Array> {
   const station = compose(q ? lvlhFromBody(q) : { r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, MODEL_TO_BODY);
-  // Turning by `a` about body +Y is turning by −a about model +x (body +Y is model −x).
-  const sideOf = (side: Side) => compose(station, about('x', -j.facing[side], [0, TRUSS_Y, TRUSS_Z]));
+  // Body +Y is model +z, so the arrays turn about model z, from where they face as modelled.
+  const sideOf = (side: Side) => compose(station, about('z', j.facing[side] - MODELLED_FACING, [TRUSS_X, TRUSS_Y, 0]));
   const sides = { port: sideOf('port'), stbd: sideOf('stbd') };
   const out = new Map<IssPart, Float32Array>([
     ['body', toMat4(station)],
     ['port', toMat4(sides.port)],
     ['stbd', toMat4(sides.stbd)],
   ]);
-  // As modelled the blankets face ±z (body ±X), so facing 0° is the model's own pose.
-  for (const w of WINGS) out.set(w.wing, toMat4(compose(sides[w.side], about('y', j.tilt[w.wing], [w.mastX, 0, TRUSS_Z]))));
+  // A wing turns about its mast (model y): by −tilt, its zenith face (−x) leans toward −z, the body's −Y.
+  for (const w of WINGS) out.set(w.wing, toMat4(compose(sides[w.side], about('y', -j.tilt[w.wing], [TRUSS_X, 0, w.mastZ]))));
   return out;
 }

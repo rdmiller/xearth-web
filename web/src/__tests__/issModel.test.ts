@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { issPartMatrices, jointsFromTelemetry, parseGlb, partOf, splitIss, sunTrackingJoints, WINGS, type IssPart } from '../issModel';
+import { ISS_BLANKET_NORMAL, issPartMatrices, jointsFromTelemetry, parseGlb, partOf, splitIss, sunTrackingJoints, WINGS, type IssPart } from '../issModel';
 import type { Vec3 } from '../vec';
 
 // The committed model itself.
@@ -23,32 +23,46 @@ const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 describe('the ISS model', () => {
   const prims = parseGlb(buffer);
 
-  it("reads NASA's model: six materials, ~6,600 triangles, 25.6 units tip to tip", () => {
-    expect(prims.map((p) => p.material).sort()).toEqual(['Brown', 'ISSDarkMetal', 'ISSGray2', 'ISSMetal1', 'ISSSolarPanels', 'ISSWhiteMetal']);
-    expect(prims.reduce((n, p) => n + p.indices.length / 3, 0)).toBe(6642);
-    const xs = prims.flatMap((p) => Array.from(p.positions.filter((_, i) => i % 3 === 0)));
-    expect(Math.min(...xs)).toBeCloseTo(-12.81, 1);
-    expect(Math.max(...xs)).toBeCloseTo(12.81, 1);
-    for (const p of prims) for (let i = 0; i < p.normals.length; i += 3) expect(Math.hypot(p.normals[i], p.normals[i + 1], p.normals[i + 2])).toBeCloseTo(1, 4);
+  it("reads NASA's quantized model: ~172,000 triangles, 45.5 units tip to tip, the strays gone", () => {
+    expect(prims.reduce((n, p) => n + p.indices.length / 3, 0)).toBe(172200);
+    expect(prims.some((p) => p.material === 'lambert7SG.001')).toBe(true);
+    let lo = [Infinity, Infinity, Infinity];
+    let hi = [-Infinity, -Infinity, -Infinity];
+    for (const p of prims) {
+      for (let i = 0; i < p.positions.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k], p.positions[i + k]);
+          hi[k] = Math.max(hi[k], p.positions[i + k]);
+        }
+      }
+    }
+    // The quantized positions land within ~1 cm (the 14-bit step) of the original's.
+    expect(lo[2]).toBeCloseTo(-22.86, 1);
+    expect(hi[2]).toBeCloseTo(22.68, 1);
+    // Nothing up at y ≈ 41 any more, where the seven stray parts were.
+    expect(hi[1]).toBeLessThan(26);
+    for (const p of prims) {
+      for (let i = 0; i < p.normals.length; i += 3 * 97) expect(Math.hypot(p.normals[i], p.normals[i + 1], p.normals[i + 2])).toBeCloseTo(1, 4);
+    }
   });
 
   it('cuts it into the body, two sides and eight wings, losing no triangle', () => {
     const parts = splitIss(prims);
     expect([...parts.keys()].sort()).toEqual(['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B', 'body', 'port', 'stbd'].sort());
     const triangles = [...parts.values()].reduce((n, p) => n + p.positions.length / 9, 0);
-    expect(triangles).toBe(6642);
-    // Each wing has its two blankets (48 vertices each, 2 × 16 triangles at least) and they're all alike.
-    const sizes = WINGS.map((w) => parts.get(w.wing)!.positions.length / 9);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(32);
-    expect(new Set(sizes).size).toBeLessThanOrEqual(2);
+    expect(triangles).toBe(172200);
+    // Each wing is exactly its two blankets: 448 blanket triangles, 56 to a wing.
+    for (const w of WINGS) expect(parts.get(w.wing)!.positions.length / 9).toBe(56);
   });
 
-  it('keeps the radiators on the SARJ and the blankets on their wings', () => {
-    // A radiator by the inner port mast: just above the truss, reaching forward.
-    expect(partOf([7.9, 1.6, 2.5], 'ISSGray2')).toBe('port');
-    expect(partOf([8.0, 5.0, 0.27], 'ISSSolarPanels')).toBe('2A');
-    expect(partOf([-11.2, -3.0, 0.27], 'ISSSolarPanels')).toBe('1B');
-    expect(partOf([3.0, 1.49, 0.27], 'ISSMetal1')).toBe('body');
+  it('keeps the hubs and radiators on the SARJ and the blankets on their wings', () => {
+    // A radiator at the inner starboard mast, reaching toward nadir; a hub canister to port.
+    expect(partOf([1.5, 10.75, 14.2], 'soyuz_blinn4SG.001')).toBe('stbd');
+    expect(partOf([-1.0, 10.8, -14.9], 'anisotropic1SG.001')).toBe('port');
+    expect(partOf([-1.09, 18, 14.0], 'lambert7SG.001')).toBe('1A');
+    expect(partOf([-1.09, 3, 21.9], 'lambert7SG.001')).toBe('1B');
+    expect(partOf([-1.09, 3, -21.0], 'lambert7SG.001')).toBe('2B');
+    expect(partOf([0, 5, 3], 'anisotropic1SG.001')).toBe('body');
   });
 });
 
@@ -78,10 +92,11 @@ describe('posing the ISS', () => {
   it('turns the arrays about the truss, so the truss line stays put', () => {
     const m = issPartMatrices(jointsFromTelemetry(SAMPLE));
     for (const side of ['port', 'stbd'] as const) {
-      const onTruss: Vec3 = [side === 'port' ? 9 : -9, 1.49, 0.27];
+      const onTruss: Vec3 = [-1.09, 10.8, side === 'port' ? -18 : 18];
       const a = point(m.get('body')!, onTruss);
       const b = point(m.get(side)!, onTruss);
-      for (let k = 0; k < 3; k++) expect(b[k]).toBeCloseTo(a[k], 6);
+      // Float32 matrices, points ~40 m out: equal to well under a millimetre.
+      for (let k = 0; k < 3; k++) expect(b[k]).toBeCloseTo(a[k], 4);
     }
   });
 
@@ -90,7 +105,7 @@ describe('posing the ISS', () => {
       const m = issPartMatrices(jointsFromTelemetry({ sarjStarboard: sarj, sarjPort: 360 - sarj, bga: {} }));
       const a = ((sarj + 90) * Math.PI) / 180;
       for (const wing of ['1A', '2B'] as IssPart[]) {
-        const n = direction(m.get(wing)!, [0, 0, 1]);
+        const n = direction(m.get(wing)!, ISS_BLANKET_NORMAL);
         expect(Math.abs(dot(n, [Math.cos(a), 0, -Math.sin(a)]))).toBeCloseTo(1, 6);
       }
     }
@@ -106,7 +121,7 @@ describe('posing the ISS', () => {
       const len = Math.hypot(...s);
       const sun: Vec3 = [s[0] / len, s[1] / len, s[2] / len];
       const m = issPartMatrices(sunTrackingJoints(sun));
-      for (const w of WINGS) expect(dot(direction(m.get(w.wing)!, [0, 0, 1]), sun)).toBeCloseTo(1, 6);
+      for (const w of WINGS) expect(dot(direction(m.get(w.wing)!, ISS_BLANKET_NORMAL), sun)).toBeCloseTo(1, 6);
     }
   });
 
@@ -115,10 +130,10 @@ describe('posing the ISS', () => {
     const m = issPartMatrices(sunTrackingJoints([1, 0, 0]), q).get('body')!;
     const cols = [0, 1, 2].map((c) => [m[c * 4], m[c * 4 + 1], m[c * 4 + 2]] as Vec3);
     const k = Math.hypot(...cols[0]);
-    expect(k).toBeCloseTo(109 / 25.62, 6);
+    expect(k).toBeCloseTo(109 / 45.54, 6);
     expect(dot(cols[0], cols[1]) / k / k).toBeCloseTo(0, 6);
-    // About 8° of pitch: model +z (the body's forward) tips well off LVLH +x but stays near it.
-    const fwd = direction(m, [0, 0, 1]);
+    // About 8° of pitch: model +y (the body's forward) tips well off LVLH +x but stays near it.
+    const fwd = direction(m, [0, 1, 0]);
     expect(fwd[0]).toBeGreaterThan(0.98);
     expect(fwd[0]).toBeLessThan(0.999);
   });

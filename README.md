@@ -1245,13 +1245,19 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     don't paint over the sharper ground; their clouds come from the hourly map and Himawari.
     GIBS serves the 500 m mosaic with no dates, one picture all year, where the globe changes
     its Blue Marble month by month, so the camera's snow and greenery may look a season off.
-  - *Station model:* NASA 3D Resources' "International Space Station (ISS) (A)" (NASA Ames,
-    6,642 triangles), baked from its Draco-compressed original (see *Baked data*) to 226 KB
-    and fetched the first time the camera opens. `issModel.ts` reads it (no 3D library), cuts
-    it by triangle into the body, each side outboard of its SARJ, and the eight wings, and poses
+  - *Station model:* NASA 3D Resources' "International Space Station (ISS) (B)" (NASA /
+    Michael D. Carbajal, ~172,000 triangles), baked from its Draco-compressed original (see
+    *Baked data*): seven stray parts that float ~30 units clear of the station dropped, and
+    quantized (KHR_mesh_quantization: 14-bit positions, 8-bit normals) to 2.3 MB, ~1 MB
+    gzipped. It's fetched the first time the camera opens and read in ~0.3 s. `issModel.ts`
+    reads it (no 3D library, no decoder), cuts it by triangle into the body, each side outboard
+    of its SARJ, and the eight wings (the blankets, by mast and by side of the truss), and poses
     them: each wing about its mast by its BGA, each side about the truss by its SARJ, and the
-    whole by the LVLH attitude quaternion. It's lit by the Sun (none in the Earth's shadow) and
-    by the day side below.
+    whole by the LVLH attitude quaternion. Its materials are all one grey, so the main ones get
+    the station's colours (copper-gold arrays, dark blue Russian arrays, white radiators and
+    modules); and it smooths its boxes' corners, so a vertex normal far off its face (over 45°)
+    gives way to the face's. It's lit by the Sun (none in the Earth's shadow) and by the day
+    side below. The smaller "ISS (A)" (6,642 triangles) was too coarse up close.
   - *Joints:* the stream carries both SARJs (S0000003/4), the eight BGAs (S4000007/8,
     S6000007/8, P4000007/8, P6000007/8, after the ISS Mimic project's list) and the attitude
     quaternion (USLAB000018–21). Checked against the Sun on 2026-10-23 (22:19–22:21Z, arrays
@@ -1296,7 +1302,7 @@ they go stale, so check them now and then (a few times a year is plenty).
 |---|---|---|---|---|
 | MeteoAlarm's warning regions | `python -I pipeline/scripts/bake_meteoalarm_regions.py` | `pipeline/xearth_clouds/meteoalarm_regions.json.gz` | MeteoAlarm publishes a new `MeteoAlarm_Geocodes_<date>.json` in [its documents repository](https://gitlab.com/meteoalarm-pm-group/documents) (it was `2026_07_31` when baked): update `GEOCODES_FILE` in the script first | `unplaced` in `meteoalarm/latest.json` isn't empty (areas with no outline aren't drawn), or the job's log ends "N areas unplaced" |
 | US volcanoes' positions | `python -I web/scripts/bake-volcanoes.py web/src/usVolcanoes.ts` | `web/src/usVolcanoes.ts` | The Smithsonian adds or renumbers a US volcano | A volcano HANS monitors is missing from the globe (one it can't place is dropped without a message): on 2026-10-23 HANS listed 69 and 67 were placed, the other two being regions with no volcano number |
-| The ISS camera's model | `node web/scripts/bake-iss-model.mjs <tools folder> "International Space Station (ISS) (A).glb" web/public/models/iss.glb` (install the tools first, as the script's header says) | `web/public/models/iss.glb` | NASA updates the model on [NASA 3D Resources](https://science.nasa.gov/3d-resources/international-space-station-iss-a/) | Its parts move apart under the camera: `issModel.ts` cuts it by measured positions (truss line, mast x), so a remodel needs those re-measured |
+| The ISS camera's model | `node web/scripts/bake-iss-model.mjs <tools folder> "International Space Station (ISS) (B).glb" web/public/models/iss.glb` (install the tools first, as the script's header says) | `web/public/models/iss.glb` | NASA updates the model on [NASA 3D Resources](https://science.nasa.gov/3d-resources/international-space-station-iss-b/) | Its parts move apart under the camera, or colours land on the wrong parts: `issModel.ts` cuts and colours it by measured positions (truss line, masts) and material names, so a remodel needs those re-measured |
 
 The MeteoAlarm script fetches the geocodes (33 MB) and Natural Earth's admin-1 file (40 MB),
 or takes paths to copies already downloaded. Before committing a new bake, run the pipeline
@@ -1421,8 +1427,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer
   (lightstreamer-client-web, Apache-2.0). Telemetry identifiers for the array joints and
   attitude from the ISS Mimic project.
-- ISS model: NASA Ames Research Center, via NASA 3D Resources ("International Space Station
-  (ISS) (A)"), free and without copyright per NASA's media usage guidelines.
+- ISS model: NASA / Michael D. Carbajal, via NASA 3D Resources ("International Space Station
+  (ISS) (B)"), free and without copyright per NASA's media usage guidelines.
 - Snow and ice: U.S. National Ice Center / NOAA NESDIS, IMS Daily Northern Hemisphere Snow and
   Ice Analysis at 4 km (NSIDC G02156); Fetterer et al., Sea Ice Index, Version 4 (NSIDC
   G02135).

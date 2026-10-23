@@ -19,8 +19,10 @@ uniform vec2 uHalfRes;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vToEye;
-const float NEAR = 1.0;
-const float FAR = 2000.0;
+// The station is ~120 m below the eye, its arrays reaching ~40 m either way: a tight range
+// keeps the depth buffer fine enough for parts a few centimetres apart.
+const float NEAR = 10.0;
+const float FAR = 1000.0;
 void main() {
   vec4 p = uModel * vec4(aPos, 1.0);
   float d = p.z + uHeight;  // depth below the eye
