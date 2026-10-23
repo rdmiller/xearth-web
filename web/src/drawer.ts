@@ -31,6 +31,7 @@ import {
   SatelliteDish,
   Snowflake,
   Sparkles,
+  Sparkle,
   RadioTower,
   SunMoon,
   Timer,
@@ -91,6 +92,7 @@ export const DRAWER: DrawerGroup[] = [
       { key: 's', label: 'Stars', icon: Sparkles, state: (s) => ({ on: s.stars !== 'off', tag: s.stars === 'photo' ? 'PHOTO' : undefined }) },
       { key: 'b', label: 'Sun·Moon', icon: SunMoon, state: flag('bodies') },
       { key: 'a', label: 'Aurora', icon: 'Au', state: flag('aurora') },
+      { key: 'shift+m', label: 'Meteors', icon: Sparkle, state: flag('meteors') },
       {
         key: 'shift+i',
         label: 'Ionosphere',

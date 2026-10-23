@@ -347,6 +347,8 @@ export interface OverlayState {
   launches?: LaunchOverlay[];
   storms?: StormOverlay[];
   quakes?: QuakeOverlay[];
+  /** The last day's meteors (GMN) as streaks along their paths, and recent fireballs (CNEOS). */
+  meteors?: MeteorOverlay;
   /** GDACS floods, wildfires and eruptions. */
   events?: EventOverlay[];
   /** Tsunami bulletins (epicentres) and live NWS alerts (sampled coastal zones). */
@@ -684,6 +686,96 @@ function drawQuakes(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
     stamp(ctx, quakeSprite(q.color, q.radius, q.fresh, dpr), w / 2 + p.x * s.radiusPx, h / 2 - p.y * s.radiusPx, dpr);
   }
   ctx.restore();
+}
+
+// ---- meteors ----------------------------------------------------------------------------
+
+export interface MeteorOverlay {
+  /** Start and end of each meteor (Earth radii, above the ground), a colour index and an opacity band. */
+  streaks: { a: Vec3; b: Vec3; color: number; band: number; mag: number }[];
+  /** CSS colour per colour index. */
+  colors: string[];
+  bands: number;
+  fireballs: { pos: Vec3; rows?: string[] }[];
+}
+
+const FIREBALL_COLOR = '#ffb347';
+
+/** A small bright star with a short tail toward lower left: a fireball's marker. */
+function fireballSprite(dpr: number): Sprite {
+  return sprite('fireball', dpr, { x: -12, y: -6, w: 18, h: 18 }, (c) => {
+    c.shadowColor = FIREBALL_COLOR;
+    c.shadowBlur = 8;
+    c.strokeStyle = FIREBALL_COLOR;
+    c.lineCap = 'round';
+    c.lineWidth = 1.6;
+    c.globalAlpha = 0.6;
+    c.beginPath();
+    c.moveTo(-10, 10);
+    c.lineTo(-2, 2);
+    c.stroke();
+    c.globalAlpha = 1;
+    c.fillStyle = '#fff4dc';
+    c.beginPath();
+    c.arc(0, 0, 3, 0, Math.PI * 2);
+    c.fill();
+  });
+}
+
+/**
+ * Streaks batched into one path per colour and opacity band (a few dozen strokes for
+ * thousands of meteors); the brightest (magnitude −2 and up) in a second, wider pass.
+ */
+function drawMeteors(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  const m = s.meteors;
+  if (!m) return;
+  const toScreen = (p: Vec3) => {
+    const q = project(s.camera, p);
+    return { x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, visible: q.visible };
+  };
+  const paths = new Map<number, Path2D>();
+  const bright = new Map<number, Path2D>();
+  for (const st of m.streaks) {
+    const a = toScreen(st.a);
+    const b = toScreen(st.b);
+    if (!a.visible || !b.visible) continue;
+    const key = st.color * (m.bands + 1) + st.band;
+    const set = st.mag <= -2 ? bright : paths;
+    let path = set.get(key);
+    if (!path) set.set(key, (path = new Path2D()));
+    path.moveTo(a.x, a.y);
+    path.lineTo(b.x, b.y);
+  }
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const [set, width] of [
+    [paths, 1.1],
+    [bright, 2.2],
+  ] as const) {
+    ctx.lineWidth = width;
+    for (const [key, path] of set) {
+      ctx.strokeStyle = m.colors[Math.floor(key / (m.bands + 1))];
+      ctx.globalAlpha = (key % (m.bands + 1)) / m.bands;
+      ctx.stroke(path);
+    }
+  }
+  ctx.globalAlpha = 1;
+  for (const f of m.fireballs) {
+    const q = toScreen(f.pos);
+    if (q.visible) stamp(ctx, fireballSprite(dpr), q.x, q.y, dpr);
+  }
+  ctx.restore();
+}
+
+function meteorRequests(s: OverlayState): CalloutRequest[] {
+  return (s.meteors?.fireballs ?? [])
+    .filter((f) => f.rows)
+    .map((f) => ({
+      anchor: f.pos,
+      rows: f.rows!.map((text, i) => [{ text, color: i === 0 ? FIREBALL_COLOR : HUD.dim }]),
+      gap: 10,
+      optional: true,
+    }));
 }
 
 function quakeRequests(s: OverlayState): CalloutRequest[] {
@@ -1423,11 +1515,12 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
     s,
     w,
     h,
-    [...targetRequests(s), ...tsunamiRequests(s), ...severeRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s)],
+    [...targetRequests(s), ...tsunamiRequests(s), ...severeRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s), ...meteorRequests(s)],
     reserved,
   );
   drawSevere(ctx, s, w, h);
   drawEvents(ctx, s, w, h, dpr);
+  drawMeteors(ctx, s, w, h, dpr);
   drawQuakes(ctx, s, w, h, dpr);
   drawTsunami(ctx, s, w, h, dpr);
   drawTarget(ctx, s, w, h, dpr);

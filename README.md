@@ -16,6 +16,10 @@ global cloud layer refreshed every hour from geostationary satellites.
   exposed for the sunlit Earth would.
 - **Space weather:** Kp (with NOAA G-scale storm level), GOES X-ray class and the last flare,
   and solar wind speed and Bz, from NOAA SWPC. The Sun disc shows the live GOES SUVI 304 Å image.
+- **Meteors** (Shift+M, off by default): the last day's meteors from the Global Meteor
+  Network's cameras, each a streak along its real path ~80–120 km up, the main showers in their
+  own colours (the Orionids in gold this week), and the fireballs NASA/JPL's CNEOS has listed in
+  the last 90 days.
 - **Ionosphere** (Shift+I, off by default): a colour wash ~300 km up, either GloTEC's total
   electron content (the dayside's equatorial crests, what slows GNSS signals) or D-RAP's HF
   radio absorption (near nothing on a quiet day; a flare lights the sunlit side, a proton event
@@ -235,7 +239,7 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
-snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora, ionosphere), Hazards (cyclones,
+snow and ice, radar, smoke, grid), Sky (stars, Sun and Moon, aurora, meteors, ionosphere), Hazards (cyclones,
 fires, quakes, lightning, GDACS alerts, tsunami, severe weather), Space (satellites, with a small button for
 the satellite panel; launches; ISS telemetry) and HUD (city markers, readout, frame rate, data feeds).
 
@@ -266,6 +270,7 @@ style. A test checks that every layer hotkey has a button.
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Shift+I` | ionosphere: electron content → HF radio absorption → off |
+| `Shift+M` | meteors (last 24 h) and fireballs on/off |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` | rain: radar with satellite rain where there's none → radar only → off |
 | `Shift+S` `Shift+T` | smoke, tsunami alerts on/off |
@@ -306,6 +311,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/hazards.ts     aurora grid, storm naming, fire cells, earthquake styling
   src/severe.ts      NWS storm-based warnings and the SPC outlook: decoding, styles, labels
   src/ionosphere.ts  GloTEC electron content and D-RAP absorption onto the aurora's grid
+  src/meteors.ts     GMN meteor trajectories as streaks, CNEOS fireballs, shower colours
   src/satellites.ts  featured satellites, SGP4 (satellite.js), shadow, orbit tracks
   src/satWorker.ts   bulk satellite propagation off the main thread
   src/satcategories.ts  satellite category tree, splitting CelesTrak groups by orbit
@@ -346,6 +352,7 @@ pnpm snowice                 # NOAA IMS + Sea Ice Index → public/snowice/
 pnpm smoke                   # NOAA HMS smoke polygons → public/smoke/
 pnpm tsunami                 # NTWC + PTWC bulletins, last 48 h → public/tsunami/
 pnpm ionosphere              # SWPC GloTEC, newest map, trimmed → public/ionosphere/
+pnpm meteors                 # GMN trajectories (last 24 h) + CNEOS fireballs (90 d) → public/meteors/
 pnpm dev
 ```
 
@@ -464,6 +471,7 @@ docker compose down                 # stop (the data volume is kept)
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
 | `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
+| `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
 | `iono`, `ionosrc` | ionosphere wash: `tec` (GloTEC electron content), `drap` (D-RAP HF absorption) or `0`; folder holding GloTEC's `latest.json` | `0`, `ionosphere/` |
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
@@ -621,6 +629,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Space weather | NOAA SWPC Kp, latest flare, solar-wind summaries (< 1 KB each) | browser, with the aurora | 10 min |
 | Ionosphere: electron content | NOAA SWPC GloTEC, 5° × 2.5° (2.5 MB a map at SWPC, ~12 KB gzipped after the pipeline) | pipeline | hourly, browser re-reads every 15 min (only while shown) |
 | Ionosphere: HF absorption | NOAA SWPC D-RAP global frequencies, 4° × 2° text table (2.8 KB gzipped) | browser | 10 min (only while shown) |
+| Meteors | Global Meteor Network daily trajectories (5 MB, trimmed to ~107 KB gzipped); NASA/JPL CNEOS fireballs, 90 days | pipeline | hourly, browser re-reads every 30 min (only while shown) |
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
@@ -638,6 +647,29 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Tsunami (bulletins) | tsunami.gov Atom feeds, NTWC (Alaska) and PTWC (Hawaii), last 48 h | pipeline | hourly |
 | ISS telemetry | NASA ISSLive via Lightstreamer (push.lightstreamer.com, ISSLIVE) | browser, while the ISS is tracked | streamed, ≤ 1 update/s per item |
 
+- **Meteors** (`meteors=1`, Shift+M):
+  - *The data:* GMN's cameras triangulate each meteor two or more sites catch, and publish the
+    trajectories (updated every 6 hours): where it lit up and burned out (latitude,
+    longitude, height), its speed, peak brightness, orbit and shower. Two files cover the
+    latest day: "yesterday" (a full day, published a few hours after it ends) and
+    "latest_daily" (what's come in since); the pipeline merges them by trajectory ID and keeps
+    the 24 hours before the newest meteor. On 2026-10-23 that was 5,841 meteors up to 21 Oct
+    20:55 UTC: 1,579 Orionids, 200 Southern Taurids, 169 XAR, and 3,300 sporadic.
+  - *Not live:* the newest meteor is hours old by the time GMN publishes it, and the day's
+    file a day; the readout and the feeds window give the window's end.
+  - *Where:* GMN's cameras are mostly in Europe, North America, Australia, New Zealand, Brazil
+    and Chile, so meteors show where cameras are; the rest of the world is empty, not quiet.
+  - *Drawing:* each meteor is a streak from where it lit up to where it burned out, at those
+    heights (so it tilts with the view and hides behind the Earth), on the overlay, batched
+    into one path per colour and opacity band. The three biggest showers of the day (30+
+    meteors) get gold, cyan and violet; minor showers and sporadics a dim blue-white.
+    Brightness follows peak magnitude (−4 bright, +4 faint) and fades to 40% across the day;
+    magnitude −2 and brighter are drawn wider. A shower's meteors share a radiant, so they run
+    parallel across a region.
+  - *Fireballs:* CNEOS lists bolides US government sensors saw from space: a few a month, with
+    their height, speed and energy. The last 90 days' are marked; those of the last 30 days, and
+    the three biggest, are labelled with their impact energy in kilotons. Its API sends no CORS
+    headers, so it comes through the pipeline too.
 - **Ionosphere** (`iono=tec` or `drap`, Shift+I): one wash at a time, and only its source
   is fetched.
   - *Electron content:* GloTEC assimilates GNSS ground stations and radio occultations into a
@@ -929,6 +961,9 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
   Fontsource.
+- Meteors: Global Meteor Network (globalmeteornetwork.org), data CC BY 4.0. Vida et al. 2020,
+  MNRAS 491, 2688–2705; Vida et al. 2021, "The Global Meteor Network – Methodology and first
+  results", MNRAS 506, 5046–5074. Fireballs: NASA/JPL Center for Near Earth Object Studies (CNEOS).
 - Aurora, space weather, the ionosphere (GloTEC, D-RAP) and the GOES SUVI Sun image: NOAA Space Weather Prediction Center. Earthquakes: USGS. Tropical cyclones:
   GDACS (European Commission JRC; JTWC and NHC data) and NOAA NHC. Fires: "We acknowledge the use
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's

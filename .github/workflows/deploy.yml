@@ -85,6 +85,9 @@ jobs:
       - name: Ionosphere total electron content (NOAA SWPC GloTEC; 2.5 MB a map, so trimmed here)
         continue-on-error: true
         run: python -m xearth_clouds.ionosphere --out web/public/ionosphere
+      - name: Meteors, last 24 h (Global Meteor Network) and fireballs (NASA/JPL CNEOS)
+        continue-on-error: true
+        run: python -m xearth_clouds.meteors --out web/public/meteors
 
       - name: Cache NASA textures
         uses: actions/cache@v4

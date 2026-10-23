@@ -71,6 +71,8 @@ export interface Settings extends ViewSettings {
   imagery: ImageryMode;
   /** US severe weather: NWS storm-based warnings and the SPC day-1 outlook. */
   severe: boolean;
+  /** The last day's meteors (GMN) and recent fireballs (CNEOS); off by default, it's thousands of streaks. */
+  meteors: boolean;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
   relief: boolean;
   /** Relief strength: 1 = the default vertical exaggeration. */
@@ -99,6 +101,8 @@ export interface Settings extends ViewSettings {
   snowsrc: string;
   smokesrc: string;
   tsunamisrc: string;
+  /** Where the pipeline's meteors latest.json lives. */
+  meteorsrc: string;
   /** The ionosphere wash (off by default: it tints the whole globe). */
   iono: IonoMode;
   /** Where the pipeline's GloTEC latest.json lives. */
@@ -161,6 +165,7 @@ export function defaults(): Settings {
     tsunami: true,
     imagery: 'live',
     severe: true,
+    meteors: false,
     relief: true,
     reliefscale: 1,
     isslive: 'track',
@@ -177,6 +182,7 @@ export function defaults(): Settings {
     snowsrc: dataSrc('VITE_SNOW_BASE', 'snowice/'),
     smokesrc: dataSrc('VITE_SMOKE_BASE', 'smoke/'),
     tsunamisrc: dataSrc('VITE_TSUNAMI_BASE', 'tsunami/'),
+    meteorsrc: dataSrc('VITE_METEORS_BASE', 'meteors/'),
     iono: 'off',
     ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
   };
@@ -285,6 +291,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     tsunami: bool(q, 'tsunami', base.tsunami),
     imagery: imageryMode(q, base.imagery),
     severe: bool(q, 'severe', base.severe),
+    meteors: bool(q, 'meteors', base.meteors),
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),
@@ -301,6 +308,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     snowsrc: q.get('snowsrc') ?? base.snowsrc,
     smokesrc: q.get('smokesrc') ?? base.smokesrc,
     tsunamisrc: q.get('tsunamisrc') ?? base.tsunamisrc,
+    meteorsrc: q.get('meteorsrc') ?? base.meteorsrc,
     iono: ionoMode(q, base.iono),
     ionosrc: q.get('ionosrc') ?? base.ionosrc,
   };

@@ -23,6 +23,7 @@
     "smoke": "cd ../pipeline && python -m xearth_clouds.smoke --out ../web/public/smoke",
     "tsunami": "cd ../pipeline && python -m xearth_clouds.tsunami --out ../web/public/tsunami",
     "ionosphere": "cd ../pipeline && python -m xearth_clouds.ionosphere --out ../web/public/ionosphere",
+    "meteors": "cd ../pipeline && python -m xearth_clouds.meteors --out ../web/public/meteors",
     "icons": "python scripts/make-icons.py",
     "android:build": "vite build --mode android && cap sync android",
     "android:open": "cap open android",

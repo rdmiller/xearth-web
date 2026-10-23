@@ -47,6 +47,7 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
+import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
@@ -155,6 +156,7 @@ import {
   UI_FONT,
   type BodyMarker,
   type EventOverlay,
+  type MeteorOverlay,
   type SevereLabel,
   type SevereShape,
   type TsunamiOverlay,
@@ -735,9 +737,27 @@ function lightningLayer(): LightningManifest | undefined {
   return { ...base, windowMin: LI_WINDOW_MIN, cellDeg: CELL_DEG, count: data.length / 4, data };
 }
 
-type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe';
+type HazardKey = 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors';
 
 /** `dataAt`: when the data now held was published, for the feeds dashboard. */
+let meteorManifest: MeteorManifest | undefined;
+/** Streaks on the globe, built once per load (their colours and bands don't change with the view). */
+let meteorCache: MeteorOverlay | undefined;
+function meteorOverlay(): MeteorOverlay | undefined {
+  if (!settings.meteors || !meteorManifest) return undefined;
+  if (!meteorCache) {
+    const m = meteorManifest;
+    const labelled = new Set(labelledFireballs(m.fireballs, Date.now()));
+    meteorCache = {
+      streaks: decodeMeteors(m),
+      colors: showerColors(m).colors,
+      bands: BANDS,
+      fireballs: m.fireballs.map((f) => ({ pos: fromLatLon(f.lat, f.lon), rows: labelled.has(f) ? fireballRows(f) : undefined })),
+    };
+  }
+  return meteorCache;
+}
+
 const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; dataAt: () => string | number | undefined }> = {
   aurora: {
     everyMs: 10 * 60_000,
@@ -868,6 +888,19 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       tsunamiCache = undefined;
     },
     dataAt: () => tsunamiManifest?.generated,
+  },
+  // GMN's daily trajectories and CNEOS's fireballs, via the pipeline (hourly; GMN's files
+  // change a few times a day).
+  meteors: {
+    everyMs: 30 * 60_000,
+    load: async () => {
+      const m = await fetchJson(pipelineFile(settings.meteorsrc));
+      if (!isMeteorManifest(m)) throw new Error('meteors/latest.json is not a meteor manifest');
+      if (m.to !== meteorManifest?.to || m.fireballs.length !== meteorManifest?.fireballs.length) meteorCache = undefined;
+      meteorManifest = m;
+    },
+    // The newest meteor, which trails the cameras by GMN's processing (hours).
+    dataAt: () => meteorManifest?.to ?? meteorManifest?.generated,
   },
   // NWS storm-based warnings every 2 minutes (a tornado warning lasts ~30–45), SPC's outlook
   // every 15. Both CORS-enabled. A new tornado or extreme wind warning raises a toast.
@@ -1351,6 +1384,7 @@ function layerRows(): ReadoutRow[] {
   }
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
+  if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
   if (settings.severe && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
   return rows;
 }
@@ -1484,6 +1518,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
   { key: 'severe', label: 'Severe weather', source: 'NWS · SPC', freshMs: 15 * MIN, on: () => settings.severe },
   { key: 'tsunami', label: 'Tsunami', source: 'NOAA · NWS', freshMs: PIPELINE_FRESH, on: () => settings.tsunami },
+  // GMN's newest trajectories are hours behind its cameras, and its daily file a day.
+  { key: 'meteors', label: 'Meteors', source: 'GMN · NASA/JPL', freshMs: 12 * 60 * MIN, on: () => settings.meteors },
   // CelesTrak updates elements every 2 h; the pipeline refetches them at most every 3 h.
   { key: 'satellites', label: 'Satellites', source: 'CelesTrak', freshMs: 4 * 60 * MIN, on: () => settings.sats !== 'off', everyMs: SAT_POLL_MS },
   { key: 'launches', label: 'Launches', source: 'Launch Library 2', freshMs: PIPELINE_FRESH, on: () => settings.launches, everyMs: LAUNCH_POLL_MS },
@@ -1853,6 +1889,7 @@ function frame(now: number) {
     launches: launch.overlays,
     storms: stormOverlays(),
     quakes: quakeOverlays(),
+    meteors: meteorOverlay(),
     events: eventOverlays(),
     tsunami: tsunamiOverlays().bulletins,
     tsunamiZones: tsunamiOverlays().zones,
