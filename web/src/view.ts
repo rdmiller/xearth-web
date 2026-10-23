@@ -10,7 +10,10 @@ export type TrackResolver = (key: string, date: Date) => { lat: number; lon: num
 
 export interface ViewSettings {
   view: ViewMode;
-  /** track: which featured satellite to follow (see satellites.ts FEATURED). */
+  /**
+   * track: what to follow — a named satellite (satellites.ts FEATURED), any other by its NORAD
+   * number, `launch`, or `sunrise` / `moonrise`.
+   */
   track: string;
   /** fixed: viewer lat/lon. sunrel: offset from the subsolar point. */
   lat: number;

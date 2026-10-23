@@ -119,17 +119,6 @@ export function buoyTitle(b: Buoy): string {
   return nice ? `${b.id} · ${nice}` : `${TYPE_LABEL[b.type]} ${b.id}`;
 }
 
-/** The nearest of some screen points within `maxPx` of (x, y), by index; -1 if none. */
-export function pickNearest(points: readonly { x: number; y: number }[], x: number, y: number, maxPx: number): number {
-  let best = -1;
-  let bestD = maxPx * maxPx;
-  points.forEach((p, i) => {
-    const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-    if (d <= bestD) [best, bestD] = [i, d];
-  });
-  return best;
-}
-
 /** The nearest buoy with something to say within `maxKm` of a place, and how far and which way. */
 export function nearestBuoy(buoys: readonly Buoy[], lat: number, lon: number, maxKm: number): { buoy: Buoy; km: number; bearing: number } | undefined {
   let best: { buoy: Buoy; km: number; bearing: number } | undefined;

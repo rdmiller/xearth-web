@@ -243,6 +243,39 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
       A layer that's switched off is fetched once for the card and cached for 10 minutes.
   - Units follow the browser's locale: °F and mph for the US, °C and km/h elsewhere.
 
+## Clicking things on the globe
+
+A click (a press that moves under 5 px, not part of a pinch) on a marker opens its window
+under the others on the right, and puts a reticle on it. The nearest marker of every layer
+shown wins, within about its drawn size (8 px for a bulk satellite's dot, 14 for a named
+satellite, a launch, a cyclone or a tsunami bulletin, a quake's ring plus 3 px). A click on
+nothing marked falls through to the US severe-weather warning under the pointer, if any, the
+one drawn on top. Clicking empty space does nothing; × closes the window. With a mouse, the
+cursor turns from the grab hand to the pointing hand over anything a click would open,
+checked as the mouse moves and every 300 ms while it rests, since satellites move under it.
+
+- **Satellites**, the named ones and every bulk dot (Starlink, OneWeb, GPS…): altitude, speed,
+  period, inclination, sunlit or in shadow, NORAD number and how old the elements are, and a
+  link to N2YO. A picked bulk satellite is drawn like a named one, with its name and orbit
+  line. Clicking a satellite also **follows** it: the view tracks it (`view=track`, `track=`
+  its key or NORAD number), as the 6–8 keys do for the named ones.
+- **Launches** (pad or vehicle): the clock, status, orbit, altitude and speed in flight, the
+  provider, pad and NET. The picked launch is the one shown in full and followed by J. A launch
+  in flight is followed on the click; one on the pad offers Follow, which waits on the pad and
+  rides the ascent.
+- **Earthquakes** (magnitude, depth, PAGER alert, tsunami flag, a link to the USGS event page),
+  **cyclones** (class, wind, pressure, motion, GDACS impact), **GDACS** floods, fires and
+  eruptions (impact, burned area, since when, a link to the GDACS report), **tsunami** bulletins
+  (centre, magnitude, region, a link to the bulletin), **fireballs** (impact and radiated
+  energy, altitude, speed) and **NWS warnings** (until when, the threat tags, the counties).
+- **Buoys** keep their own window (see Buoys under Hazard layers).
+- **Following:** the window's Follow / Stop following button switches it. A click while
+  following still picks; only a drag lets go (into a fixed view from where the view was), so
+  a pinch can zoom while following.
+- **Links:** the pick goes in the URL as `pick=kind:id` (`pick=quake:us7000abcd`,
+  `pick=sat:44744`), so a link or a reload reopens the window once that layer's data is in.
+  The window hides while its layer is off or its data no longer lists it.
+
 ## Layer dock
 
 Every layer has a floating button along the bottom, grouped Earth (clouds, city lights,
@@ -480,7 +513,8 @@ docker compose down                 # stop (the data volume is kept)
 | Parameter | Meaning | Default |
 |---|---|---|
 | `view` | `fixed`, `sunrel`, `orbit`, `moon`, `track` | `fixed` |
-| `track` | `iss`, `tiangong`, `satgus`, `launch` (the next / current launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
+| `track` | `iss`, `tiangong`, `satgus`, any other satellite by NORAD number (`44744`), `launch` (the picked, current or next launch), or `sunrise` / `moonrise` (Sun / Moon framed beside the Earth) | `iss` |
+| `pick` | what was clicked, whose window is open: `sat:`, `launch:`, `quake:`, `storm:`, `event:`, `tsunami:`, `fireball:` or `warning:` and its id | none |
 | `aurora`, `storms`, `fires`, `quakes` | hazard layers on/off | 1 |
 | `buoys`, `buoy`, `buoysrc` | buoys on/off; the buoy whose window is open (its id, e.g. `46026`); folder holding `latest.json`, `history.json` and `argo.json` | `0`, none, `buoys/` |
 | `meteors`, `meteorsrc` | meteors and fireballs on/off; folder holding their `latest.json` | `0`, `meteors/` |
@@ -678,7 +712,8 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     every 15 minutes (257 KB gzipped); the browser only fetches it once a window opens, and
     again when the pipeline has written a newer one.
   - *Picking:* a click (a press that moves under 5 px, not part of a pinch) selects the
-    nearest dot within 12 px. The selected buoy gets a reticle in its type's colour, and a
+    nearest dot within 12 px, unless another layer's marker is nearer (see Clicking things on
+    the globe). The selected buoy gets a reticle in its type's colour, and a
     drifting or ice buoy its last day's track as a dashed line. The selection goes in the
     link, so `?buoy=46026` opens that buoy's window (and shows where it is) with or without the
     layer on.
@@ -968,8 +1003,8 @@ bottom. Keys and values sit in two columns. A long value wraps at its " · " sep
 ## Toast windows
 
 The panels down the right edge share one look and one place. A toast manager
-(`src/toasts.ts`) gives frame rate, ISS telemetry, data feeds, a searched place's card and a
-buoy's window the same window: one width (320 px), the same glass, and a header with the
+(`src/toasts.ts`) gives frame rate, ISS telemetry, data feeds, a searched place's card, a
+buoy's window and the window of anything else clicked on the globe the same window: one width (320 px), the same glass, and a header with the
 title, a status chip (the ISS signal, the feeds summary, a buoy's last report) and ×. It stacks them in that order in one column from
 the top of the window to the dock, so they never overlap.
 

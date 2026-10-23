@@ -77,6 +77,8 @@ export interface Settings extends ViewSettings {
   buoys: boolean;
   /** The buoy whose window is open (its id), or '' for none. */
   buoy: string;
+  /** What was clicked on the globe and has its window open (`kind:id`, see picks.ts), or ''. */
+  pick: string;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
   relief: boolean;
   /** Relief strength: 1 = the default vertical exaggeration. */
@@ -174,6 +176,7 @@ export function defaults(): Settings {
     meteors: false,
     buoys: false,
     buoy: '',
+    pick: '',
     relief: true,
     reliefscale: 1,
     isslive: 'track',
@@ -303,6 +306,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     meteors: bool(q, 'meteors', base.meteors),
     buoys: bool(q, 'buoys', base.buoys),
     buoy: q.get('buoy')?.trim() ?? base.buoy,
+    pick: q.get('pick')?.trim() ?? base.pick,
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),

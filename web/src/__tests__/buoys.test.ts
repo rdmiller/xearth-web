@@ -10,7 +10,6 @@ import {
   isBuoyHistory,
   isBuoyManifest,
   nearestBuoy,
-  pickNearest,
   tendency,
   type Buoy,
   type BuoyManifest,
@@ -57,16 +56,6 @@ describe('buoys', () => {
     expect(buoyTitle(SF)).toBe('46026 · San Francisco');
     expect(buoyTitle(DART)).toBe('21415 · Attu');
     expect(buoyTitle(DRIFTER)).toBe('Drifting buoy 4402591');
-  });
-
-  it('picks the nearest dot within reach of a click', () => {
-    const pts = [
-      { x: 100, y: 100 },
-      { x: 108, y: 100 },
-      { x: 300, y: 300 },
-    ];
-    expect(pickNearest(pts, 106, 101, 12)).toBe(1);
-    expect(pickNearest(pts, 200, 200, 12)).toBe(-1);
   });
 
   it('finds the nearest buoy to a place, but not a DART (no weather to report)', () => {

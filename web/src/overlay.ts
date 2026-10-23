@@ -320,6 +320,8 @@ export interface SatelliteOverlay {
   featured: FeaturedOverlay[];
   /** Key of the satellite being followed (view=track), if any. */
   tracking?: string;
+  /** Key of the satellite clicked (its window open), if any: ringed like a followed one. */
+  selected?: string;
   /** What's shown, "11,149 Starlink · 73 weather", or "loading…" / "unavailable". */
   summary: string;
 }
@@ -367,6 +369,8 @@ export interface OverlayState {
   panels?: Rect[];
   /** Where the view just went (search or double-click): a reticle and the name, for a while. */
   target?: { pos: Vec3; name: string };
+  /** What was clicked (its window open), other than a satellite: a reticle in its colour. */
+  picked?: { pos: Vec3; color: string };
   /** Places gone to from the search: labelled like cities, in pink, even with cities off. */
   places?: { name: string; lat: number; lon: number }[];
   /** The readout's rows for the launch and data layers on, in order. */
@@ -405,7 +409,7 @@ export interface LaunchOverlay {
   tracked: boolean;
 }
 
-const LAUNCH_COLOR = '#ff9f43';
+export const LAUNCH_COLOR = '#ff9f43';
 const STATUS_COLOR: Record<string, string> = { go: tok('--ok'), hold: tok('--bad'), success: HUD.accent };
 const LABEL_ROW = 15;
 
@@ -701,7 +705,7 @@ export interface MeteorOverlay {
   fireballs: { pos: Vec3; rows?: string[] }[];
 }
 
-const FIREBALL_COLOR = '#ffb347';
+export const FIREBALL_COLOR = '#ffb347';
 
 /** A small bright star with a short tail toward lower left: a fireball's marker. */
 function fireballSprite(dpr: number): Sprite {
@@ -848,6 +852,12 @@ function drawBuoys(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h:
     if (q.visible) stamp(ctx, reticleSprite(sel.color, dpr), q.x, q.y, dpr);
   }
   ctx.restore();
+}
+
+function drawPicked(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
+  if (!s.picked) return;
+  const p = project(s.camera, s.picked.pos);
+  if (p.visible) stamp(ctx, reticleSprite(s.picked.color, dpr), w / 2 + p.x * s.radiusPx, h / 2 - p.y * s.radiusPx, dpr);
 }
 
 function drawTarget(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
@@ -1460,7 +1470,7 @@ function drawSatellites(ctx: CanvasRenderingContext2D, s: OverlayState, w: numbe
 
     const here = toScreen(f.state.pos);
     if (!here.visible) continue;
-    const tracked = sats.tracking === f.sat.key;
+    const tracked = sats.tracking === f.sat.key || sats.selected === f.sat.key;
     if (tracked) stamp(ctx, reticleSprite(f.sat.color, dpr), here.x, here.y, dpr);
     const name = f.live ? `${f.sat.name} · LIVE` : f.sat.name;
     stamp(ctx, satSprite(name, f.sat.color, f.state.sunlit, tracked ? 16 : 9, dpr), here.x, here.y, dpr);
@@ -1586,6 +1596,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): number 
   drawTsunami(ctx, s, w, h, dpr);
   drawTarget(ctx, s, w, h, dpr);
   drawStorms(ctx, s, w, h, dpr);
+  drawPicked(ctx, s, w, h, dpr);
   if (s.markers || s.places?.length) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawSatellites(ctx, s, w, h, dpr);
   drawSatLabels(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);

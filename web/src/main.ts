@@ -47,8 +47,25 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
-import { buoyLine, buoySummary, isArgoFile, isBuoyHistory, isBuoyManifest, nearestBuoy, pickNearest, TYPE_COLOR, type ArgoFile, type BuoyHistory, type BuoyManifest } from './buoys';
+import { buoyLine, buoySummary, isArgoFile, isBuoyHistory, isBuoyManifest, nearestBuoy, TYPE_COLOR, type ArgoFile, type BuoyHistory, type BuoyManifest } from './buoys';
 import { BuoyPanelView } from './buoyView';
+import {
+  eventInfo,
+  fireballInfo,
+  inPolygon,
+  launchDetail,
+  nearestTarget,
+  parsePick,
+  pickKey,
+  quakeDetail,
+  satDetail,
+  stormInfo,
+  tsunamiInfo,
+  warningInfo,
+  type PickDetail,
+  type PickTarget,
+} from './picks';
+import { PickPanelView } from './pickView';
 import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
@@ -154,6 +171,8 @@ import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type
 import {
   clearOverlaySprites,
   drawOverlay,
+  FIREBALL_COLOR,
+  LAUNCH_COLOR,
   PLACE_COLOR,
   UI_FONT,
   type BodyMarker,
@@ -179,6 +198,7 @@ import type { WorkerRequest, WorkerResponse } from './satWorker';
 import {
   EARTH_RADIUS_KM,
   FEATURED,
+  featuredByKey,
   inShadow,
   isSatelliteManifest,
   periodMinutes,
@@ -187,6 +207,7 @@ import {
   stateAt,
   TrackCache,
   type Elements,
+  type FeaturedSat,
   type SatelliteManifest,
 } from './satellites';
 import { decodeCatalog, litScreenFraction, photoMagShift, starFrame } from './stars';
@@ -446,6 +467,9 @@ let workerBusy = false;
 /** Simulated time of the last pass requested, and of the positions now on the GPU. */
 let requestedTime = NaN;
 let bulkTime = NaN;
+/** The positions and velocities on the GPU, kept for clicks: which satellite is under the pointer. */
+let bulkPositions: Float32Array | undefined;
+let bulkVelocities: Float32Array | undefined;
 const tracks = new TrackCache();
 let satTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -457,9 +481,12 @@ satWorker.onmessage = (e: MessageEvent<WorkerResponse>) => {
     bulkCount = m.valid;
     requestedTime = NaN;
     bulkTime = NaN;
+    bulkPositions = bulkVelocities = undefined;
   } else {
     renderer.setSatellites(m.positions as Float32Array<ArrayBuffer>, m.velocities as Float32Array<ArrayBuffer>);
     bulkTime = m.time;
+    bulkPositions = m.positions;
+    bulkVelocities = m.velocities;
   }
   requestRedraw();
 };
@@ -485,6 +512,8 @@ async function loadSatellites() {
         if (rec && el) featuredRecs.set(f.key, { rec, elements: el });
       }
       catalog = bulkCatalog(m);
+      bulkIndex.clear();
+      bulkSats.clear();
       renderer.setSatelliteCategories(catalog.category);
       labelRecs.clear();
       catalog.elements.forEach((el, i) => {
@@ -504,6 +533,35 @@ async function loadSatellites() {
     console.warn('satellites:', err);
   }
   requestRedraw();
+}
+
+/** NORAD → place in the catalogue, and the bulk satellites looked up so far (picked or followed). */
+const bulkIndex = new Map<number, number>();
+const bulkSats = new Map<number, { rec: SatRec; elements: Elements; sat: FeaturedSat } | null>();
+
+/** A bulk satellite by NORAD number, with what it takes to draw and follow it like a named one. */
+function bulkSat(norad: number) {
+  if (!catalog) return undefined;
+  if (!bulkIndex.size) catalog.elements.forEach((e, i) => bulkIndex.set(e[0], i));
+  let hit = bulkSats.get(norad);
+  if (hit === undefined) {
+    const i = bulkIndex.get(norad);
+    const elements = i === undefined ? undefined : catalog.elements[i];
+    const rec = elements && satrecFor(elements);
+    const leaf = i === undefined ? undefined : BULK_LEAVES[catalog.category[i]];
+    const name = catalog.names.get(norad);
+    hit =
+      elements && rec && leaf
+        ? { rec, elements, sat: { key: String(norad), norad, name: name ? shortName(name) : `${leaf.label} ${norad}`, detail: leaf.label, color: leaf.color } }
+        : null;
+    bulkSats.set(norad, hit);
+  }
+  return hit ?? undefined;
+}
+
+/** Any satellite's SGP4 record and elements by its key: a named one's (`iss`) or a NORAD number. */
+function satEntry(key: string): { rec: SatRec; elements: Elements } | undefined {
+  return featuredRecs.get(key) ?? (/^\d+$/.test(key) ? bulkSat(Number(key)) : undefined);
 }
 
 function syncSatellites() {
@@ -583,6 +641,12 @@ function syncLaunches() {
 function launchStates(date: Date): LaunchState[] {
   if (!settings.launches || !launchManifest) return [];
   return launchManifest.launches.map((l) => launchState(l, date)).filter((s) => s.phase !== 'done');
+}
+
+/** The launch shown in full and followed (J): the one clicked, else the one in flight or next up. */
+function launchFocus(states: LaunchState[]): LaunchState | undefined {
+  const p = parsePick(settings.pick);
+  return (p?.kind === 'launch' && states.find((s) => s.launch.id === p.id)) || focusLaunch(states);
 }
 
 const PHASE_LABEL: Record<LaunchPhase, string> = {
@@ -1495,14 +1559,14 @@ const resolveTrack: TrackResolver = (key, date) => {
     return framingViewpoint(key === 'sunrise' ? b.sunDir : b.moonPos, framingOffsetDeg(), toward);
   }
   if (key === 'launch') {
-    const f = focusLaunch(launchStates(date));
+    const f = launchFocus(launchStates(date));
     return f ? toLatLon(f.pos) : null;
   }
   if (key === 'iss') {
     const live = issLiveState(date, sunDirection(date));
     if (live) return toLatLon(live.pos);
   }
-  const rec = featuredRecs.get(key)?.rec;
+  const rec = satEntry(key)?.rec;
   const p = rec ? positionAt(rec, date) : null;
   return p ? toLatLon(p) : null;
 };
@@ -1510,9 +1574,15 @@ const resolveTrack: TrackResolver = (key, date) => {
 function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   if (settings.sats === 'off') return undefined;
   if (!satManifest) return { featured: [], summary: satError ? 'unavailable' : 'loading…' };
-  const featured = FEATURED.flatMap((sat) => {
-    if (!leafOn(findNode(sat.key) as SatLeaf, settings)) return [];
-    const entry = featuredRecs.get(sat.key);
+  // A satellite picked or followed from the bulk layers is drawn like the named ones: marker,
+  // name and orbit line.
+  const promoted = [pickedSat(), settings.view === 'track' ? settings.track : ''].flatMap((key) => {
+    const b = /^\d+$/.test(key) ? bulkSat(Number(key)) : undefined;
+    return b ? [b.sat] : [];
+  });
+  const shown = [...FEATURED.filter((sat) => leafOn(findNode(sat.key) as SatLeaf, settings)), ...new Set(promoted)];
+  const featured = shown.flatMap((sat) => {
+    const entry = satEntry(sat.key);
     const live = sat.key === 'iss' ? issLiveState(date, sun) : undefined;
     const state = live ?? (entry ? stateAt(entry.rec, date, sun) : null);
     if (!entry || !state) return [];
@@ -1522,7 +1592,7 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   });
   // The groups shown, or with only the named ones on, their names.
   const summary = bulkSummary(catalog, settings) || featured.map((f) => f.sat.name).join(' · ');
-  return { featured, tracking: settings.view === 'track' ? settings.track : undefined, summary };
+  return { featured, tracking: settings.view === 'track' ? settings.track : undefined, selected: pickedSat() || undefined, summary };
 }
 
 /** Name labels for the categories ticked for labels (a few dozen SGP4 runs a frame at most). */
@@ -1659,21 +1729,213 @@ function syncBuoyPanel() {
 }
 setInterval(() => settings.buoy && syncBuoyPanel(), 60_000);
 
-/** A click (a press that didn't move) on a buoy's dot opens its window. */
-function pickBuoy(clientX: number, clientY: number) {
-  if (!settings.buoys || !buoyManifest) return;
-  const rect = overlayCanvas.getBoundingClientRect();
-  const camera = cameraFor(settings, simTime(), resolveTrack);
-  const r = radiusCss();
-  const w = overlayCanvas.clientWidth;
-  const h = overlayCanvas.clientHeight;
-  const pts = buoyManifest.buoys.map((b) => {
-    const q = project(camera, fromLatLon(b.lat, b.lon));
-    return q.visible ? { x: w / 2 + q.x * r, y: h / 2 - q.y * r } : { x: -1e6, y: -1e6 };
-  });
-  const i = pickNearest(pts, clientX - rect.left, clientY - rect.top, 12);
-  if (i >= 0) update({ buoy: buoyManifest.buoys[i].id });
+// ---- picking: a click on something on the globe opens its window ----------------------------
+// A buoy has its own window (above); everything else shares one, whose content picks.ts writes.
+// A satellite, or a launch once it's flying, is followed as well; dragging the globe lets go.
+
+/** The picked satellite's key (`iss`, or a NORAD number), or ''. */
+function pickedSat(): string {
+  const p = parsePick(settings.pick);
+  return p?.kind === 'sat' ? p.id : '';
 }
+
+/** What follows the pick (view=track): a satellite's key, or `launch` (the focus is the pick). */
+function pickTrack(): string | undefined {
+  const p = parsePick(settings.pick);
+  return p?.kind === 'sat' ? p.id : p?.kind === 'launch' ? 'launch' : undefined;
+}
+
+const followingPick = () => settings.view === 'track' && !!settings.track && settings.track === pickTrack();
+
+function followPick(follow: boolean) {
+  const track = pickTrack();
+  if (!track) return;
+  if (follow) return update({ view: 'track', track });
+  const here = viewerLatLon(settings, simTime(), resolveTrack);
+  update({ view: 'fixed', lat: here.lat, lon: here.lon, rot: 0 });
+}
+
+const pickPanel = new PickPanelView(
+  toasts.add({ id: 'pick', title: 'Details', order: 5, shrink: 0, onClose: () => update({ pick: '' }) }),
+  followPick,
+);
+
+/**
+ * The picked thing's window and where it is, or undefined while it isn't there: its layer is
+ * off, or its data hasn't arrived (a link) or no longer lists it.
+ */
+function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]): { detail: PickDetail; pos?: Vec3 } | undefined {
+  const p = parsePick(settings.pick);
+  if (!p) return undefined;
+  const now = Date.now();
+  const at = (lat: number, lon: number) => fromLatLon(lat, lon);
+  switch (p.kind) {
+    case 'sat': {
+      const f = sats?.featured.find((f) => f.sat.key === p.id);
+      const entry = satEntry(p.id);
+      if (!f || !entry) return undefined;
+      const named = featuredRecs.has(p.id);
+      const info = { name: f.sat.name, norad: f.sat.norad, color: f.sat.color, state: f.state, elements: entry.elements, live: f.live };
+      return { detail: satDetail(named ? { ...info, group: 'Tracked', about: f.sat.detail } : { ...info, group: f.sat.detail }, now) };
+    }
+    case 'launch': {
+      const st = launches.find((s) => s.launch.id === p.id);
+      return st && { detail: launchDetail(st, LAUNCH_COLOR), pos: st.pos };
+    }
+    case 'quake': {
+      const q = settings.quakes ? quakes.find((q) => q.id === p.id) : undefined;
+      return q && { detail: quakeDetail(q, now), pos: at(q.lat, q.lon) };
+    }
+    case 'storm': {
+      const st = settings.storms ? stormManifest?.storms.find((s) => s.id === p.id) : undefined;
+      return st && { detail: stormInfo(st, stormColor(stormClass(st)), now), pos: at(st.pos[1], st.pos[0]) };
+    }
+    case 'event': {
+      const e = settings.events ? eventManifest?.events.find((e) => e.id === p.id) : undefined;
+      return e && { detail: eventInfo(e, now), pos: at(e.pos[1], e.pos[0]) };
+    }
+    case 'tsunami': {
+      const b = settings.tsunami ? tsunamiManifest?.bulletins.find((b) => b.id === p.id) : undefined;
+      return b && { detail: tsunamiInfo(b, now), pos: at(b.lat, b.lon) };
+    }
+    case 'fireball': {
+      const f = settings.meteors ? meteorManifest?.fireballs.find((f) => f.time === p.id) : undefined;
+      return f && { detail: fireballInfo(f, FIREBALL_COLOR, now), pos: at(f.lat, f.lon) };
+    }
+    case 'warning': {
+      const w = settings.severe ? severeWarnings.find((w) => w.id === p.id) : undefined;
+      if (!w) return undefined;
+      const ring = largestRing(w.polygons);
+      const centre = ring && ringCentre(ring);
+      return { detail: warningInfo(w, WARNING_COLOR[w.event], centre, now), pos: centre && at(centre[1], centre[0]) };
+    }
+  }
+}
+
+/** What the window last showed: it's redrawn at most once a second unless that changes. */
+let pickShown = { key: '', on: false, following: false, at: 0 };
+
+function syncPickPanel(detail: PickDetail | undefined) {
+  const following = followingPick();
+  const t = performance.now();
+  const same = pickShown.key === settings.pick && pickShown.on === !!detail && pickShown.following === following;
+  if (same && t - pickShown.at < 1000) return;
+  pickShown = { key: settings.pick, on: !!detail, following, at: t };
+  pickPanel.update(detail, following);
+}
+
+/** A satellite's name by its key, for the "Following" toast. */
+const satName = (key: string) => featuredByKey(key)?.name ?? (/^\d+$/.test(key) ? bulkSat(Number(key))?.sat.name : undefined) ?? key;
+
+/** Open a pick's window (or a buoy's), following it if it moves. */
+function select(key: string) {
+  if (key.startsWith('buoy:')) return update({ buoy: key.slice(5) });
+  const p = parsePick(key);
+  if (!p) return;
+  const patch: Partial<Settings> = { pick: key };
+  if (p.kind === 'sat') {
+    Object.assign(patch, { view: 'track', track: p.id });
+    toast(`Following ${satName(p.id)} · drag the globe to let go`);
+  } else if (p.kind === 'launch') {
+    const st = launchStates(simTime()).find((s) => s.launch.id === p.id);
+    if (st && (st.phase === 'ascent' || st.phase === 'coast' || st.phase === 'deployed')) {
+      Object.assign(patch, { view: 'track', track: 'launch' });
+      toast(`Following ${shortRocket(st.launch.rocket)} · drag the globe to let go`);
+    }
+  }
+  update(patch);
+}
+
+/** Reach of a marker, CSS px: about its drawn size, and never under a fingertip's worth. */
+const REACH = { sat: 14, bulk: 8, launch: 14, storm: 14, tsunami: 14, fireball: 10, buoy: 12 };
+
+/**
+ * What a click here would pick: the nearest marker within reach, of every layer shown, or else
+ * the severe-weather warning under the pointer. Its key (`buoy:` for a buoy), or undefined.
+ */
+function targetAt(clientX: number, clientY: number): string | undefined {
+  const rect = overlayCanvas.getBoundingClientRect();
+  const date = simTime();
+  const camera = cameraFor(settings, date, resolveTrack);
+  const r = radiusCss();
+  const cx = overlayCanvas.clientWidth / 2;
+  const cy = overlayCanvas.clientHeight / 2;
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  // Only markers within reach are kept: there can be ~15,000 satellites up.
+  const hits: PickTarget[] = [];
+  const add = (pos: Vec3, reach: number, key: string) => {
+    const q = project(camera, pos);
+    const sx = cx + q.x * r;
+    const sy = cy - q.y * r;
+    if (q.visible && Math.abs(sx - x) <= reach && Math.abs(sy - y) <= reach) hits.push({ x: sx, y: sy, reach, key });
+  };
+  const now = Date.now();
+
+  for (const f of satelliteOverlay(date, sunDirection(date))?.featured ?? []) add(f.state.pos, REACH.sat, pickKey('sat', f.sat.key));
+  if (catalog && bulkPositions && bulkVelocities && bulkPositions.length === catalog.elements.length * 3) {
+    // Where the renderer has moved each point to, from the last pass along its velocity.
+    const dt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (date.getTime() - bulkTime) / 1000));
+    const active = BULK_LEAVES.map((l) => leafOn(l, settings));
+    const [p, v] = [bulkPositions, bulkVelocities];
+    for (let i = 0; i < catalog.elements.length; i++) {
+      const k = i * 3;
+      if (!active[catalog.category[i]] || (!p[k] && !p[k + 1] && !p[k + 2])) continue;
+      add([p[k] + v[k] * dt, p[k + 1] + v[k + 1] * dt, p[k + 2] + v[k + 2] * dt], REACH.bulk, pickKey('sat', String(catalog.elements[i][0])));
+    }
+  }
+  for (const st of launchStates(date)) {
+    add(st.pos, REACH.launch, pickKey('launch', st.launch.id));
+    add(st.pad, REACH.launch, pickKey('launch', st.launch.id));
+  }
+  if (settings.quakes) for (const q of quakes) add(fromLatLon(q.lat, q.lon), Math.max(8, quakeRadius(q.mag) + 3), pickKey('quake', q.id));
+  if (settings.storms) for (const st of stormManifest?.storms ?? []) add(fromLatLon(st.pos[1], st.pos[0]), REACH.storm, pickKey('storm', st.id));
+  if (settings.events) for (const e of eventManifest?.events ?? []) add(fromLatLon(e.pos[1], e.pos[0]), eventSize(e.alert) + 5, pickKey('event', e.id));
+  if (settings.tsunami) {
+    for (const b of tsunamiManifest?.bulletins ?? []) if (tsunamiShown(b, now)) add(fromLatLon(b.lat, b.lon), REACH.tsunami, pickKey('tsunami', b.id));
+  }
+  if (settings.meteors) for (const f of meteorManifest?.fireballs ?? []) add(fromLatLon(f.lat, f.lon), REACH.fireball, pickKey('fireball', f.time));
+  if (settings.buoys) for (const b of buoyManifest?.buoys ?? []) add(fromLatLon(b.lat, b.lon), REACH.buoy, `buoy:${b.id}`);
+
+  const hit = nearestTarget(hits, x, y);
+  if (hit) return hit.key;
+  if (!settings.severe || !severeWarnings.length) return undefined;
+  const ground = unproject(camera, (x - cx) / r, -(y - cy) / r);
+  if (!ground) return undefined;
+  const { lat, lon } = toLatLon(ground);
+  // The one drawn on top: tornadoes over thunderstorms over floods.
+  const order = (w: SevereWarning) => WARNING_EVENTS.indexOf(w.event);
+  const under = [...severeWarnings].sort((a, b) => order(b) - order(a)).find((w) => w.polygons.some((poly) => inPolygon(lon, lat, poly)));
+  return under && pickKey('warning', under.id);
+}
+
+/** A click (a press that didn't move) opens the window of what's under it. */
+function pickAt(clientX: number, clientY: number) {
+  const key = targetAt(clientX, clientY);
+  if (key) select(key);
+}
+
+// The hand cursor over anything a click would open, the grab hand elsewhere. Checked once a
+// frame at most while the mouse moves, and every 300 ms while it rests (things move under it).
+let hover: { x: number; y: number; at: number } | undefined;
+let hoverFrame = 0;
+
+function checkHover() {
+  hoverFrame = 0;
+  if (!hover) return;
+  hover.at = performance.now();
+  overlayCanvas.classList.toggle('over-pick', !pointers.size && !!targetAt(hover.x, hover.y));
+}
+
+overlayCanvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  hover = { x: e.clientX, y: e.clientY, at: hover?.at ?? 0 };
+  hoverFrame ||= requestAnimationFrame(checkHover);
+});
+overlayCanvas.addEventListener('pointerleave', () => {
+  hover = undefined;
+  overlayCanvas.classList.remove('over-pick');
+});
 
 const placeToast = toasts.add({
   id: 'place-card',
@@ -1970,8 +2232,11 @@ function frame(now: number) {
       : 0;
   const satOverlay = satelliteOverlay(date, sunDir);
   const lStates = launchStates(date);
-  const lFocus = focusLaunch(lStates);
+  const lFocus = launchFocus(lStates);
   const launch = launchOverlay(lStates, lFocus);
+  const picked = pickedThing(satOverlay, lStates);
+  // A followed launch already has its reticle.
+  const pickedMark = picked?.pos && !(parsePick(settings.pick)?.kind === 'launch' && followingPick()) ? { pos: picked.pos, color: picked.detail.color } : undefined;
   launchFlags = {
     countdown: lStates.some((s) => s.phase === 'countdown'),
     flying: lStates.some((s) => s.phase === 'ascent' || s.phase === 'coast' || s.phase === 'deployed'),
@@ -2030,6 +2295,7 @@ function frame(now: number) {
     bottomInset: drawerInset,
     panels: [...toasts.rects(), ...domRects(credits, radarCredit)],
     target: target && target.until > Date.now() ? target : undefined,
+    picked: pickedMark,
     places: placeLabels,
     rows: [...(launch.row ? [launch.row] : []), ...layerRows()],
     sun,
@@ -2046,6 +2312,8 @@ function frame(now: number) {
     document.documentElement.style.setProperty('--readout-bottom', `${readoutBottom}px`);
   }
   issPanelView.update(issPanelState(sunDir));
+  syncPickPanel(picked?.detail);
+  if (hover && performance.now() - hover.at > 300) hoverFrame ||= requestAnimationFrame(checkHover);
   perfPanel.update(
     settings.fps
       ? {
@@ -2160,7 +2428,7 @@ const spread = () => {
   return Math.hypot(a.x - b.x, a.y - b.y);
 };
 
-/** Where a one-finger press began, for telling a click (select a buoy) from a drag. */
+/** Where a one-finger press began, for telling a click (pick what's there) from a drag. */
 let press: { id: number; x: number; y: number } | undefined;
 
 overlayCanvas.addEventListener('pointerdown', (e) => {
@@ -2175,8 +2443,6 @@ overlayCanvas.addEventListener('pointerdown', (e) => {
   }
   dragging = true;
   last = { x: e.clientX, y: e.clientY };
-  const here = viewerLatLon(settings, simTime(), resolveTrack);
-  if (settings.view !== 'fixed') update({ view: 'fixed', lat: here.lat, lon: here.lon, rot: 0 });
 });
 
 overlayCanvas.addEventListener('pointermove', (e) => {
@@ -2187,6 +2453,13 @@ overlayCanvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (!dragging) return;
+  if (settings.view !== 'fixed') {
+    // Following something (or any moving view): a press lets go only once it's a drag, so a
+    // click can still pick, and the drag carries on from wherever the view is now.
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) return;
+    const here = viewerLatLon(settings, simTime(), resolveTrack);
+    update({ view: 'fixed', lat: here.lat, lon: here.lon, rot: 0 });
+  }
   const degPerPx = 180 / Math.PI / radiusCss();
   const dx = e.clientX - last.x;
   const dy = e.clientY - last.y;
@@ -2200,7 +2473,7 @@ overlayCanvas.addEventListener('pointermove', (e) => {
 const endDrag = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
   if (e.type === 'pointerup' && press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) {
-    pickBuoy(e.clientX, e.clientY);
+    pickAt(e.clientX, e.clientY);
   }
   press = undefined;
   if (pointers.size < 2) pinch = null;
