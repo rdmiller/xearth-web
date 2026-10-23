@@ -1237,12 +1237,14 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     ground out to its frame's corners plus 2° (~30 s of flight), at about its pixel size:
     NASA's Blue Marble Next Generation (`BlueMarble_NextGeneration`, 500 m, dateless, CORS)
     by day and the newest night's lights (Black Marble nightly, 500 m) by night. The Blue Marble
-    goes in as a base map: it replaces only the ground's colour, so snow and ice, the relief
-    lighting and the clouds still go on it (yesterday's VIIRS, a photo with its own clouds,
-    makes them stand back). The camera has its own detail textures, bound to the same two
+    goes in as a base map: it replaces only the ground's colour, so snow and ice and the relief
+    lighting still go on it (yesterday's VIIRS, a photo with its own clouds, makes them stand
+    back). The camera has its own detail textures, bound to the same two
     texture units for its pass (`detailSlot`), so the main view's zoomed-in pictures are
     untouched. The live geostationary discs (~6 km a pixel) are left out of its pass, so they
-    don't paint over the sharper ground; their clouds come from the hourly map and Himawari.
+    don't paint over the sharper ground, and so are the clouds: the hourly map is 4096 × 2048,
+    ~10 km a texel, 20× coarser than the ground, and at the camera's scale its grid showed as
+    soft squares. The camera's Earth is clear-sky; rain, smoke, snow and fires still show.
     GIBS serves the 500 m mosaic with no dates, one picture all year, where the globe changes
     its Blue Marble month by month, so the camera's snow and greenery may look a season off.
   - *Station model:* NASA 3D Resources' "International Space Station (ISS) (B)" (NASA /

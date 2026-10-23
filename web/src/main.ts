@@ -1752,7 +1752,8 @@ const gibsNight = new GibsDetail((d) => {
 // The camera sees ~600 km of ground across a few hundred pixels, ~1 km a pixel, where the Blue
 // Marble's 7.4 km is soft. So it has pictures of its own from GIBS (gibs.ts) for the ground in
 // its frame, into the renderer's camera textures: the Blue Marble at 500 m by day (a base map,
-// so snow, relief and clouds still go on it) and the newest night's lights by night.
+// so snow and relief still go on it) and the newest night's lights by night. (Its pass leaves
+// the clouds out: the hourly map, ~10 km a texel, would show its grid.)
 
 let camDayShown = false;
 let camNightShown = false;
@@ -2936,7 +2937,10 @@ function frame(now: number) {
         bodies: [],
         satellites: null,
         fires: frameState.fires && { ...frameState.fires, minIntensity: 0 },
-        // Its own sharper ground; the live discs (~6 km a pixel) would paint over it.
+        // Its own sharper ground; the live discs (~6 km a pixel) would paint over it, and the
+        // hourly cloud map (~10 km a texel, 20× coarser) shows its grid in squares at this scale.
+        clouds: false,
+        himawari: false,
         detail: camDayShown,
         nightDetail: settings.imagery !== 'painted' && camNightShown,
         detailSlot: 'camera',
