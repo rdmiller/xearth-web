@@ -3,6 +3,10 @@
 
 import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
+import type { IonoMode } from './ionosphere';
+
+/** The ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
+export type { IonoMode };
 
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
 export type StarMode = 'on' | 'off' | 'photo';
@@ -95,6 +99,10 @@ export interface Settings extends ViewSettings {
   snowsrc: string;
   smokesrc: string;
   tsunamisrc: string;
+  /** The ionosphere wash (off by default: it tints the whole globe). */
+  iono: IonoMode;
+  /** Where the pipeline's GloTEC latest.json lives. */
+  ionosrc: string;
 }
 
 const VIEWS: readonly ViewMode[] = ['fixed', 'sunrel', 'orbit', 'moon', 'track'];
@@ -169,6 +177,8 @@ export function defaults(): Settings {
     snowsrc: dataSrc('VITE_SNOW_BASE', 'snowice/'),
     smokesrc: dataSrc('VITE_SMOKE_BASE', 'smoke/'),
     tsunamisrc: dataSrc('VITE_TSUNAMI_BASE', 'tsunami/'),
+    iono: 'off',
+    ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
   };
 }
 
@@ -208,6 +218,13 @@ function imageryMode(q: URLSearchParams, fallback: ImageryMode): ImageryMode {
   const legacy = q.get('truecolor');
   if (legacy !== null) return FALSY.includes(legacy.toLowerCase()) ? 'painted' : 'daily';
   return fallback;
+}
+
+function ionoMode(q: URLSearchParams, fallback: IonoMode): IonoMode {
+  const raw = q.get('iono')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'tec' || raw === 'drap') return raw;
+  return FALSY.includes(raw) ? 'off' : 'tec';
 }
 
 function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
@@ -284,6 +301,8 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     snowsrc: q.get('snowsrc') ?? base.snowsrc,
     smokesrc: q.get('smokesrc') ?? base.smokesrc,
     tsunamisrc: q.get('tsunamisrc') ?? base.tsunamisrc,
+    iono: ionoMode(q, base.iono),
+    ionosrc: q.get('ionosrc') ?? base.ionosrc,
   };
 }
 

@@ -26,8 +26,10 @@ uniform float uCloudMix;   // 0 → prev, 1 → cur
 uniform float uCloudOn;
 uniform float uLights;
 uniform float uGrid;
-uniform sampler2D uAurora;  // OVATION probability of visible aurora, 0–100 as bytes
+uniform sampler2D uAurora;  // r: OVATION probability of visible aurora, 0–100 as bytes;
+                            // g: GloTEC TEC, 0–120 TECU; b: D-RAP HF absorption, 0–35 MHz (ionosphere.ts)
 uniform float uAuroraOn;
+uniform float uIonoMode;    // 0 off, 1 TEC, 2 HF absorption
 uniform sampler2D uSnowIce;  // r = snow on land, g = ice concentration (NOAA IMS + Sea Ice Index)
 uniform float uSnowIceOn;
 uniform sampler2D uRadar;    // RainViewer composite, Web Mercator ±85.05°, premultiplied
@@ -80,6 +82,21 @@ vec2 boxUV(vec4 box, float lon, float lat) {
 float boxFade(vec2 duv, vec4 box, float coslat) {
   vec2 edgeDeg = min(duv, 1.0 - duv) * box.zw * vec2(coslat, 1.0);
   return smoothstep(0.0, 0.04 * min(box.z * coslat, box.w), min(edgeDeg.x, edgeDeg.y));
+}
+
+// Total electron content, low to high: deep violet, magenta, orange, pale yellow ("inferno"-like).
+vec3 tecRamp(float t) {
+  vec3 a = mix(vec3(0.16, 0.04, 0.42), vec3(0.78, 0.22, 0.50), smoothstep(0.0, 0.4, t));
+  vec3 b = mix(a, vec3(0.98, 0.55, 0.15), smoothstep(0.35, 0.7, t));
+  return mix(b, vec3(0.98, 0.95, 0.55), smoothstep(0.65, 1.0, t));
+}
+
+// HF absorption toward 35 MHz: violet, green, yellow, red. (SWPC's own maps start at blue, on
+// a dark background; over the ocean blue vanishes, so the quiet sunlit cap is violet here.)
+vec3 drapRamp(float t) {
+  vec3 a = mix(vec3(0.72, 0.38, 1.0), vec3(0.15, 0.85, 0.35), smoothstep(0.1, 0.35, t));
+  vec3 b = mix(a, vec3(1.0, 0.9, 0.15), smoothstep(0.25, 0.6, t));
+  return mix(b, vec3(1.0, 0.2, 0.1), smoothstep(0.55, 1.0, t));
 }
 
 // Analytic mip level: texels per screen pixel at this point. Avoids dFdx,
@@ -301,6 +318,21 @@ void main() {
     float glow = (1.0 - exp(-2.5 * pow(ap, 1.4))) * dark;
     vec3 aurora = mix(vec3(0.08, 0.95, 0.32), vec3(0.9, 0.2, 0.45), 0.3 * smoothstep(0.5, 1.0, ap));
     col += aurora * glow * 0.6;
+  }
+
+  // The ionosphere, ~300 km up: a colour wash over everything below, day and night. TEC
+  // fades in from ~8 TECU so the night side stays clear and the dayside crests stand out.
+  // Absorption is faint at a quiet day's 1–3 MHz, clear by ~10 MHz (radio blackouts), strong
+  // past 20: a flare or a proton event should stand out, not the everyday sunlit cap.
+  if (uIonoMode > 0.5) {
+    vec4 sw = textureLod(uAurora, uv, 0.0);
+    if (uIonoMode < 1.5) {
+      float t = sw.g;
+      col = mix(col, toLinear(tecRamp(t)), smoothstep(0.065, 0.6, t) * 0.55);
+    } else {
+      float t = sw.b;
+      col = mix(col, toLinear(drapRamp(t)), smoothstep(0.03, 0.45, t) * 0.6);
+    }
   }
 
   // Sun glint on open water (ocean picked out by its blue cast).

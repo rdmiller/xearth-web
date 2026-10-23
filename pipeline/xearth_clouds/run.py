@@ -40,6 +40,7 @@ JOBS: tuple[tuple[str, str, str], ...] = (
     ("snowice", "xearth_clouds.snowice", "snowice"),
     ("smoke", "xearth_clouds.smoke", "smoke"),
     ("tsunami", "xearth_clouds.tsunami", "tsunami"),
+    ("ionosphere", "xearth_clouds.ionosphere", "ionosphere"),
     ("clouds", "xearth_clouds", "clouds"),
 )
 JOB_TIMEOUT_S = 20 * 60
