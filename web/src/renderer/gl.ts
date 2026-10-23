@@ -6,7 +6,7 @@ import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 import fragSrc from './globe.frag.glsl?raw';
 import { BodyLayer, type BodyDraw } from './bodies';
-import { FIRE_STYLE, LIGHTNING_STYLE, SurfacePointLayer, type SurfacePoints } from './points';
+import { FIRE_STYLE, FLOOD_STYLE, LIGHTNING_STYLE, SurfacePointLayer, type SurfacePoints } from './points';
 import type { AuroraGrid } from '../hazards';
 import { SatLayer, type SatCategoryLook } from './sats';
 import { StarLayer } from './stars';
@@ -61,6 +61,8 @@ export interface FrameState {
   relief: number;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
   fires: { windowH: number; minIntensity: number } | null;
+  /** Flood extent (NASA LANCE), with the GDACS events. */
+  floods: boolean;
   /** Lightning layer: flashes at most `windowMin` old. */
   lightning: { windowMin: number } | null;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
@@ -97,6 +99,7 @@ export class GlobeRenderer {
   private readonly sats: SatLayer;
   private readonly bodies: BodyLayer;
   private readonly fireLayer: SurfacePointLayer;
+  private readonly floodLayer: SurfacePointLayer;
   private readonly lightningLayer: SurfacePointLayer;
   private readonly auroraTex: WebGLTexture;
   private hasAurora = false;
@@ -168,6 +171,7 @@ export class GlobeRenderer {
     this.sats = new SatLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.bodies = new BodyLayer(gl, (vs, fs) => link(gl, vs, fs));
     this.fireLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), FIRE_STYLE);
+    this.floodLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), FLOOD_STYLE);
     this.lightningLayer = new SurfacePointLayer(gl, (vs, fs) => link(gl, vs, fs), LIGHTNING_STYLE);
     // Optional layers start as a transparent 1×1 texture: the globe shader keeps them all
     // bound, and an empty texture object on a bound unit makes WebGL warn every frame
@@ -579,6 +583,10 @@ export class GlobeRenderer {
     this.fireLayer.setPoints(points);
   }
 
+  setFloods(points: SurfacePoints) {
+    this.floodLayer.setPoints(points);
+  }
+
   setLightning(points: SurfacePoints) {
     this.lightningLayer.setPoints(points);
   }
@@ -732,6 +740,7 @@ export class GlobeRenderer {
     gl.bindVertexArray(null);
 
     const res: [number, number] = [this.canvas.width, this.canvas.height];
+    if (f.floods) this.floodLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: 1, minIntensity: 0 }, res);
     if (f.fires) {
       this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.fires.windowH, minIntensity: f.fires.minIntensity }, res);
     }

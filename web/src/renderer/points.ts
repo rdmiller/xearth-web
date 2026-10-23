@@ -1,5 +1,6 @@
 // Surface point layers: one GL point per cell on the globe, drawn after it —
-// fires (NASA FIRMS, MTG FRP) and lightning (GOES GLM, MTG LI) share this, each with its own style.
+// fires (NASA FIRMS, MTG FRP), lightning (GOES GLM, MTG LI) and flood extent (NASA LANCE)
+// share this, each with its own style.
 //
 // Drawn to scale: each point is its footprint on the ground (never under the
 // style's minimum size), so at globe zoom a cell is a pixel or two and only
@@ -32,6 +33,12 @@ export interface PointStyle {
 
 /** Red-orange throughout, so fires never read as the yellow-white of city lights. */
 export const FIRE_STYLE: PointStyle = { low: [1.0, 0.22, 0.04], high: [1.0, 0.55, 0.12], day: 0.35, fadeTo: 0.45, minPx: 1 };
+
+/**
+ * Flood water, blue as public flood maps draw it: deep blue for flood (intensity 1), paler and
+ * fainter cyan for recurring flood. As bright by day as by night: it's on the ground.
+ */
+export const FLOOD_STYLE: PointStyle = { low: [0.45, 0.85, 1.0], high: [0.12, 0.38, 1.0], day: 1, fadeTo: 1, minPx: 1.5 };
 
 /** Blue-white sparks, fading out across the window. */
 export const LIGHTNING_STYLE: PointStyle = { low: [0.42, 0.58, 1.0], high: [0.9, 0.94, 1.0], day: 0.6, fadeTo: 0.2, minPx: 1.5 };

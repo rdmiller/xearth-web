@@ -75,6 +75,7 @@ import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
+import { detailRequest, fetchFloodCells, FLOOD_CHECK_MS, FLOOD_H, FLOOD_REFRESH_MS, FLOOD_W, floodPoints, floodSummary, newestFloodDate, withDetail, WORLD, type FloodBox, type FloodCell } from './flood';
 import {
   decodeOutlook,
   decodeWarnings,
@@ -1586,6 +1587,7 @@ function syncDetail(date: Date, radiusPx: number) {
   } else live.clear();
   if (himawariSkipped && facesHimawari(date)) runHimawari();
   if (settings.ash) ash.needDiscSize(radiusPx);
+  wantFloodDetail(box, degPerPx);
 }
 
 /** "106.6k", "940": counts in the readout. */
@@ -1641,6 +1643,7 @@ function layerRows(): ReadoutRow[] {
     add('lightning', [goes, mtg, `${LI_WINDOW_MIN} min`].filter(Boolean).join(' · '));
   }
   if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
+  if (settings.events && floodWorld) add('flood map', floodSummary(floodWorld.date, floodWorld.cells));
   if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
   if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
   if (settings.buoys && buoyManifest) add('buoys', buoySummary(buoyManifest));
@@ -1767,6 +1770,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
   { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // A flood day fills in as its passes arrive; dated noon, it's ~6–30 hours old.
+  { key: 'flood', label: 'Flood extent', source: 'NASA LANCE VIIRS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.events, everyMs: FLOOD_CHECK_MS },
   // GIBS has a MUR day the next day: dated noon, it's ~30 hours old when it lands.
   { key: 'sst', label: 'Sea temperature', source: 'GHRSST MUR', freshMs: 3 * 24 * 60 * MIN, on: () => settings.sst !== 'off', everyMs: SST_CHECK_MS },
   // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
@@ -2152,6 +2157,82 @@ function syncSst() {
   sstTimer = setInterval(() => void runSst(), SST_CHECK_MS);
 }
 
+// ---- flood extent (NASA LANCE VIIRS, via GIBS), with the GDACS events --------------------------
+// The world's flood cells from one picture a day (refreshed as today's passes come in), and the
+// view's own, finer, when zoomed in; drawn as points, as the fires are. See flood.ts.
+
+let floodWorld: { date: string; at: number; cells: FloodCell[] } | undefined;
+let floodDetail: { box: FloodBox; cells: FloodCell[] } | null = null;
+let floodTimer: ReturnType<typeof setInterval> | undefined;
+let floodDetailTimer: ReturnType<typeof setTimeout> | undefined;
+let floodDetailKey = '';
+let floodAbort: AbortController | undefined;
+
+function drawFloods() {
+  renderer.setFloods(floodPoints(withDetail(floodWorld?.cells ?? [], floodDetail)));
+  requestRedraw();
+}
+
+function runFlood(): Promise<void> {
+  feedLog.begin('flood', Date.now(), FLOOD_CHECK_MS);
+  return newestFloodDate(new Date())
+    .then(async (date) => {
+      if (!floodWorld || floodWorld.date !== date || Date.now() - floodWorld.at >= FLOOD_REFRESH_MS) {
+        floodWorld = { date, at: Date.now(), cells: await fetchFloodCells(date, WORLD, FLOOD_W, FLOOD_H) };
+        floodDetailKey = ''; // the zoomed-in picture follows the new day
+        drawFloods();
+      }
+      feedLog.done('flood', Date.now(), Date.parse(`${floodWorld.date}T12:00:00Z`));
+    })
+    .catch((err) => {
+      feedLog.fail('flood', Date.now(), err);
+      console.warn('flood extent:', err);
+    });
+}
+
+function syncFlood() {
+  clearInterval(floodTimer);
+  floodTimer = undefined;
+  if (!settings.events) {
+    floodDetail = null;
+    floodDetailKey = '';
+    return feedLog.stop('flood');
+  }
+  void runFlood();
+  floodTimer = setInterval(() => void runFlood(), FLOOD_CHECK_MS);
+}
+
+/** Zoomed in, the view's own flood picture, once the view has settled (as the live pictures). */
+function wantFloodDetail(view: { lat0: number; lat1: number; lon0: number; lon1: number }, degPerPx: number) {
+  const date = floodWorld?.date;
+  const req = settings.events && date ? detailRequest(view, degPerPx) : null;
+  const key = req ? `${date}/${req.box.lon0}/${req.box.lat1}/${req.box.lonSpan}/${req.box.latSpan}/${req.w}` : '';
+  if (key === floodDetailKey) return;
+  floodDetailKey = key;
+  clearTimeout(floodDetailTimer);
+  floodAbort?.abort();
+  if (!req || !date) {
+    if (floodDetail) {
+      floodDetail = null;
+      drawFloods();
+    }
+    return;
+  }
+  floodDetailTimer = setTimeout(() => {
+    const ac = new AbortController();
+    floodAbort = ac;
+    fetchFloodCells(date, req.box, req.w, req.h, ac.signal)
+      .then((cells) => {
+        if (floodDetailKey !== key) return;
+        floodDetail = { box: req.box, cells };
+        drawFloods();
+      })
+      .catch((err) => {
+        if (!ac.signal.aborted) console.warn('flood extent (zoomed in):', err);
+      });
+  }, 400);
+}
+
 const placeToast = toasts.add({
   id: 'place-card',
   title: 'Place',
@@ -2485,6 +2566,7 @@ function frame(now: number) {
     himawari: settings.clouds && liveShown(date),
     ash: settings.ash,
     sst: settings.sst === 'temp' ? 1 : settings.sst === 'anomaly' ? 2 : 0,
+    floods: settings.events,
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
@@ -2613,6 +2695,7 @@ function update(patch: Partial<Settings>) {
   if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
   if (settings.ash !== ashBefore) syncAsh();
   if ((settings.sst === 'off') !== (sstBefore === 'off')) syncSst();
+  if (settings.events !== hazardsBefore.events) syncFlood();
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -2820,6 +2903,7 @@ syncLive();
 syncHimawari();
 syncAsh();
 syncSst();
+syncFlood();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);

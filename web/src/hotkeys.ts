@@ -259,7 +259,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('x', 'fires', 'Fires (FIRMS, 24 h; MTG, last hour)'),
   layer('q', 'quakes', 'Earthquakes (24 h)'),
   layer('z', 'lightning', 'Lightning (GOES, MTG; 30 min)'),
-  layer('y', 'events', 'Floods, wildfires, eruptions (GDACS)'),
+  layer('y', 'events', 'Floods, wildfires, eruptions (GDACS), and flood extent (NASA)'),
   layer('i', 'snow', 'Snow and ice (today)'),
   {
     keys: ['shift+r'],

@@ -47,7 +47,8 @@ global cloud layer refreshed every hour from geostationary satellites.
     Lightning Mappers (the Americas, Atlantic and eastern Pacific) and the Lightning Imager on
     Meteosat Third Generation (Europe, Africa and the Atlantic), as blue-white sparks.
   - **Floods, wildfires, eruptions:** GDACS events with their impact levels; wildfires carry their
-    burned area, drawn to scale when zoomed in.
+    burned area, drawn to scale when zoomed in. With them, NASA's daily flood map (VIIRS): where
+    there's water that usually isn't, in blue, the view's own at up to 250 m when zoomed in.
   - **Volcanic ash** (Shift+A, off by default): EUMETSAT's Ash RGB, the false-colour infrared
     picture forecasters use for ash and SO2 plumes, over the whole globe day and night, with a
     toast of what its colours mean and GDACS's eruptions, each one press away.
@@ -251,6 +252,30 @@ at 8.7) and blue from the 10.8 µm temperature. Being infrared, it works day and
   day and how long ago, and which picture shows each and how often it's new. On 2026-10-23
   those were Kanlaon and Taal (Philippines, the Geo Ring only) and Krakatau (the Indian Ocean
   disc). Pressing one centres the globe on it.
+
+### Flood extent
+
+NASA LANCE's global flood product (VIIRS on NOAA-20 and NOAA-21, via GIBS) maps water seen
+where reference maps have none: flood, or recurring flood where past years flooded too. It's
+drawn with the GDACS events (Y), whose floods are only those big enough to be reported; on
+2026-10-23 GDACS had none current, while the map had ~22,000 km² of flood.
+
+- **Product:** the 2-day composite. NASA recommends none of the 1-, 2- and 3-day windows over
+  the others: the 1-day lets more cloud shadow through as false flood, the 3-day is older.
+  VIIRS, as MODIS's Terra and Aqua near their end. It's optical, so it can't see under cloud,
+  and NASA says it isn't research grade.
+- **The world in one picture:** 4096 × 2048 (0.088°, ~640 KB), its exact class colours read
+  back (flood, recurring flood; normal water and "not enough data" aren't drawn). The flood
+  pixels are scattered (~700 of 8.4 million on 2026-10-22) but keep the floods' area: over
+  South Sudan's Sudd it gave 0.123% of the box flooded, against 0.138% from a 0.01° picture.
+  Today's composite fills in as the day's passes arrive, so it's asked for again every 3 hours.
+- **Zoomed in** (past ~3 km a pixel), the view's own box, snapped out to whole degrees, is asked
+  for at the screen's resolution, no finer than the product's 250 m and at most 2048 px, and its
+  cells replace the world's there: the Sudd's flood shows the White Nile's shape.
+- **Drawn as points,** each its ground's size, as the FIRMS fires are, so it takes no texture
+  unit (the shader has none left: see Sea surface temperature). Blue, as public flood maps draw
+  flood water: deep for flood, paler and fainter for recurring flood, so it's never mistaken for
+  the red-orange fires. The readout gives the areas.
 
 ### Sea surface temperature
 
@@ -484,6 +509,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/himawariClouds.ts, src/himawariWorker.ts   Himawari live clouds: fetching, and a worker
   src/ash.ts         volcanic ash: the Ash RGB sources, their no-data mask, and the toast
   src/sst.ts         sea surface temperature: GIBS's MUR colours read back to °C, Niño 3.4
+  src/flood.ts       flood extent: GIBS's flood classes to points, world and zoomed in
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
@@ -808,6 +834,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour Enhanced (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
 | Live clouds (East Asia, west Pacific) | Himawari-9 AHI Band 13 (PNG, ~2.4 MB) and, by day, Band 3 (JPEG, ~340 KB) from NASA GIBS, turned into cloud opacity in a worker | browser, while its disc faces the view | 10 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
+| Flood extent | NASA LANCE VIIRS combined flood, 2-day (NASA GIBS WMS PNG: world 0.088°, ~640 KB; zoomed in, the view at up to 250 m) | browser, with the GDACS events | daily, refreshed every 3 h; checked hourly |
 | Sea surface temperature | GHRSST MUR temperature and anomaly (NASA GIBS WMS PNG, 0.25°, ~880 KB a day) | browser, while the layer is on | daily, a day behind; checked hourly |
 | Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
@@ -1228,6 +1255,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Meteosat Second Generation's 0° and Indian Ocean services.
 - Sea surface temperature: GHRSST Level 4 MUR Global Foundation SST Analysis (JPL MUR MEaSUREs
   Project), distributed by NASA PO.DAAC, via NASA GIBS.
+- Flood extent: NASA LANCE VIIRS (VCDWD) global flood product, NOAA-20 and NOAA-21, via NASA
+  GIBS.
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
 - Satellite rain: NASA GPM IMERG (Huffman et al.), early run, via NASA GIBS.
