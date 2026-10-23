@@ -48,7 +48,15 @@ export const SAT_TREE: SatBranch = {
     {
       key: 'comms',
       label: 'Communications',
-      children: [{ key: 'starlink', label: 'Starlink', group: 'starlink', color: '#d1e6ff', size: 2.2 }],
+      children: [
+        { key: 'starlink', label: 'Starlink', group: 'starlink', color: '#d1e6ff', size: 2.2 },
+        // Eutelsat OneWeb: ~1,200 km, 87.9°, so its shells are higher and more polar than Starlink's.
+        { key: 'oneweb', label: 'OneWeb', group: 'oneweb', color: '#9d8cff', size: 2.2 },
+        // Amazon's Project Kuiper: ~630 km, launching since 2025.
+        { key: 'kuiper', label: 'Kuiper', group: 'kuiper', color: '#ff9fd6', size: 2.2 },
+        // Qianfan (Spacesail, "Thousand Sails"): ~800–1,100 km, launching since 2024.
+        { key: 'qianfan', label: 'Qianfan', group: 'qianfan', color: '#ffe27a', size: 2.2 },
+      ],
     },
     {
       key: 'weather',
@@ -68,6 +76,9 @@ export const SAT_TREE: SatBranch = {
       children: [
         { key: 'gps', label: 'GPS', group: 'gps-ops', color: '#ffd166', size: 7, shape: 'diamond', labelable: true },
         { key: 'glonass', label: 'GLONASS', group: 'glo-ops', color: '#ff8c69', size: 7, shape: 'diamond', labelable: true },
+        { key: 'galileo', label: 'Galileo', group: 'galileo', color: '#7fb2ff', size: 7, shape: 'diamond', labelable: true },
+        // ~20,000 km like the others, plus geostationary and inclined geosynchronous satellites over Asia.
+        { key: 'beidou', label: 'BeiDou', group: 'beidou', color: '#ff6b8b', size: 7, shape: 'diamond', labelable: true },
       ],
     },
   ],
@@ -81,7 +92,7 @@ export const ALL_LEAVES = leaves().map((l) => l.key);
 /** The bulk (point-cloud) categories, in the order of their index in the GL layer. */
 export const BULK_LEAVES = leaves().filter((l) => l.group);
 /** Every far constellation (drawn as diamonds) is named; the dense low-orbit dots aren't. */
-export const DEFAULT_LABELS = ['weather-geo', 'weather-heo', 'gps', 'glonass'];
+export const DEFAULT_LABELS = ['weather-geo', 'weather-heo', 'gps', 'glonass', 'galileo', 'beidou'];
 
 export function findNode(key: string, node: SatNode = SAT_TREE): SatNode | undefined {
   if (node.key === key) return node;
@@ -160,7 +171,8 @@ export function bulkCatalog(m: SatelliteManifest): BulkCatalog {
 }
 
 /**
- * A label-sized name: "GOES 19", "METEOSAT-12", "NOAA 21", "GPS PRN 22", "GLONASS 730" / "GLONASS 702K".
+ * A label-sized name: "GOES 19", "METEOSAT-12", "NOAA 21", "GPS PRN 22", "GLONASS 730" / "GLONASS 702K",
+ * "GALILEO 5", "BEIDOU C06".
  * CelesTrak's names carry launch designations and slot numbers in brackets.
  */
 export function shortName(name: string): string {
@@ -170,11 +182,17 @@ export function shortName(name: string): string {
   // GLONASS slot/serial numbers; the newer GLONASS-K series carry a K ("702K").
   const glo = n.match(/^COSMOS \d+ \((\d+K?)\)$/);
   if (glo) return `GLONASS ${glo[1]}`;
+  // "GSAT0201 (GALILEO 5)" → "GALILEO 5": the build number means less than the flight model.
+  const gal = n.match(/^GSAT\d+ \((GALILEO[- ].+)\)$/);
+  if (gal) return gal[1];
+  // "BEIDOU-3 M1 (C19)" → "BEIDOU C19": the PRN, as for GPS.
+  const bds = n.match(/^BEIDOU.* \((C\d+)\)$/);
+  if (bds) return `BEIDOU ${bds[1]}`;
   // "METEOSAT-12 (MTG-I1)" → "METEOSAT-12"; "NOAA 20 (JPSS-1)" → "NOAA 20"; "EWS-G2 (GOES 15)" stays as named.
   return n.replace(/\s*\(.*\)$/, '');
 }
 
-/** "11,149 Starlink · 73 weather · 32 GPS · 28 GLONASS" — what's on, weather orbits summed. */
+/** "11,149 Starlink · 651 OneWeb · … · 73 weather · 32 GPS · 28 GLONASS" — what's on, weather orbits summed. */
 export function bulkSummary(c: BulkCatalog | undefined, s: Pick<Settings, 'sats' | 'satshow'>): string {
   if (!c) return '';
   const totals = new Map<string, number>();

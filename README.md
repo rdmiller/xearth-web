@@ -53,9 +53,11 @@ global cloud layer refreshed every hour from geostationary satellites.
   NORAD 62713) are labelled, with orbit lines and a `view=track` that rides along with them.
   The ~11,100 Starlinks are drawn as a point cloud, from SpaceX's own published ephemerides
   (via CelesTrak supplemental GP), which include newly launched ones not yet catalogued.
-  Weather satellites (geostationary, highly elliptical and low orbit), GPS and GLONASS are
-  their own colour-coded categories; zoom out to see the navigation shells (~20,000 km) and
-  the geostationary ring (~36,000 km). All are propagated live with SGP4 from CelesTrak
+  The other broadband constellations, OneWeb (~650), Amazon's Kuiper (~390) and China's
+  Qianfan (~260), are point clouds of their own. Weather satellites (geostationary, highly
+  elliptical and low orbit), GPS, GLONASS, Galileo and BeiDou are their own colour-coded
+  categories; zoom out to see the navigation shells (~20,000 km) and the geostationary ring
+  (~36,000 km). All are propagated live with SGP4 from CelesTrak
   elements, hidden behind the Earth, and dimmed in its shadow.
   - **Satellite panel** (the small button on Satellites in the layer dock, or Shift+O): a tree of every category with
     tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
@@ -385,8 +387,8 @@ docker compose down                 # stop (the data volume is kept)
 | `lightningsrc`, `eventsrc`, `snowsrc`, `smokesrc`, `tsunamisrc` | folders holding the lightning / GDACS / snow-and-ice / smoke / tsunami `latest.json` | `lightning/`, `events/`, `snowice/`, `smoke/`, `tsunami/` |
 | `launches`, `launchsrc` | launch mode on/off; folder holding its `latest.json` | 1, `launches/` |
 | `sats` | `all` (everything ticked), `featured` (named only), `0` | `all` |
-| `satshow` | categories ticked in the satellite panel: comma list of `iss`, `tiangong`, `satgus`, `starlink`, `weather-geo`, `weather-heo`, `weather-leo`, `gps`, `glonass`, or `none` | all |
-| `satlabels` | categories with name labels (same keys) | `weather-geo,weather-heo,gps,glonass` |
+| `satshow` | categories ticked in the satellite panel: comma list of `iss`, `tiangong`, `satgus`, `starlink`, `oneweb`, `kuiper`, `qianfan`, `weather-geo`, `weather-heo`, `weather-leo`, `gps`, `glonass`, `galileo`, `beidou`, or `none` | all |
+| `satlabels` | categories with name labels (same keys) | `weather-geo,weather-heo,gps,glonass,galileo,beidou` |
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |
@@ -459,8 +461,9 @@ Atlantic deck at dusk stayed at 0.02. The cloud job needs the month's Blue Marbl
 ## How the satellites work
 
 - **Data:** the pipeline fetches CelesTrak GP elements (OMM JSON) for the named satellites
-  and four groups: `starlink`, `weather` (73 on 2026-10-21), `gps-ops` (32) and `glo-ops`
-  (28). The three small groups also carry names, for labels. A group CelesTrak reports as
+  and nine groups: `starlink`, `oneweb` (651 on 2026-10-22), `kuiper` (391), `qianfan` (256),
+  `weather` (73), `gps-ops` (32), `glo-ops` (28), `galileo` (32) and `beidou` (54). The weather
+  and navigation groups also carry names, for labels. A group CelesTrak reports as
   "not updated" with nothing to reuse (one just added) is skipped for that run, not fatal.
   Starlink comes from CelesTrak's supplemental GP, fitted to SpaceX's own published
   ephemerides: more accurate than the catalogue, and it includes satellites not yet
@@ -484,10 +487,11 @@ Atlantic deck at dusk stayed at 0.02. The cloud job needs the month's Blue Marbl
   `sats` (the O key) and `satshow` (the panel) combine: a category shows when both allow it.
   Ticking in the panel keeps everything else exactly as it looks.
 - **Drawing:** the bulk satellites are one GL point layer after the globe, coloured per
-  category. Starlink and low-orbit weather are soft dots; the far constellations (GPS,
-  GLONASS, geostationary and elliptical weather) are 7 px hollow diamonds, since a dot that
-  far out reads as a star. Name labels (GOES 19, GPS PRN 02, GLONASS 720…) are propagated on
-  the main thread, a few dozen at most, and placed greedily so they never overlap a callout,
+  category. The broadband constellations and low-orbit weather are soft dots; the far ones
+  (GPS, GLONASS, Galileo, BeiDou, geostationary and elliptical weather) are 7 px hollow
+  diamonds, since a dot that far out reads as a star. Name labels (GOES 19, GPS PRN 02,
+  GLONASS 720, GALILEO 5, BEIDOU C19…) are propagated on the main thread, under 200 with
+  every category labelled, and placed greedily so they never overlap a callout,
   the status readout or each other. Each point is tested against the
   Earth (disc silhouette in orthographic, ray-sphere in perspective) and against a
   one-radius shadow cylinder, so it dims in the Earth's shadow. Named satellites are drawn on the
