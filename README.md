@@ -38,8 +38,9 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Aurora:** NOAA SWPC's OVATION forecast as a green glow on the night side.
   - **Tropical cyclones:** GDACS for every basin, with NHC detail for its storms. Each gets a
     symbol, name and intensity, the observed track solid and the forecast dashed.
-  - **Fires:** NASA FIRMS VIIRS detections from the last 12 h (`firehours`), drawn to scale in
-    red-orange.
+  - **Fires:** NASA FIRMS VIIRS detections from the last 12 h (`firehours`), plus what Meteosat
+    Third Generation saw burning in the last hour over Europe, Africa and the Atlantic (its fire
+    radiative power, every 10 minutes), drawn to scale in red-orange.
   - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
     by age, with labels on the largest.
   - **Lightning:** the last 30 minutes of flashes from the GOES-East and GOES-West Geostationary
@@ -364,6 +365,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/gibs.ts        NASA GIBS true-colour and night-lights tiles for the region on screen
   src/liveImagery.ts live GOES and MTG pictures: discs, newest drawn scan, zoomed-in requests
   src/mtgLightning.ts  MTG Lightning Imager frames → 0.1° cells, merged with GOES's
+  src/mtgFires.ts    MTG fire radiative power (WFS) → FIRMS's 0.05° cells, drawn with them
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
@@ -681,7 +683,8 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Sun image | NOAA SWPC GOES SUVI 304 Å (1280 px PNG) | browser, only while the Sun is in frame | 15 min |
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
-| Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 30 min |
+| Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 10 min |
+| Fires (Europe, Africa) | EUMETSAT MTG-I1 FCI Fire Radiative Power, six 10-min slots (EUMETView WFS GeoJSON, ~100 KB gzipped each) | browser | 10 min |
 | Lightning (Americas) | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 5 min |
 | Lightning (Europe, Africa) | EUMETSAT MTG-I1 Lightning Imager accumulated flash area, six 5-min frames (EUMETView WMS, ~270 KB each) | browser | 5 min |
 | Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour (EUMETView) | browser | 10 min scans, checked every 5 min |
@@ -815,6 +818,21 @@ into the webcast. So launch mode is built from what *is* published, and says whi
     the area actually flagged to ~57×. The remainder is the one-pixel floor: a screen pixel there
     is ~52 km², a VIIRS pixel 0.14 km². Africa really did have half the world's detections (the
     southern dry-season burning), but they flagged at most ~0.05% of the continent.
+  - *MTG fire radiative power:* VIIRS passes over a place a few times a day; the imager on
+    Meteosat Third Generation (MTG-I1, at 0°) sees Europe, Africa and the Atlantic every 10
+    minutes. EUMETView serves its FRP product as a WFS layer with CORS (one point per fire
+    pixel, with its power in MW and a 0–100 confidence), so the browser asks for each slot's
+    pixels as GeoJSON, trimmed to five fields: ~4,000 pixels and ~100 KB gzipped on 2026-10-23.
+    Pixels under 50% confidence are dropped (~9%) and the rest binned into FIRMS's 0.05° cells.
+    The last hour's six slots are kept, fetched one at a time (EUMETView turns away bursts), and
+    a cell shows its newest slot's power: power is a rate, so slots aren't summed. Slots are
+    listed ~20 minutes after they start, and their counts don't change once listed.
+  - *Drawn together:* each MTG cell is drawn at the ground its pixels cover: 1 km² below the
+    satellite, ~1.4 km² at a 40° viewing angle and ~2.2 km² at 58°, so a cell of geostationary
+    pixels is drawn larger than one of VIIRS's 375 m pixels. FIRMS and MTG cells aren't merged
+    where both see a fire (a VIIRS pass hours ago and an FCI scan now are different
+    observations), so both are drawn. On 2026-10-23 at 15:10Z the hour held 8.4k pixels in
+    5.9k cells. The readout counts FIRMS's detections and MTG's pixels separately.
 - **Earthquakes:** ring size ×1.5 per magnitude. Red within the hour, orange within 6 h, then
   yellow. The largest few, M6+, tsunami-flagged or PAGER-alerted quakes get labels.
 - **Lightning:** GLM files (one per 20 s per satellite, ~400 KB) are in NOAA's AWS buckets,
@@ -1057,8 +1075,9 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - True-colour imagery: NASA Global Imagery Browse Services (GIBS), part of NASA's Earth
   Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20, and
   GOES-East/West ABI GeoColor (NOAA/CIRA).
-- Live imagery and lightning over Europe and Africa: EUMETSAT, via EUMETView — MTG-I1 FCI
-  GeoColour RGB and Lightning Imager Accumulated Flash Area.
+- Live imagery, lightning and fire radiative power over Europe and Africa: EUMETSAT, via
+  EUMETView — MTG-I1 FCI GeoColour RGB and Fire Radiative Power, and Lightning Imager
+  Accumulated Flash Area.
 - Night lights: NASA Black Marble (Román et al.), NOAA-20 VIIRS Day/Night Band gap-filled BRDF
   corrected radiance, via NASA GIBS.
 - Icons: Lucide (ISC License).

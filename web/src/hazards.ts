@@ -1,6 +1,6 @@
 // Live hazard layers: aurora (NOAA SWPC OVATION), tropical cyclones
 // (GDACS + NHC, via the pipeline), active fires (NASA FIRMS VIIRS, via the
-// pipeline), earthquakes (USGS), lightning (GOES GLM), snow and ice (NOAA IMS),
+// pipeline; MTG's fire radiative power is in mtgFires.ts), earthquakes (USGS), lightning (GOES GLM), snow and ice (NOAA IMS),
 // smoke (NOAA HMS) and GDACS floods, wildfires and eruptions. Radar is in radar.ts. Decoding and naming only; drawing
 // is in renderer/ and overlay.ts.
 
@@ -229,6 +229,26 @@ export function decodeFires(m: FireManifest): FirePoints {
     detections[i] = count;
   }
   return { count: n, pos, look, ageH, detections };
+}
+
+/**
+ * FIRMS's cells and MTG's (mtgFires.ts) as one layer. They aren't merged where both see a
+ * cell: each is its own instrument's footprint, and a VIIRS pass hours ago and an FCI scan
+ * now are different observations, so both are drawn.
+ */
+export function joinFires(...parts: (FirePoints | undefined)[]): FirePoints {
+  const ps = parts.filter((p): p is FirePoints => !!p);
+  const count = ps.reduce((n, p) => n + p.count, 0);
+  const out: FirePoints = { count, pos: new Float32Array(count * 3), look: new Float32Array(count * 3), ageH: new Uint8Array(count), detections: new Uint16Array(count) };
+  let i = 0;
+  for (const p of ps) {
+    out.pos.set(p.pos.subarray(0, p.count * 3), i * 3);
+    out.look.set(p.look.subarray(0, p.count * 3), i * 3);
+    out.ageH.set(p.ageH.subarray(0, p.count), i);
+    out.detections.set(p.detections.subarray(0, p.count), i);
+    i += p.count;
+  }
+  return out;
 }
 
 /** Detections and cells within the last `hours`. */

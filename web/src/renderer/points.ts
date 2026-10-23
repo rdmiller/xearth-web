@@ -1,5 +1,5 @@
 // Surface point layers: one GL point per cell on the globe, drawn after it —
-// fires (NASA FIRMS) and lightning (GOES GLM) share this, each with its own style.
+// fires (NASA FIRMS, MTG FRP) and lightning (GOES GLM, MTG LI) share this, each with its own style.
 //
 // Drawn to scale: each point is its footprint on the ground (never under the
 // style's minimum size), so at globe zoom a cell is a pixel or two and only

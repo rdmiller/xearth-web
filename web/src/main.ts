@@ -70,6 +70,7 @@ import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteo
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
+import { FRP_CELL_DEG, FRP_WINDOW_MIN, FrpWindow, frpPoints, frpRows } from './mtgFires';
 import {
   decodeOutlook,
   decodeWarnings,
@@ -129,6 +130,7 @@ import {
   decodeFires,
   fireMinIntensity,
   firesWithin,
+  joinFires,
   decodeOvation,
   decodeQuakes,
   isFireManifest,
@@ -707,8 +709,13 @@ function launchOverlay(states: LaunchState[], focus: LaunchState | undefined) {
 
 let aurora: AuroraGrid | undefined;
 let stormManifest: StormManifest | undefined;
+/** FIRMS's cells (the pipeline) and MTG's (the browser, mtgFires.ts), drawn as one layer. */
 let firePoints: FirePoints | undefined;
 let fireManifest: FireManifest | undefined;
+let firmsPoints: FirePoints | undefined;
+const frpWindow = new FrpWindow();
+let frpFires: FirePoints | undefined;
+let frpData: number[] = [];
 let quakes: Quake[] = [];
 /** When USGS generated the feed now shown, ms. */
 let quakesAt: number | undefined;
@@ -790,6 +797,14 @@ async function fetchJson(url: string): Promise<unknown> {
 }
 
 const pipelineFile = (src: string) => new URL('latest.json', new URL(src, location.href)).href;
+
+/** FIRMS's and MTG's fire cells as one manifest, for the place card (both are 0.05°). */
+function fireLayer(): FireManifest | undefined {
+  if (!fireManifest && !frpData.length) return undefined;
+  const base = fireManifest ?? { generated: frpWindow.latest ?? '', source: '', cellDeg: FRP_CELL_DEG, detections: 0, count: 0, data: [] };
+  const data = [...base.data, ...frpData];
+  return { ...base, count: data.length / 5, data };
+}
 
 /** GOES and MTG lightning cells together (the pipeline's GOES cells are also 0.1°). */
 function lightningData(): number[] {
@@ -922,16 +937,40 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
     },
     dataAt: () => stormManifest?.generated,
   },
+  // FIRMS from the pipeline (hourly; re-reading it is a 304 until it changes); MTG from
+  // EUMETSAT, which has CORS, as its 10-minute slots land. Each draws as soon as it arrives,
+  // and either one alone still draws.
   fires: {
-    everyMs: 30 * 60_000,
+    everyMs: 10 * 60_000,
     load: async () => {
-      const m = await fetchJson(pipelineFile(settings.firesrc));
-      if (!isFireManifest(m)) throw new Error('fires/latest.json is not a fire manifest');
-      fireManifest = m;
-      firePoints = decodeFires(m);
-      renderer.setFires(firePoints);
+      const draw = () => {
+        firePoints = joinFires(firmsPoints, frpFires);
+        renderer.setFires(firePoints);
+        requestRedraw();
+      };
+      const [firms, frp] = await Promise.allSettled([
+        fetchJson(pipelineFile(settings.firesrc)).then((m) => {
+          if (!isFireManifest(m)) throw new Error('fires/latest.json is not a fire manifest');
+          if (m.generated !== fireManifest?.generated) firmsPoints = decodeFires(m);
+          fireManifest = m;
+          draw();
+        }),
+        frpWindow.load().then((fires) => {
+          frpFires = frpPoints(fires);
+          frpData = frpRows(fires);
+          draw();
+        }),
+      ]);
+      if (firms.status === 'rejected' && frp.status === 'rejected') throw firms.reason;
+      if (firms.status === 'rejected') console.warn('fires (FIRMS):', firms.reason);
+      if (frp.status === 'rejected') console.warn('fires (MTG):', frp.reason);
     },
-    dataAt: () => fireManifest?.generated,
+    // The newer of FIRMS's run and MTG's newest slot.
+    dataAt: () => {
+      const t = [fireManifest?.generated, frpWindow.latest].map((v) => (v ? Date.parse(v) : NaN));
+      const newest = Math.max(...t.filter(Number.isFinite));
+      return Number.isFinite(newest) ? newest : undefined;
+    },
   },
   quakes: {
     everyMs: 5 * 60_000,
@@ -1526,7 +1565,12 @@ function layerRows(): ReadoutRow[] {
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
   if (settings.aurora && spaceWeather) add('space wx', spaceWeatherSummary(spaceWeather));
   if (settings.storms && stormManifest) add('cyclones', String(stormManifest.storms.length));
-  if (settings.fires && firePoints) add('fires', `${compact(firesWithin(firePoints, settings.firehours).detections)} in ${settings.firehours} h`);
+  if (settings.fires && firePoints) {
+    // FIRMS counts VIIRS detections; MTG, its fire pixels (~1 km and larger) in the last hour.
+    const firms = firmsPoints ? `FIRMS ${compact(firesWithin(firmsPoints, settings.firehours).detections)} in ${settings.firehours} h` : undefined;
+    const mtg = frpFires ? `MTG ${compact(frpWindow.pixels)} in ${FRP_WINDOW_MIN} min` : undefined;
+    add('fires', [firms, mtg].filter(Boolean).join(' · '));
+  }
   if (settings.quakes && quakes.length) add('quakes', `${quakes.length} M2.5+ in 24 h`);
   if (settings.lightning && (lightningManifest || liCells.length)) {
     // GOES counts flashes; MTG's frames give flashes per pixel, so it counts the 0.1° cells lit.
@@ -1671,7 +1715,7 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'tec', label: 'Ionosphere TEC', source: 'SWPC GloTEC', freshMs: PIPELINE_FRESH, on: () => settings.iono === 'tec', everyMs: 15 * MIN },
   { key: 'drap', label: 'HF absorption', source: 'SWPC D-RAP', freshMs: 20 * MIN, on: () => settings.iono === 'drap', everyMs: 10 * MIN },
   { key: 'storms', label: 'Cyclones', source: 'GDACS · NHC', freshMs: PIPELINE_FRESH, on: () => settings.storms },
-  { key: 'fires', label: 'Fires', source: 'NASA FIRMS', freshMs: PIPELINE_FRESH, on: () => settings.fires },
+  { key: 'fires', label: 'Fires', source: 'NASA FIRMS · MTG FRP', freshMs: PIPELINE_FRESH, on: () => settings.fires },
   { key: 'quakes', label: 'Quakes', source: 'USGS', freshMs: 10 * MIN, on: () => settings.quakes },
   { key: 'lightning', label: 'Lightning', source: 'GOES GLM · MTG LI', freshMs: PIPELINE_FRESH, on: () => settings.lightning },
   { key: 'events', label: 'Alerts', source: 'GDACS', freshMs: PIPELINE_FRESH, on: () => settings.events },
@@ -2029,7 +2073,7 @@ async function nearbySources(): Promise<NearbySources> {
     layerData(settings.events, eventManifest, pipelineFile(settings.eventsrc), isEventManifest),
     settings.quakes && quakes.length ? Promise.resolve(quakes) : onDemandJson(USGS_QUAKES_URL).then((f) => (isQuakeFeed(f) ? decodeQuakes(f) : [])),
     layerData(settings.lightning, lightningLayer(), pipelineFile(settings.lightningsrc), isLightningManifest),
-    layerData(settings.fires, fireManifest, pipelineFile(settings.firesrc), isFireManifest),
+    layerData(settings.fires, fireLayer(), pipelineFile(settings.firesrc), isFireManifest),
     layerData(settings.tsunami, tsunamiManifest, pipelineFile(settings.tsunamisrc), isTsunamiManifest),
   ]);
   const value = <T,>(r: PromiseSettledResult<T>) => (r.status === 'fulfilled' ? r.value : undefined);

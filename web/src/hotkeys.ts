@@ -239,7 +239,7 @@ export const HOTKEYS: readonly Hotkey[] = [
     },
   },
   layer('w', 'storms', 'Tropical cyclones'),
-  layer('x', 'fires', 'Fires (24 h)'),
+  layer('x', 'fires', 'Fires (FIRMS, 24 h; MTG, last hour)'),
   layer('q', 'quakes', 'Earthquakes (24 h)'),
   layer('z', 'lightning', 'Lightning (GOES, MTG; 30 min)'),
   layer('y', 'events', 'Floods, wildfires, eruptions (GDACS)'),
