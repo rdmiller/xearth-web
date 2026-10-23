@@ -1,0 +1,172 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -109.55,
+       32.88
+      ],
+      [
+       -109.5,
+       32.85
+      ],
+      [
+       -109.56,
+       32.74
+      ],
+      [
+       -109.51,
+       32.57
+      ],
+      [
+       -109.71,
+       32.49
+      ],
+      [
+       -109.75,
+       32.5
+      ],
+      [
+       -109.8,
+       32.56
+      ],
+      [
+       -109.79,
+       32.62
+      ],
+      [
+       -109.69,
+       32.75
+      ],
+      [
+       -109.7,
+       32.84
+      ],
+      [
+       -109.55,
+       32.88
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.35c760ee19071e55dae83f8f799919f68614eda3.001.1",
+    "event": "Flash Flood Warning",
+    "status": "Actual",
+    "messageType": "Update",
+    "areaDesc": "Graham, AZ",
+    "sent": "2026-10-22T18:56:00-07:00",
+    "expires": "2026-10-22T20:00:00-07:00",
+    "ends": "2026-10-22T20:00:00-07:00",
+    "parameters": {
+     "AWIPSidentifier": [
+      "FFWTWC"
+     ],
+     "WMOidentifier": [
+      "WGUS55 KTWC 230156"
+     ],
+     "flashFloodDetection": [
+      "OBSERVED"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "EAS-ORG": [
+      "WXR"
+     ],
+     "VTEC": [
+      "/O.EXT.KTWC.FF.W.0248.000000T0000Z-261023T0300Z/"
+     ],
+     "eventEndingTime": [
+      "2026-10-22T20:00:00-07:00"
+     ]
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -107.8,
+       35.13
+      ],
+      [
+       -107.34,
+       35.68
+      ],
+      [
+       -106.84,
+       35.46
+      ],
+      [
+       -107.28,
+       34.89
+      ],
+      [
+       -107.63,
+       34.99
+      ],
+      [
+       -107.8,
+       35.13
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.7661ed2e003b599c15e7bbeae5ac6281f70255e2.001.1",
+    "event": "Severe Thunderstorm Warning",
+    "status": "Actual",
+    "messageType": "Alert",
+    "areaDesc": "Bernalillo, NM; Cibola, NM; McKinley, NM; Sandoval, NM",
+    "sent": "2026-10-22T19:53:00-06:00",
+    "expires": "2026-10-22T20:45:00-06:00",
+    "ends": "2026-10-22T20:45:00-06:00",
+    "parameters": {
+     "AWIPSidentifier": [
+      "SVRABQ"
+     ],
+     "WMOidentifier": [
+      "WUUS55 KABQ 230153"
+     ],
+     "eventMotionDescription": [
+      "2026-10-23T01:53:00-00:00...storm...222DEG...41KT...35.38,-107.3"
+     ],
+     "windThreat": [
+      "RADAR INDICATED"
+     ],
+     "maxWindGust": [
+      "60 MPH"
+     ],
+     "hailThreat": [
+      "RADAR INDICATED"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "EAS-ORG": [
+      "WXR"
+     ],
+     "VTEC": [
+      "/O.NEW.KABQ.SV.W.0365.261023T0153Z-261023T0245Z/"
+     ],
+     "eventEndingTime": [
+      "2026-10-22T20:45:00-06:00"
+     ]
+    }
+   }
+  }
+ ]
+}

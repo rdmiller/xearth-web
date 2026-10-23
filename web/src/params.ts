@@ -54,6 +54,8 @@ export interface Settings extends ViewSettings {
   radar: boolean;
   /** NOAA tsunami bulletins and NWS tsunami alerts. */
   tsunami: boolean;
+  /** US severe weather: NWS storm-based warnings and the SPC day-1 outlook. */
+  severe: boolean;
   /** NASA GIBS true-colour imagery when zoomed in. */
   truecolor: boolean;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
@@ -139,6 +141,7 @@ export function defaults(): Settings {
     radar: true,
     smoke: true,
     tsunami: true,
+    severe: true,
     truecolor: true,
     relief: true,
     reliefscale: 1,
@@ -243,6 +246,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     radar: bool(q, 'radar', base.radar),
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
+    severe: bool(q, 'severe', base.severe),
     truecolor: bool(q, 'truecolor', base.truecolor),
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
