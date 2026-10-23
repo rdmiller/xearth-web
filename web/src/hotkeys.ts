@@ -103,8 +103,8 @@ export const ISSLIVE_LABELS: Record<IssLiveMode, string> = {
 };
 const NEXT_IMAGERY: Record<ImageryMode, ImageryMode> = { live: 'daily', daily: 'painted', painted: 'live' };
 export const IMAGERY_LABELS: Record<ImageryMode, string> = {
-  live: 'Imagery: live satellite pictures (GOES, MTG)',
-  daily: 'Imagery: yesterday’s VIIRS mosaic when zoomed in',
+  live: 'Imagery: live satellite pictures (GOES, MTG), last night’s lights zoomed in',
+  daily: 'Imagery: yesterday’s VIIRS and last night’s lights when zoomed in',
   painted: 'Imagery off: Blue Marble and live clouds',
 };
 export const RAIN_LABELS = {
@@ -245,7 +245,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   {
     keys: ['shift+p'],
     label: 'Shift+P',
-    description: 'Imagery: live (GOES, MTG) → yesterday’s when zoomed in (VIIRS) → off',
+    description: 'Imagery: live (GOES, MTG) → yesterday’s when zoomed in (VIIRS) → off; either shows the newest night’s lights zoomed in',
     group: 'Layers',
     run(ctx) {
       const next = NEXT_IMAGERY[ctx.settings.imagery];

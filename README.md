@@ -118,7 +118,8 @@ would read as mush. Shift+P (or Imagery in the dock, tagged LIVE or DAILY) cycle
 | `daily` | Blue Marble; yesterday's VIIRS mosaic once zoomed in | GMGSI, hourly (VIIRS's own when zoomed) | 244 m |
 | `painted` | Blue Marble | GMGSI, hourly | Blue Marble, ~7 km |
 
-The night side is always the painted one: Black Marble city lights under the GMGSI cloud map.
+The night side is painted (Black Marble city lights under the GMGSI cloud map), except that
+zoomed in, `live` and `daily` both show the newest night's real lights (see Night lights).
 The older `truecolor=0` / `1` links still work (painted / daily).
 
 ### Live
@@ -171,6 +172,28 @@ side switches to yesterday's real colour: NASA GIBS's daily VIIRS mosaic from NO
   resolution in use. Each place is imaged once a day, around 13:30 local time.
 - Zooming (wheel and +/−) now goes to 50×, as far as the URL always allowed; it used to stop
   at 8×, where the imagery is ~2 km a pixel.
+
+### Night lights
+
+Zoomed in on the night side, with `live` or `daily` imagery: NASA's Black Marble nightly
+product from VIIRS's Day/Night Band (GIBS's "Gap-Filled BRDF Corrected Radiance"), in place of
+the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 2016 map.)
+
+- **Why that one:** of GIBS's night-band layers, the raw at-sensor radiance shows moonlit cloud
+  smearing the lights (and the app already draws live cloud), and the blue/yellow composite
+  paints cloud blue. The Black Marble nightly one is corrected for moonlight and the
+  atmosphere, and fills cloudy pixels from the last clear night, so it's clean lights: what's
+  lit now, power cuts, new towns, gas flares, fishing fleets.
+- **The look:** it's one grey band, about as bright as the 2016 map (90th–99th percentile
+  52–217 against 62–173 over Europe on 2026-10-21), so the shader gives it the Black Marble's
+  warm colour, over the Black Marble's dark ground (capped, so the old lights don't show
+  through), fading out at the fetched area's edges and where it has no data (polar day).
+- **Which night:** GIBS has it a day or two after the night; the app asks GIBS for its newest
+  date (every 6 hours) rather than guess. The readout's "lights" row gives the date and
+  resolution.
+- **Only the side on screen:** night tiles are fetched only when the view reaches the night
+  side, and day tiles only when it reaches the day side (they used to be fetched for an
+  all-night view too).
 
 ## Going to a place
 
@@ -283,7 +306,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
-  src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
+  src/gibs.ts        NASA GIBS true-colour and night-lights tiles for the region on screen
   src/liveImagery.ts live GOES and MTG pictures: discs, newest drawn scan, zoomed-in requests
   src/mtgLightning.ts  MTG Lightning Imager frames → 0.1° cells, merged with GOES's
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
@@ -870,6 +893,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   GOES-East/West ABI GeoColor (NOAA/CIRA).
 - Live imagery and lightning over Europe and Africa: EUMETSAT, via EUMETView — MTG-I1 FCI
   GeoColour RGB and Lightning Imager Accumulated Flash Area.
+- Night lights: NASA Black Marble (Román et al.), NOAA-20 VIIRS Day/Night Band gap-filled BRDF
+  corrected radiance, via NASA GIBS.
 - Icons: Lucide (ISC License).
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via

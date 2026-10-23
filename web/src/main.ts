@@ -47,7 +47,7 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
-import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, visibleBox, type Detail } from './gibs';
+import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import {
@@ -1215,6 +1215,15 @@ function syncLive() {
   liveTimer = setInterval(() => void runLive(), LIVE_CHECK_MS);
 }
 
+/** The newest night's lights (Black Marble nightly), the night side's counterpart, with either real-imagery mode. */
+let nightDetail: Detail | null = null;
+const gibsNight = new GibsDetail((d) => {
+  nightDetail = d;
+  if (d) renderer.setNightDetail(d.image, d.bounds);
+  else renderer.clearNightDetail();
+  requestRedraw();
+}, NIGHT_LIGHTS);
+
 /** Ask for the pictures this view needs (or none), given device px per Earth radius. */
 function syncDetail(date: Date, radiusPx: number) {
   const degPerPx = 180 / Math.PI / Math.max(radiusPx, 1);
@@ -1223,7 +1232,14 @@ function syncDetail(date: Date, radiusPx: number) {
   const radiusDeg = r >= 1 ? 90 : (Math.asin(r) * 180) / Math.PI;
   const at = viewerLatLon(settings, date, resolveTrack);
   const box = visibleBox(at.lat, at.lon, radiusDeg);
-  gibs.want(settings.imagery === 'daily' ? chooseRange(box, degPerPx) : null, new Date());
+  // Only the side that's on screen: the Sun's angle from the view's centre, give or take what's
+  // visible, against the day (up to 96°: civil twilight's end) and the night (from 90°).
+  const sun = subsolarPoint(date);
+  const fromSun = (Math.acos(Math.max(-1, Math.min(1, dot(fromLatLon(at.lat, at.lon), fromLatLon(sun.lat, sun.lon))))) * 180) / Math.PI;
+  const day = fromSun - radiusDeg < 96;
+  const night = fromSun + radiusDeg > 90;
+  gibs.want(settings.imagery === 'daily' && day ? chooseRange(box, degPerPx) : null, new Date());
+  gibsNight.want(settings.imagery !== 'painted' && night ? chooseRange(box, degPerPx, NIGHT_LIGHTS.maxLevel) : null, new Date());
   if (liveShown(date)) {
     live.needDiscSize(radiusPx);
     live.want(liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX), at);
@@ -1252,6 +1268,10 @@ function layerRows(): ReadoutRow[] {
     const times = [...live.discs.values()].map((d) => d.time).sort();
     const span = times[0] === times[times.length - 1] ? hhmm(times[0]) : `${hhmm(times[0])}–${hhmm(times[times.length - 1])}`;
     add('imagery', `live ${span} UTC${live.detail && liveDetail ? ` · ${live.detail.source.name} ${perPx(live.detail.level)}` : ''}`);
+  }
+  if (settings.imagery !== 'painted' && nightDetail) {
+    const night = new Date(`${nightDetail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    add('lights', `${night} · ${perPx(nightDetail.level)}`);
   }
   if (settings.radar && settings.imerg && imerg) {
     add('rain', `radar now · satellite ${imerg.time.slice(11, 16)} UTC where no radar`);
@@ -1752,6 +1772,7 @@ function frame(now: number) {
     smoke: settings.smoke,
     detail: settings.imagery === 'daily' ? !!detail : liveShown(date) && liveDetail,
     live: liveShown(date),
+    nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
   });

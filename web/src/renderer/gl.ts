@@ -47,6 +47,8 @@ export interface FrameState {
   detail: boolean;
   /** Live geostationary discs (when any has been set). */
   live: boolean;
+  /** GIBS night-lights detail (when one has been set). */
+  nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
   relief: number;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
@@ -89,6 +91,8 @@ export class GlobeRenderer {
   private hasCover = false;
   private hasSmoke = false;
   private readonly detailTex: WebGLTexture;
+  private readonly nightDetailTex: WebGLTexture;
+  private nightDetailBox: [number, number, number, number] | null = null;
   private readonly reliefTex: WebGLTexture;
   private hasRelief = false;
   private detailBox: [number, number, number, number] | null = null;
@@ -136,6 +140,7 @@ export class GlobeRenderer {
     this.radarTex = empty();
     this.smokeTex = empty();
     this.detailTex = empty();
+    this.nightDetailTex = empty();
     this.reliefTex = empty();
     // The live discs' array starts as one transparent texel too, for the same reason.
     this.liveTex = gl.createTexture()!;
@@ -392,6 +397,26 @@ export class GlobeRenderer {
     this.detailBox = null;
   }
 
+  /** Night-lights detail for a lat/lon box, as setDetail. */
+  setNightDetail(image: TexImageSource, box: { lon0: number; lat1: number; lonSpan: number; latSpan: number }) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE15);
+    gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    this.nightDetailBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+  }
+
+  clearNightDetail() {
+    this.nightDetailBox = null;
+  }
+
   setFires(points: SurfacePoints) {
     this.fireLayer.setPoints(points);
   }
@@ -511,6 +536,11 @@ export class GlobeRenderer {
     gl.uniform4fv(this.u('uLiveBox'), this.liveBox);
     gl.uniform1fv(this.u('uLiveSub'), this.liveSub);
     gl.uniform3fv(this.u('uLiveSun'), this.liveSun);
+    gl.activeTexture(gl.TEXTURE15);
+    gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
+    gl.uniform1i(this.u('uNightDetail'), 15);
+    gl.uniform1f(this.u('uNightDetailOn'), f.nightDetail && this.nightDetailBox ? 1 : 0);
+    if (this.nightDetailBox) gl.uniform4fv(this.u('uNightDetailBox'), this.nightDetailBox);
     gl.activeTexture(gl.TEXTURE11);
     gl.bindTexture(gl.TEXTURE_2D, this.reliefTex);
     gl.uniform1i(this.u('uRelief'), 11);
