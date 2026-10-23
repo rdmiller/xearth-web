@@ -345,12 +345,17 @@ export function lightningIntensity(flashes: number): number {
 
 /** Points for the GL layer: ages in minutes before the newest file. */
 export function decodeLightning(m: LightningManifest): SurfacePoints {
-  const n = Math.floor(m.data.length / 4);
+  return lightningPoints(m.data, m.cellDeg);
+}
+
+/** Flat [lat_index, lon_index, flashes, minutes_ago] cells (GOES, MTG or both) → GL points. */
+export function lightningPoints(data: number[], cellDeg: number): SurfacePoints {
+  const n = Math.floor(data.length / 4);
   const pos = new Float32Array(n * 3);
   const look = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const [latI, lonI, flashes, age] = m.data.slice(i * 4, i * 4 + 4);
-    pos.set(fromLatLon(latI * m.cellDeg, lonI * m.cellDeg), i * 3);
+    const [latI, lonI, flashes, age] = data.slice(i * 4, i * 4 + 4);
+    pos.set(fromLatLon(latI * cellDeg, lonI * cellDeg), i * 3);
     look[i * 3] = lightningIntensity(flashes);
     look[i * 3 + 1] = age;
     look[i * 3 + 2] = GLM_PIXEL_KM;

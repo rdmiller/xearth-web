@@ -10,6 +10,13 @@ export type StarMode = 'on' | 'off' | 'photo';
 /** `featured` = only the named satellites (ISS, Tiangong, SAT GUS); `all` adds Starlink. */
 export type SatMode = 'all' | 'featured' | 'off';
 
+/**
+ * What the day side shows: `live` geostationary pictures (GOES, MTG) where a satellite sees
+ * well, `daily` yesterday's VIIRS mosaic once zoomed in, or `painted`: the Blue Marble under
+ * the live cloud map only.
+ */
+export type ImageryMode = 'live' | 'daily' | 'painted';
+
 /** NASA ISS telemetry panel: while tracking the ISS, always, or off (no connection). */
 export type IssLiveMode = 'track' | 'on' | 'off';
 
@@ -54,8 +61,8 @@ export interface Settings extends ViewSettings {
   radar: boolean;
   /** NOAA tsunami bulletins and NWS tsunami alerts. */
   tsunami: boolean;
-  /** NASA GIBS true-colour imagery when zoomed in. */
-  truecolor: boolean;
+  /** Live geostationary pictures, yesterday's VIIRS mosaic when zoomed in, or neither. */
+  imagery: ImageryMode;
   /** Terrain lit by the real Sun (ETOPO 2022 slopes); off shows NASA's fixed shaded relief. */
   relief: boolean;
   /** Relief strength: 1 = the default vertical exaggeration. */
@@ -139,7 +146,7 @@ export function defaults(): Settings {
     radar: true,
     smoke: true,
     tsunami: true,
-    truecolor: true,
+    imagery: 'live',
     relief: true,
     reliefscale: 1,
     isslive: 'track',
@@ -186,6 +193,15 @@ function satMode(q: URLSearchParams, fallback: SatMode): SatMode {
   if (raw === undefined) return fallback;
   if (raw === 'featured' || raw === 'named') return 'featured';
   return FALSY.includes(raw) ? 'off' : 'all';
+}
+
+/** `imagery=live|daily|painted`; the older `truecolor=0/1` means painted / daily. */
+function imageryMode(q: URLSearchParams, fallback: ImageryMode): ImageryMode {
+  const raw = q.get('imagery')?.toLowerCase();
+  if (raw === 'live' || raw === 'daily' || raw === 'painted') return raw;
+  const legacy = q.get('truecolor');
+  if (legacy !== null) return FALSY.includes(legacy.toLowerCase()) ? 'painted' : 'daily';
+  return fallback;
 }
 
 function issLiveMode(q: URLSearchParams, fallback: IssLiveMode): IssLiveMode {
@@ -243,7 +259,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     radar: bool(q, 'radar', base.radar),
     smoke: bool(q, 'smoke', base.smoke),
     tsunami: bool(q, 'tsunami', base.tsunami),
-    truecolor: bool(q, 'truecolor', base.truecolor),
+    imagery: imageryMode(q, base.imagery),
     relief: bool(q, 'relief', base.relief),
     reliefscale: num(q, 'reliefscale', base.reliefscale, 0.1, 5),
     isslive: issLiveMode(q, base.isslive),

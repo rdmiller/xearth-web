@@ -35,7 +35,8 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Earthquakes:** USGS M2.5+ from the last 24 h, as rings sized by magnitude and coloured
     by age, with labels on the largest.
   - **Lightning:** the last 30 minutes of flashes from the GOES-East and GOES-West Geostationary
-    Lightning Mappers, as blue-white sparks (the Americas, Atlantic and eastern Pacific).
+    Lightning Mappers (the Americas, Atlantic and eastern Pacific) and the Lightning Imager on
+    Meteosat Third Generation (Europe, Africa and the Atlantic), as blue-white sparks.
   - **Floods, wildfires, eruptions:** GDACS events with their impact levels; wildfires carry their
     burned area, drawn to scale when zoomed in.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
@@ -60,6 +61,10 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Satellite panel** (the small button on Satellites in the layer dock, or Shift+O): a tree of every category with
     tri-state checkboxes, colour swatches, counts, and name-label toggles for the categories
     small enough to label. Every far constellation (the diamonds) is named by default; the dense low-orbit dots are not. Satellites a few pixels apart share a label ("MTG-I2 · MTG-S1"), and each label tries right, left, below and above before it is left out.
+- **Live imagery** — by day, today's colour pictures from GOES-West, GOES-East and Meteosat
+  Third Generation, refreshed as each satellite scans (every 10 minutes), in place of the
+  painted Blue Marble and cloud map. Shift+P switches to yesterday's sharper VIIRS mosaic when
+  zoomed in, or to the painted globe alone.
 - **Clouds** — NOAA/NESDIS GMGSI longwave-infrared mosaic (GOES-East/West, Meteosat,
   Himawari), plus its visible band by day for the low cloud infrared misses, converted
   hourly to an equirectangular alpha map and cross-faded in.
@@ -95,12 +100,54 @@ Terrain in the dock) switches it off.
 - **Zoomed in:** where the true-colour imagery shows, the relief fades out, because the
   photo already has the real shadows from the satellite's pass.
 
-## True-colour imagery when zoomed in
+## Imagery: live, yesterday's, or painted
+
+What the day side shows is one setting, because each choice brings its own clouds and two sets
+would read as mush. Shift+P (or Imagery in the dock, tagged LIVE or DAILY) cycles through:
+
+| `imagery=` | Day side | Clouds | Sharpest |
+|---|---|---|---|
+| `live` (default) | GOES-West, GOES-East and MTG GeoColor pictures, 20–80 min old | in the pictures | ~1 km (2 km a pixel zoomed in) |
+| `daily` | Blue Marble; yesterday's VIIRS mosaic once zoomed in | GMGSI, hourly (VIIRS's own when zoomed) | 244 m |
+| `painted` | Blue Marble | GMGSI, hourly | Blue Marble, ~7 km |
+
+The night side is always the painted one: Black Marble city lights under the GMGSI cloud map.
+The older `truecolor=0` / `1` links still work (painted / daily).
+
+### Live
+
+- **Sources:** GOES-West (137.2°W) and GOES-East (75.2°W) GeoColor from NASA GIBS, and MTG-I1
+  (0°) GeoColour from EUMETSAT's EUMETView. Both are WMS servers with CORS, so the browser asks
+  each for a JPEG of its disc on the globe's own latitude/longitude grid (1024–2048 px a side,
+  chosen by how big the globe is on screen; ~200 KB each at 1024). Checked every 5 minutes.
+- **Coverage:** together they see from about 150°E east across the Pacific, the Americas, the
+  Atlantic and Africa to about 70°E. Asia and the west Pacific are Himawari's, and neither server has a Himawari colour product, so the painted
+  globe shows there, blended in over a few degrees.
+- **In the shader:** the pictures are already lit by the real Sun, so they replace the
+  finished day-side colour (ground and cloud together) rather than the Blue Marble's albedo.
+  Each satellite fades out between 64° and 72° from the point below it, where the view gets
+  too oblique; where two overlap, the one seeing more face-on takes over within a few degrees,
+  so the clouds' parallax between the two views doesn't ghost.
+- **Only by day, then and now:** GeoColor's night side is a different product (infrared cloud
+  over a fixed city-lights map), and a scan an hour old has its terminator ~15° from today's.
+  So a picture shows only where the Sun is at least ~6° up both now and when it was taken.
+  A simulated time more than 30 minutes from now shows the painted globe.
+- **Zoomed in** past the Blue Marble (0.09° a screen pixel), the satellite seeing the view's
+  centre most face-on is asked for just what's on screen, snapped to GIBS's tile grid so a small
+  pan doesn't ask again, down to ~2 km a pixel. The readout names the satellite and resolution.
+- **GIBS's lag:** GIBS lists a GOES scan a few minutes after it's taken, but its WMS draws it
+  much later, and until then answers with an all-black JPEG rather than an error (2026-10-23:
+  00:40Z listed by 01:20, still black at 01:40). So the app tries the listed scans newest
+  first with a 64 px picture and uses the first that isn't black. GOES pictures are therefore
+  about an hour old, MTG's about 20 minutes. The feeds window shows the oldest disc's time.
+- Over open ocean GeoColor is a darker, greyer blue than the Blue Marble, so where a picture
+  fades into the painted globe the sea changes tone over a few degrees.
+
+### Yesterday's (daily)
 
 Zoom in past what the monthly Blue Marble can show (about 0.09° a screen pixel) and the day
 side switches to yesterday's real colour: NASA GIBS's daily VIIRS mosaic from NOAA-20
-("corrected reflectance"), down to 244 m a pixel at the 50× maximum zoom. Shift+P (or
-Imagery in the dock) turns it off.
+("corrected reflectance"), down to 244 m a pixel at the 50× maximum zoom.
 
 - **Only what's on screen:** GIBS serves EPSG:4326 tiles (plain latitude/longitude, the
   globe's own layout) with CORS, so the browser fetches them directly. Once the view settles
@@ -147,7 +194,7 @@ Imagery in the dock) turns it off.
     - Hazards from the app's own layers near the place: tropical cyclones within 800 km,
       tsunami bulletins within 1,000 km, the strongest M4.5+ quake within 300 km in the
       last day (or any within 50 km), GDACS floods and fires within 300 km and eruptions
-      within 150 km, GOES lightning within 50 km, and VIIRS fire detections within 25 km.
+      within 150 km, GOES or MTG lightning within 50 km, and VIIRS fire detections within 25 km.
       A layer that's switched off is fetched once for the card and cached for 10 minutes.
   - Units follow the browser's locale: °F and mph for the US, °C and km/h elsewhere.
 
@@ -184,11 +231,11 @@ style. A test checks that every layer hotkey has a button.
 | `B` | Sun and Moon on/off |
 | `U` | launches on/off · `J` follow the next launch · `K` preview it from T−1 min at 10× |
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
-| `Z` `Y` `I` | lightning, GDACS floods/wildfires/eruptions, snow and ice on/off |
+| `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
-| `Shift+P` | true-colour imagery when zoomed in (NASA GIBS) |
+| `Shift+P` | imagery: live (GOES, MTG) → yesterday's when zoomed in (VIIRS) → painted |
 | `Shift+E` | terrain lit by the Sun (ETOPO 2022) |
 | `/` | go to a place: search by name or coordinates (or double-click the globe) |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
@@ -227,6 +274,8 @@ web/        Vite + TypeScript + WebGL2 app
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
   src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
+  src/liveImagery.ts live GOES and MTG pictures: discs, newest drawn scan, zoomed-in requests
+  src/mtgLightning.ts  MTG Lightning Imager frames → 0.1° cells, merged with GOES's
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
   scripts/twa.mjs    Bubblewrap TWA manifest and assetlinks.json
@@ -377,7 +426,7 @@ docker compose down                 # stop (the data volume is kept)
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
-| `truecolor` | NASA GIBS true-colour imagery when zoomed in | 1 |
+| `imagery` | `live` GOES/MTG pictures by day, `daily` yesterday's VIIRS when zoomed in, `painted` neither (`truecolor=0/1` still read) | `live` |
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
@@ -528,7 +577,9 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Earthquakes | USGS M2.5+ past day (GeoJSON) | browser | 5 min |
 | Tropical cyclones | GDACS (JTWC / NHC tracks) + NHC current details | pipeline | hourly, browser re-reads every 15 min |
 | Fires | NASA FIRMS VIIRS NOAA-20 + NOAA-21, past 24 h | pipeline | hourly, browser re-reads every 30 min |
-| Lightning | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 15 min |
+| Lightning (Americas) | NOAA GOES-19 + GOES-18 GLM L2 flashes, last 30 min (AWS open data) | pipeline | hourly, browser re-reads every 5 min |
+| Lightning (Europe, Africa) | EUMETSAT MTG-I1 Lightning Imager accumulated flash area, six 5-min frames (EUMETView WMS, ~270 KB each) | browser | 5 min |
+| Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour (EUMETView) | browser | 10 min scans, checked every 5 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
@@ -568,9 +619,21 @@ into the webcast. So launch mode is built from what *is* published, and says whi
   - *Overlap:* GOES-East and GOES-West both see the eastern Pacific and the western Americas,
     so each cell takes the larger of the two satellites' counts, not their sum.
   - *Coverage:* GLM sees the Americas, the Atlantic and the eastern Pacific to about ±55°;
-    Europe, Africa and Asia have no lightning shown.
+    MTG's Lightning Imager (below) adds Europe, Africa and the Atlantic. Asia has none shown.
   - *Staleness:* the hourly run at :50 covers roughly :20–:50, so what's shown is up to
     ~90 minutes old by the next run. The data-feeds window gives the newest flash's time.
+  - *MTG Lightning Imager:* EUMETView serves its Accumulated Flash Area as a WMS layer with
+    CORS, so the browser reads it directly: a frame every 5 minutes, each that 5 minutes'
+    flashes, coloured by how many flashes covered each ~2 km pixel (1 to 20+, YlOrRd on a
+    linear scale; the colours are read back to counts from a table sampled off its legend).
+    The last six frames make the same 30-minute window as GOES. Frames are fetched at 0.05° a
+    pixel and binned into GOES's 0.1° cells, a cell taking its busiest pixel (a flash lights
+    every pixel its glow covers, so summing would overcount). Over Africa and the Atlantic on
+    2026-10-23, 0.05° caught 97% of the cells a 0.02° fetch found; 0.1° caught 88%. They're
+    typically 10–15 minutes old.
+  - *Both:* where GOES and MTG both see a cell (the Atlantic, eastern South America) it takes
+    the larger count and the newer age. The readout counts GOES's flashes and MTG's lit cells
+    separately, since MTG's frames give flashes per pixel, not per flash.
 - **GDACS events:** floods (GloFAS) and wildfires (GWIS) come from GDACS's list of current
   events. GDACS records an eruption as a single moment that is never "current", so eruptions
   come from a search over the last 90 days, one marker per volcano at its latest eruption.
@@ -745,7 +808,10 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
 - Terrain: NOAA National Centers for Environmental Information, ETOPO 2022 15 Arc-Second Global
   Relief Model (60″ surface elevation), doi:10.25921/fd45-gt74.
 - True-colour imagery: NASA Global Imagery Browse Services (GIBS), part of NASA's Earth
-  Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20.
+  Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20, and
+  GOES-East/West ABI GeoColor (NOAA/CIRA).
+- Live imagery and lightning over Europe and Africa: EUMETSAT, via EUMETView — MTG-I1 FCI
+  GeoColour RGB and Lightning Imager Accumulated Flash Area.
 - Icons: Lucide (ISC License).
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via
@@ -755,7 +821,7 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's
   Earth Science Data and Information System (ESDIS)."
 - Lightning: NOAA GOES-R Series Geostationary Lightning Mapper (GLM) L2 data via the NOAA Open
-  Data Dissemination program on AWS.
+  Data Dissemination program on AWS; EUMETSAT MTG Lightning Imager (see above).
 - Floods, wildfires, eruptions: GDACS, a cooperation framework of the United Nations and the
   European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal

@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
+import { defaults, type ImageryMode, type IssLiveMode, type SatMode, type Settings, type StarMode } from './params';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -92,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'truecolor' | 'relief';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'relief';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -100,6 +100,12 @@ export const ISSLIVE_LABELS: Record<IssLiveMode, string> = {
   track: 'ISS telemetry while tracking the ISS',
   on: 'ISS telemetry always',
   off: 'ISS telemetry off',
+};
+const NEXT_IMAGERY: Record<ImageryMode, ImageryMode> = { live: 'daily', daily: 'painted', painted: 'live' };
+export const IMAGERY_LABELS: Record<ImageryMode, string> = {
+  live: 'Imagery: live satellite pictures (GOES, MTG)',
+  daily: 'Imagery: yesterday’s VIIRS mosaic when zoomed in',
+  painted: 'Imagery off: Blue Marble and live clouds',
 };
 export const STAR_LABELS: Record<StarMode, string> = {
   on: 'Stars on',
@@ -213,13 +219,23 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('w', 'storms', 'Tropical cyclones'),
   layer('x', 'fires', 'Fires (24 h)'),
   layer('q', 'quakes', 'Earthquakes (24 h)'),
-  layer('z', 'lightning', 'Lightning (GOES, 30 min)'),
+  layer('z', 'lightning', 'Lightning (GOES, MTG; 30 min)'),
   layer('y', 'events', 'Floods, wildfires, eruptions (GDACS)'),
   layer('i', 'snow', 'Snow and ice (today)'),
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
-  layer('shift+p', 'truecolor', 'True-colour imagery when zoomed in (NASA GIBS)'),
+  {
+    keys: ['shift+p'],
+    label: 'Shift+P',
+    description: 'Imagery: live (GOES, MTG) → yesterday’s when zoomed in (VIIRS) → off',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_IMAGERY[ctx.settings.imagery];
+      ctx.update({ imagery: next });
+      ctx.toast(IMAGERY_LABELS[next]);
+    },
+  },
   layer('shift+e', 'relief', 'Terrain lit by the Sun (ETOPO 2022)'),
   {
     keys: ['shift+o'],

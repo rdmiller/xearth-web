@@ -5,6 +5,7 @@
 // antialiased with a coverage term. Output is premultiplied (alpha = disc
 // coverage) and blended over the star layer drawn underneath.
 precision highp float;
+precision mediump sampler2DArray;
 
 uniform vec2 uRes;
 uniform float uRadiusPx;   // pixels per Earth radius
@@ -36,12 +37,24 @@ uniform float uSmokeOn;
 uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
 uniform float uDetailOn;
 uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees); lon may run past 180
+uniform float uDetailLive;   // 1: the detail is a live geostationary picture, not yesterday's VIIRS
+uniform float uDetailSub;    // its satellite's longitude (radians)
+uniform vec3 uDetailSun;     // the Sun's direction when it was taken
+uniform sampler2DArray uLive; // live geostationary discs: GOES-West, GOES-East, MTG (liveImagery.ts)
+uniform float uLiveOn;
+uniform float uLiveHas[3];
+uniform vec4 uLiveBox[3];    // as uDetailBox, per disc
+uniform float uLiveSub[3];   // longitude below each satellite (radians)
+uniform vec3 uLiveSun[3];    // the Sun's direction when each was taken
 uniform sampler2D uRelief;   // terrain slopes, east (r) and north (g), from ETOPO 2022 (make-relief.py)
 uniform float uReliefK;      // vertical exaggeration; 0 = off (the day texture then has NASA's shading)
 
 out vec4 outColor;
 
 const float PI = 3.14159265359;
+// Live pictures fade out between 64° and 72° from the point below their satellite (LIMB_DEG).
+const float LIMB_COS = 0.309;
+const float LIMB_COS_IN = 0.438;
 
 vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 
@@ -97,7 +110,7 @@ void main() {
   // Zoomed in: yesterday's VIIRS true colour in place of the Blue Marble. GIBS draws "no
   // data" black, so dark texels fall back; the box edge fades so the seam doesn't show.
   float detailA = 0.0;
-  if (uDetailOn > 0.5) {
+  if (uDetailOn > 0.5 && uDetailLive < 0.5) {
     float du = mod(degrees(lon) - uDetailBox.x, 360.0) / uDetailBox.z;
     float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
     if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
@@ -169,6 +182,57 @@ void main() {
   vec3 cloudCol = vec3(0.95) * dayW * (0.25 + 0.75 * lambert) * tint + vec3(0.012, 0.015, 0.022) * nightW;
   vec3 col = mix(dayCol + nightCol, cloudCol, ca * 0.92);
 
+  // Live geostationary pictures. They're already lit by the real Sun, so they replace the
+  // finished day-side colour (ground and cloud together), not the albedo, and only where the
+  // Sun is well up both now and when the scan was taken (up to an hour or so ago): their night
+  // side is a different product, and the terminator moves ~15° an hour. Each satellite fades toward its
+  // limb; where two overlap, the one seeing more face-on takes over within a few degrees, so
+  // the clouds' parallax between them doesn't ghost. Premultiplied: livePre over liveA.
+  float liveA = 0.0;
+  vec3 livePre = vec3(0.0);
+  if (uLiveOn > 0.5) {
+    vec3 acc = vec3(0.0);
+    float wsum = 0.0;
+    float texPerRad = float(textureSize(uLive, 0).x);
+    for (int i = 0; i < 3; i++) {
+      if (uLiveHas[i] < 0.5) continue;
+      vec4 bx = uLiveBox[i];
+      float du = mod(degrees(lon) - bx.x, 360.0) / bx.z;
+      float dv = (bx.y - degrees(lat)) / bx.w;
+      if (du < 0.0 || du > 1.0 || dv < 0.0 || dv > 1.0) continue;
+      float cosg = coslat * cos(lon - uLiveSub[i]);
+      float fade = smoothstep(LIMB_COS, LIMB_COS_IN, cosg);
+      if (fade <= 0.0) continue;
+      float lod = log2(max(texPerRad / radians(bx.z) / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      vec3 c = textureLod(uLive, vec3(du, dv, float(i)), lod).rgb;
+      float q = fade * smoothstep(0.012, 0.045, max(c.r, max(c.g, c.b))) * smoothstep(0.1, 0.25, dot(n, uLiveSun[i]));
+      float w = q * exp(40.0 * (cosg - 1.0));
+      acc += w * toLinear(c);
+      wsum += w;
+      liveA = max(liveA, q);
+    }
+    livePre = acc / max(wsum, 1e-30) * liveA;
+  }
+  // Zoomed in: the satellite seeing the view most face-on, for just what's on screen, over the discs.
+  if (uDetailOn > 0.5 && uDetailLive > 0.5) {
+    float du = mod(degrees(lon) - uDetailBox.x, 360.0) / uDetailBox.z;
+    float dv = (uDetailBox.y - degrees(lat)) / uDetailBox.w;
+    if (du >= 0.0 && du <= 1.0 && dv >= 0.0 && dv <= 1.0) {
+      float texPerRad = float(textureSize(uDetail, 0).x) / radians(uDetailBox.z);
+      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      vec3 d = textureLod(uDetail, vec2(du, dv), lod).rgb;
+      float data = smoothstep(0.012, 0.045, max(d.r, max(d.g, d.b)));
+      vec2 edgeDeg = min(vec2(du, dv), 1.0 - vec2(du, dv)) * uDetailBox.zw * vec2(coslat, 1.0);
+      float edge = smoothstep(0.0, 0.04 * min(uDetailBox.z * coslat, uDetailBox.w), min(edgeDeg.x, edgeDeg.y));
+      float q = data * edge * smoothstep(LIMB_COS, LIMB_COS_IN, coslat * cos(lon - uDetailSub)) * smoothstep(0.1, 0.25, dot(n, uDetailSun));
+      livePre = livePre * (1.0 - q) + toLinear(d) * q;
+      liveA = liveA * (1.0 - q) + q;
+    }
+  }
+  // Sun 6° up and the pictures start to show; 14°, they're all there is.
+  float liveW = smoothstep(0.1, 0.25, k);
+  col = col * (1.0 - liveA * liveW) + livePre * liveW;  liveA *= liveW;
+
   // Radar on top of the clouds, as on a weather map (it shows the rain beneath
   // them). The texture is Web Mercator, so latitude maps through ln tan; its
   // texel size on the ground shrinks with cos(latitude), which sets the mip level.
@@ -197,7 +261,7 @@ void main() {
   // Sun glint on open water (ocean picked out by its blue cast).
   float ocean = uHasDay > 0.5 ? smoothstep(0.03, 0.12, albedoS.b - max(albedoS.r, albedoS.g)) : 1.0;
   vec3 hv = normalize(uSun + view);
-  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * (1.0 - iceC) * (1.0 - smokeA) * dayW;
+  col += vec3(1.0, 0.95, 0.85) * pow(max(dot(n, hv), 0.0), 30.0) * 0.18 * ocean * (1.0 - ca) * (1.0 - iceC) * (1.0 - smokeA) * (1.0 - liveA) * dayW;
 
   // Atmosphere along the lit limb.
   col += vec3(0.30, 0.50, 1.0) * pow(1.0 - mu, 4.0) * 0.6 * smoothstep(-0.2, 0.4, k);
