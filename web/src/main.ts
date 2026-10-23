@@ -1299,7 +1299,8 @@ function syncDetail(date: Date, radiusPx: number) {
   gibsNight.want(settings.imagery !== 'painted' && night ? chooseRange(box, degPerPx, NIGHT_LIGHTS.maxLevel) : null, new Date());
   if (liveShown(date)) {
     live.needDiscSize(radiusPx);
-    live.want(liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX), at);
+    // Its pictures are day-side only, so an all-night view asks for none.
+    live.want(day ? liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX) : null, at);
   } else live.clear();
 }
 
