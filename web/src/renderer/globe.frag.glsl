@@ -56,6 +56,12 @@ uniform sampler2D uHim;      // Himawari-9 cloud opacity (himawariClouds.ts): r 
 uniform float uHimOn;
 uniform vec4 uHimBox;        // as uDetailBox
 uniform float uHimSub;       // longitude below Himawari (radians)
+uniform sampler2DArray uAsh; // Ash RGB: MSG 0°, the Indian Ocean disc, the Geo Ring (ash.ts)
+uniform float uAshOn;
+uniform float uAshHas[3];
+uniform vec4 uAshBox[3];     // as uDetailBox, per picture
+uniform float uAshSub[3];    // longitude below each satellite (radians)
+uniform float uAshTier[3];   // 0 first, 1 where 0 isn't, 2 (a whole-world mosaic) under both
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -310,6 +316,41 @@ void main() {
   float liveW = smoothstep(0.1, 0.25, k);
   col = col * (1.0 - liveA * liveW) + livePre * liveW;
   liveA *= liveW;
+
+  // Volcanic ash: EUMETSAT's Ash RGB, a false-colour infrared picture made for ash and SO2,
+  // day and night, over everything so far. The discs fade toward their limbs as the live
+  // pictures do; each tier goes under the ones before it. Their no data is transparent
+  // (maskAshNoData), premultiplied, so the alpha is both the mask and the divisor.
+  if (uAshOn > 0.5) {
+    float texPerRad = float(textureSize(uAsh, 0).x);
+    vec3 ashPre = vec3(0.0);
+    float ashA = 0.0;
+    for (int tier = 0; tier < 3; tier++) {
+      vec3 acc = vec3(0.0);
+      float wsum = 0.0;
+      float ta = 0.0;
+      for (int i = 0; i < 3; i++) {
+        if (uAshHas[i] < 0.5 || int(uAshTier[i] + 0.5) != tier) continue;
+        vec2 duv = boxUV(uAshBox[i], lon, lat);
+        if (duv.x < 0.0 || duv.x > 1.0 || duv.y < 0.0 || duv.y > 1.0) continue;
+        float cosg = coslat * cos(lon - uAshSub[i]);
+        float fade = tier == 2 ? 1.0 : smoothstep(LIMB_COS, LIMB_COS_IN, cosg);
+        if (fade <= 0.0) continue;
+        float lod = log2(max(texPerRad / radians(uAshBox[i].z) / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+        vec4 c4 = textureLod(uAsh, vec3(duv, float(i)), lod);
+        vec3 c = c4.rgb / max(c4.a, 1e-3);
+        float q = fade * smoothstep(0.5, 0.9, c4.a);
+        float w = tier == 2 ? q : q * exp(40.0 * (cosg - 1.0));
+        acc += w * toLinear(c);
+        wsum += w;
+        ta = max(ta, q);
+      }
+      ashPre += acc / max(wsum, 1e-30) * ta * (1.0 - ashA);
+      ashA += ta * (1.0 - ashA);
+    }
+    col = col * (1.0 - ashA) + ashPre;
+    liveA += ashA * (1.0 - liveA); // no sun glint on the picture
+  }
 
   // Satellite rain (IMERG) where no radar sees, a little fainter than radar: it's an
   // estimate, and ~5 hours old. Under the radar, so the two never double up at the edge.

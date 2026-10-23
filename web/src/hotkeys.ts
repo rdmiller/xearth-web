@@ -92,7 +92,7 @@ export function track(ctx: HotkeyContext, key: string) {
   ctx.toast(`Tracking ${sat.name} — ${sat.detail}`);
 }
 
-type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors' | 'buoys' | 'relief';
+type Layer = 'clouds' | 'lights' | 'grid' | 'markers' | 'label' | 'fps' | 'feeds' | 'bodies' | 'launches' | 'aurora' | 'storms' | 'fires' | 'quakes' | 'lightning' | 'events' | 'snow' | 'radar' | 'smoke' | 'tsunami' | 'severe' | 'meteors' | 'buoys' | 'relief' | 'ash';
 
 const NEXT_STARS: Record<StarMode, StarMode> = { on: 'photo', photo: 'off', off: 'on' };
 const NEXT_ISSLIVE: Record<IssLiveMode, IssLiveMode> = { track: 'on', on: 'off', off: 'track' };
@@ -260,6 +260,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
   layer('shift+b', 'buoys', 'Buoys (NOAA): click one for its last 24 hours'),
   layer('shift+m', 'meteors', 'Meteors, last 24 h (Global Meteor Network), and fireballs (NASA/JPL)'),
+  layer('shift+a', 'ash', 'Volcanic ash: EUMETSAT Ash RGB, and eruptions (GDACS)'),
   layer('shift+w', 'severe', 'Severe weather warnings and outlook (US: NWS, SPC)'),
   {
     keys: ['shift+p'],

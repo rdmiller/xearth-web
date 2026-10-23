@@ -48,6 +48,9 @@ global cloud layer refreshed every hour from geostationary satellites.
     Meteosat Third Generation (Europe, Africa and the Atlantic), as blue-white sparks.
   - **Floods, wildfires, eruptions:** GDACS events with their impact levels; wildfires carry their
     burned area, drawn to scale when zoomed in.
+  - **Volcanic ash** (Shift+A, off by default): EUMETSAT's Ash RGB, the false-colour infrared
+    picture forecasters use for ash and SO2 plumes, over the whole globe day and night, with a
+    toast of what its colours mean and GDACS's eruptions, each one press away.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
   - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,
@@ -215,6 +218,36 @@ its limb as the colour pictures do; elsewhere the hourly map stays.
   only while the disc faces the view; GIBS draws a scan about an hour after it's taken (the same
   probe as GOES picks the newest drawn one). A scan took ~9 s to fetch and process on
   2026-10-23. The readout and the feeds window give its time.
+
+### Volcanic ash
+
+EUMETSAT's Ash RGB combines three infrared channels so that ash (red to magenta) and SO2
+(bright green) stand out from cloud and ground: red from the 12.0 − 10.8 µm difference (ash
+absorbs the other way round from ice and water cloud), green from 10.8 − 8.7 µm (SO2 absorbs
+at 8.7) and blue from the 10.8 µm temperature. Being infrared, it works day and night.
+
+- **Sources, all EUMETView WMS with CORS and the same recipe:** the Geo Ring
+  (`mumi:wideareacoverage_rgb_ash`), a whole-world mosaic of the geostationary ring, every 3 hours
+  and ~3 hours behind; and MSG's 0° and Indian Ocean discs (`msg_fes:rgb_ash`,
+  `msg_iodc:rgb_ash`), every 15 minutes and ~30 minutes behind. The layer is the Geo Ring with
+  the discs over it where they see, the Indian Ocean disc filling in east of the 0° one, through
+  the live imagery's machinery (`ash.ts`, `liveImagery.ts`) and its own texture array. GOES and
+  Himawari have no Ash RGB on either server, so the Geo Ring is all there is for the Americas,
+  the Pacific and East Asia.
+- **A picture, not a detector:** desert ground and dust come out pink too, so detecting ash and
+  drawing only that would light up the Sahara. The picture replaces the globe below it (rain,
+  aurora and the ionosphere still draw over it), and the toast's key says which colours mean
+  what, dust included.
+- **No data:** EUMETView draws it white (off a disc, past the Geo Ring's ~75–80°), and JPEG
+  blends that white into the picture over a pixel or two, a pale band no colour test can tell
+  from data: pale desert pink reaches 224 in its weakest channel. So white (weakest channel 240
+  or more) and 3 pixels around it are made transparent before upload; on 2026-10-23 that holed
+  none of the Sahara or Arabia, where a 209 cutoff had holed 3% of it. The Geo Ring's own black
+  slivers near 75°N are in EUMETSAT's mosaic.
+- **The toast** lists GDACS's eruptions (the last 90 days, newest first) with their alert, the
+  day and how long ago, and which picture shows each and how often it's new. On 2026-10-23
+  those were Kanlaon and Taal (Philippines, the Geo Ring only) and Krakatau (the Indian Ocean
+  disc). Pressing one centres the globe on it.
 
 ### Yesterday's (daily)
 
@@ -417,6 +450,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/mtgFires.ts    MTG fire radiative power (WFS) → FIRMS's 0.05° cells, drawn with them
   src/himawariCloud.ts  the hourly cloud map's recipe (convert.py), ported, for Himawari's bands
   src/himawariClouds.ts, src/himawariWorker.ts   Himawari live clouds: fetching, and a worker
+  src/ash.ts         volcanic ash: the Ash RGB sources, their no-data mask, and the toast
   src/imerg.ts       NASA IMERG satellite rain from GIBS, recoloured to RainViewer's scheme
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
@@ -741,6 +775,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Live imagery | GOES-West/East GeoColor (NASA GIBS), MTG GeoColour and Meteosat-9 IODC Natural Colour Enhanced (EUMETView) | browser | 10 min scans (Meteosat-9: 15), checked every 5 min |
 | Live clouds (East Asia, west Pacific) | Himawari-9 AHI Band 13 (PNG, ~2.4 MB) and, by day, Band 3 (JPEG, ~340 KB) from NASA GIBS, turned into cloud opacity in a worker | browser, while its disc faces the view | 10 min |
 | Floods, wildfires, eruptions | GDACS current FL/WF events; VO eruptions from the last 90 days | pipeline | hourly, browser re-reads every 30 min |
+| Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
 | Satellite rain | NASA GPM IMERG early run, 30-min rate, via GIBS (15 tiles, ~0.5 MB); RainViewer coverage tiles | browser | 30 min, ~5 h late, checked every 15 min; coverage daily |
@@ -1155,6 +1190,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Data Dissemination program on AWS; EUMETSAT MTG Lightning Imager (see above).
 - Floods, wildfires, eruptions: GDACS, a cooperation framework of the United Nations and the
   European Commission (GloFAS, GWIS and the Volcanic Ash Advisory Centres).
+- Volcanic ash: EUMETSAT, via EUMETView — Ash RGB from the Geo Ring multi-mission mosaic and
+  Meteosat Second Generation's 0° and Indian Ocean services.
 - Weather radar: [Weather data by RainViewer](https://www.rainviewer.com/) (free API, personal
   and educational use).
 - Satellite rain: NASA GPM IMERG (Huffman et al.), early run, via NASA GIBS.

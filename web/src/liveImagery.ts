@@ -33,6 +33,8 @@ export interface LiveSource {
   times: 'gibs' | 'eumetsat';
   /** Shown only where the other satellites leave gaps (a different look, or older and coarser). */
   fill?: boolean;
+  /** A whole-world mosaic (the Geo Ring), not one satellite's disc: no limb, under the discs. */
+  global?: boolean;
   /**
    * The product is empty on the night side (Natural Colour stops ~1–3° after sunset), so a
    * blank picture there means night, not an unrendered scan: the newest listed scan is used.
@@ -45,7 +47,7 @@ export interface LiveSource {
 }
 
 export const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
-const EUMETSAT_WMS = 'https://view.eumetsat.int/geoserver/ows';
+export const EUMETSAT_WMS = 'https://view.eumetsat.int/geoserver/ows';
 
 /**
  * West to east. GOES-18 is GOES-West at 137.2°W, GOES-19 GOES-East at 75.2°W, MTG-I1 at 0° and
@@ -96,7 +98,7 @@ export function bestSource(lat: number, lon: number, sources: readonly LiveSourc
     let best: LiveSource | undefined;
     let bestAngle = LIMB_DEG - 4;
     for (const s of sources) {
-      if (!!s.fill !== fill) continue;
+      if (!!s.fill !== fill || s.global) continue;
       const a = viewAngleDeg(lat, lon, s.subLon);
       if (a < bestAngle) [best, bestAngle] = [s, a];
     }
@@ -114,6 +116,7 @@ export interface LiveBox {
 }
 
 export function discBox(s: LiveSource): LiveBox {
+  if (s.global) return { lon0: -180, lat1: 90, lonSpan: 360, latSpan: 180 };
   return { lon0: s.subLon - DISC_HALF_DEG, lat1: DISC_HALF_DEG, lonSpan: 2 * DISC_HALF_DEG, latSpan: 2 * DISC_HALF_DEG };
 }
 
@@ -348,12 +351,14 @@ export class LiveImagery {
   constructor(
     private readonly onDisc: (index: number, img: LiveImage) => void,
     private readonly onDetail: (img: LiveImage | null, level: number) => void,
+    /** The pictures kept current (the volcanic ash layer has its own). */
+    readonly sources: readonly LiveSource[] = LIVE_SOURCES,
   ) {}
 
   /** Look for new scans; fetch each disc that has one. Rejects if every source failed. */
   async check(now = new Date()): Promise<void> {
     const results = await Promise.allSettled(
-      LIVE_SOURCES.map(async (s, i) => {
+      this.sources.map(async (s, i) => {
         const time = await fetchServedTime(s, now, this.times.get(s.key));
         this.times.set(s.key, time);
         await this.loadDisc(i, s, time);
@@ -369,7 +374,7 @@ export class LiveImagery {
     const size = discSize(radiusPx);
     if (size <= this.discSize) return;
     this.discSize = size;
-    LIVE_SOURCES.forEach((s, i) => {
+    this.sources.forEach((s, i) => {
       const time = this.times.get(s.key);
       if (time) void this.loadDisc(i, s, time).catch((err) => console.warn('live imagery:', err));
     });
@@ -393,7 +398,7 @@ export class LiveImagery {
 
   /** The zoomed-in picture this view needs (or none). */
   want(range: TileRange | null, centre: { lat: number; lon: number }) {
-    const source = range ? bestSource(centre.lat, centre.lon) : undefined;
+    const source = range ? bestSource(centre.lat, centre.lon, this.sources) : undefined;
     const time = source && this.times.get(source.key);
     const key = range && source && time ? `${source.key}/${time}/${range.level}/${range.col0}-${range.col1}/${range.row0}-${range.row1}` : undefined;
     // A newer scan changes the key too, so the picture follows the scans.

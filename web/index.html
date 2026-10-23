@@ -80,7 +80,7 @@
       /* Text floor: nothing under 10px; on touch screens, held further away, the smallest
          text steps up to 11px. */
       @media (pointer: coarse) {
-        .hud-rows dt, :is(#iss, #buoy, #pick) .iss-label, :is(#iss, #buoy, #pick) .iss-delta, :is(#iss, #buoy, #pick) .iss-note, :is(#iss, #buoy, #pick) .iss-chip, #feeds .src, #feeds .ring-text,
+        .hud-rows dt, :is(#iss, #buoy, #pick, #ash) .iss-label, :is(#iss, #buoy, #pick, #ash) .iss-delta, :is(#iss, #buoy, #pick, #ash) .iss-note, :is(#iss, #buoy, #pick, #ash) .iss-chip, #feeds .src, #feeds .ring-text,
         #sat-tree .labels, #credits, #radar-credit { font-size: 11px; }
       }
       /* Glass: the one surface every panel uses (toast windows, help, satellites, search, the
@@ -202,48 +202,59 @@
       #perf .perf-spark { position: static; display: block; width: 100%; height: 34px; margin: 4px 0 6px; }
       /* ISS telemetry (issView.ts): stat tiles with sparklines, meters, dials. Marks carry the
          colour (cyan, or amber/red for a caution); text stays in the panel's inks. */
-      :is(#iss, #buoy, #pick) .iss-content { display: grid; gap: 9px; transition: opacity 0.3s; }
-      :is(#iss, #buoy, #pick) .iss-content.los { opacity: 0.55; }
-      :is(#iss, #buoy, #pick) .iss-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hud-accent-soft); white-space: nowrap; }
-      :is(#iss, #buoy, #pick) .iss-label .greek { text-transform: none; }
-      :is(#iss, #buoy, #pick) .iss-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-      :is(#iss, #buoy, #pick) .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
-      :is(#iss, #buoy, #pick) .iss-chips { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
-      :is(#iss, #buoy, #pick) .iss-chip {
+      :is(#iss, #buoy, #pick, #ash) .iss-content { display: grid; gap: 9px; transition: opacity 0.3s; }
+      :is(#iss, #buoy, #pick, #ash) .iss-content.los { opacity: 0.55; }
+      :is(#iss, #buoy, #pick, #ash) .iss-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hud-accent-soft); white-space: nowrap; }
+      :is(#iss, #buoy, #pick, #ash) .iss-label .greek { text-transform: none; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+      :is(#iss, #buoy, #pick, #ash) .iss-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+      :is(#iss, #buoy, #pick, #ash) .iss-chips { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+      :is(#iss, #buoy, #pick, #ash) .iss-chip {
         flex: none; padding: 1px 5px; border-radius: var(--r-sm); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
         color: var(--ink-2); background: rgb(var(--hud-cyan-rgb) / 0.1); border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22); white-space: nowrap;
       }
-      :is(#iss, #buoy, #pick) .iss-chip[data-tone="warn"] { color: var(--warn); border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
-      :is(#iss, #buoy, #pick) .iss-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      :is(#iss, #buoy, #pick) .iss-tile { min-width: 0; }
-      :is(#iss, #buoy, #pick) .iss-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-      :is(#iss, #buoy, #pick) .iss-delta { font-size: 10px; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      :is(#iss, #buoy, #pick) .iss-value { margin: 1px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-1); white-space: nowrap; }
-      :is(#iss, #buoy, #pick) .iss-spark { display: block; width: 100%; height: 26px; overflow: visible; cursor: crosshair; touch-action: none; }
-      :is(#iss, #buoy, #pick) .spark-line { fill: none; stroke: var(--ink-4); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-      :is(#iss, #buoy, #pick) .spark-dot { fill: var(--hud-accent); stroke: var(--glass-fill-solid); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-      :is(#iss, #buoy, #pick) .spark-cross { stroke: rgb(var(--hud-cyan-rgb) / 0.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
-      :is(#iss, #buoy, #pick) .iss-note { font-size: 10px; letter-spacing: 0.03em; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      :is(#iss, #buoy, #pick) .iss-note:empty { display: none; }
-      :is(#iss, #buoy, #pick) .iss-meters { display: grid; gap: 4px; }
-      :is(#iss, #buoy, #pick) .iss-meter { --sev: var(--hud-accent); display: grid; grid-template-columns: 64px 1fr 66px; align-items: center; gap: 8px; }
-      :is(#iss, #buoy, #pick) .iss-meter[data-sev="warn"] { --sev: var(--warn); }
-      :is(#iss, #buoy, #pick) .iss-meter[data-sev="bad"] { --sev: var(--bad); }
-      :is(#iss, #buoy, #pick) .meter-track { position: relative; height: 6px; border-radius: var(--r-sm); background: rgb(var(--hud-cyan-rgb) / 0.1); overflow: hidden; }
+      :is(#iss, #buoy, #pick, #ash) .iss-chip[data-tone="warn"] { color: var(--warn); border-color: rgba(255, 200, 87, 0.5); background: rgba(255, 200, 87, 0.1); }
+      :is(#iss, #buoy, #pick, #ash) .iss-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      :is(#iss, #buoy, #pick, #ash) .iss-tile { min-width: 0; }
+      :is(#iss, #buoy, #pick, #ash) .iss-tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+      :is(#iss, #buoy, #pick, #ash) .iss-delta { font-size: 10px; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      :is(#iss, #buoy, #pick, #ash) .iss-value { margin: 1px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-1); white-space: nowrap; }
+      :is(#iss, #buoy, #pick, #ash) .iss-spark { display: block; width: 100%; height: 26px; overflow: visible; cursor: crosshair; touch-action: none; }
+      :is(#iss, #buoy, #pick, #ash) .spark-line { fill: none; stroke: var(--ink-4); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+      :is(#iss, #buoy, #pick, #ash) .spark-dot { fill: var(--hud-accent); stroke: var(--glass-fill-solid); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+      :is(#iss, #buoy, #pick, #ash) .spark-cross { stroke: rgb(var(--hud-cyan-rgb) / 0.5); stroke-width: 1; vector-effect: non-scaling-stroke; }
+      :is(#iss, #buoy, #pick, #ash) .iss-note { font-size: 10px; letter-spacing: 0.03em; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* Volcanic ash: the Ash RGB's colour key, then GDACS's eruptions, each a button that goes there. */
+      #ash .iss-note { white-space: normal; }
+      #ash .ash-key { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin: 0; padding: 0; list-style: none; font-size: 10px; color: var(--ink-3); }
+      #ash .ash-key li { display: flex; align-items: center; gap: 5px; min-width: 0; }
+      #ash .ash-swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+      #ash .ash-volcanoes { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+      #ash .ash-volcano { display: grid; gap: 2px; width: 100%; padding: 5px 6px; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.18); border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      #ash .ash-volcano:hover { background: rgb(var(--hud-cyan-rgb) / 0.08); }
+      #ash .ash-volcano:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+      #ash .ash-head { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-1); font-size: 12px; }
+      #ash .ash-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      :is(#iss, #buoy, #pick, #ash) .iss-note:empty { display: none; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meters { display: grid; gap: 4px; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meter { --sev: var(--hud-accent); display: grid; grid-template-columns: 64px 1fr 66px; align-items: center; gap: 8px; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meter[data-sev="warn"] { --sev: var(--warn); }
+      :is(#iss, #buoy, #pick, #ash) .iss-meter[data-sev="bad"] { --sev: var(--bad); }
+      :is(#iss, #buoy, #pick, #ash) .meter-track { position: relative; height: 6px; border-radius: var(--r-sm); background: rgb(var(--hud-cyan-rgb) / 0.1); overflow: hidden; }
       /* The normal band: a lighter stretch of the same track. */
-      :is(#iss, #buoy, #pick) .meter-band { position: absolute; top: 0; bottom: 0; background: rgb(var(--hud-cyan-rgb) / 0.16); }
-      :is(#iss, #buoy, #pick) .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-sm); background: var(--sev); transition: width var(--dur-data) ease-out; }
-      :is(#iss, #buoy, #pick) .iss-meter-value { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; white-space: nowrap; }
-      :is(#iss, #buoy, #pick) .iss-meter[data-sev="warn"] .iss-meter-value::after, :is(#iss, #buoy, #pick) .iss-meter[data-sev="bad"] .iss-meter-value::after { content: ' !'; color: var(--sev); font-weight: 600; }
-      :is(#iss, #buoy, #pick) .iss-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-      :is(#iss, #buoy, #pick) .iss-dial { display: grid; justify-items: center; gap: 0; min-width: 0; }
-      :is(#iss, #buoy, #pick) .iss-dial svg { display: block; }
-      :is(#iss, #buoy, #pick) .dial-track { fill: none; stroke: rgb(var(--hud-cyan-rgb) / 0.18); stroke-width: 3; }
-      :is(#iss, #buoy, #pick) .dial-tick { stroke: rgb(var(--hud-cyan-rgb) / 0.45); stroke-width: 1.2; }
-      :is(#iss, #buoy, #pick) .dial-needle { transform-box: view-box; stroke: var(--hud-accent); stroke-width: 2; stroke-linecap: round; transition: transform var(--dur-data) ease-out; }
-      :is(#iss, #buoy, #pick) .dial-hub { fill: var(--hud-accent); }
-      :is(#iss, #buoy, #pick) .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); }
-      @media (prefers-reduced-motion: reduce) { :is(#iss, #buoy, #pick) .meter-fill, :is(#iss, #buoy, #pick) .dial-needle, :is(#iss, #buoy, #pick) .iss-content { transition: none; } }
+      :is(#iss, #buoy, #pick, #ash) .meter-band { position: absolute; top: 0; bottom: 0; background: rgb(var(--hud-cyan-rgb) / 0.16); }
+      :is(#iss, #buoy, #pick, #ash) .meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-sm); background: var(--sev); transition: width var(--dur-data) ease-out; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meter-value { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; white-space: nowrap; }
+      :is(#iss, #buoy, #pick, #ash) .iss-meter[data-sev="warn"] .iss-meter-value::after, :is(#iss, #buoy, #pick, #ash) .iss-meter[data-sev="bad"] .iss-meter-value::after { content: ' !'; color: var(--sev); font-weight: 600; }
+      :is(#iss, #buoy, #pick, #ash) .iss-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      :is(#iss, #buoy, #pick, #ash) .iss-dial { display: grid; justify-items: center; gap: 0; min-width: 0; }
+      :is(#iss, #buoy, #pick, #ash) .iss-dial svg { display: block; }
+      :is(#iss, #buoy, #pick, #ash) .dial-track { fill: none; stroke: rgb(var(--hud-cyan-rgb) / 0.18); stroke-width: 3; }
+      :is(#iss, #buoy, #pick, #ash) .dial-tick { stroke: rgb(var(--hud-cyan-rgb) / 0.45); stroke-width: 1.2; }
+      :is(#iss, #buoy, #pick, #ash) .dial-needle { transform-box: view-box; stroke: var(--hud-accent); stroke-width: 2; stroke-linecap: round; transition: transform var(--dur-data) ease-out; }
+      :is(#iss, #buoy, #pick, #ash) .dial-hub { fill: var(--hud-accent); }
+      :is(#iss, #buoy, #pick, #ash) .iss-dial-value { margin-top: -4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-1); }
+      @media (prefers-reduced-motion: reduce) { :is(#iss, #buoy, #pick, #ash) .meter-fill, :is(#iss, #buoy, #pick, #ash) .dial-needle, :is(#iss, #buoy, #pick, #ash) .iss-content { transition: none; } }
       /* A buoy's window (buoyView.ts) borrows the ISS window's instruments: two dials, not three. */
       #buoy .iss-dials { grid-template-columns: repeat(2, 1fr); }
       /* Tiles and dials a buoy can't fill hide themselves; their display rules would otherwise win over [hidden]. */
@@ -569,6 +580,7 @@
         <li><b>Meteors</b> Global Meteor Network; fireballs NASA/JPL CNEOS</li>
         <li><b>Buoys</b> NOAA OSMC, NOAA NDBC (incl. DART); Argo floats: the International Argo Program, via NOAA OSMC</li>
         <li><b>Storms, floods, wildfires, eruptions</b> GDACS, NHC</li>
+        <li><b>Volcanic ash</b> EUMETSAT Ash RGB (Geo Ring, MSG 0° and Indian Ocean), via EUMETView</li>
         <li><b>Fires</b> NASA FIRMS, EUMETSAT MTG Fire Radiative Power</li>
         <li><b>Quakes</b> USGS</li>
         <li><b>Lightning</b> NOAA GOES GLM, EUMETSAT MTG Lightning Imager</li>
@@ -598,6 +610,7 @@
         <tr><td><code>meteors</code></td><td>The last day’s meteors (Global Meteor Network) and recent fireballs (NASA/JPL), off by default (key <kbd>Shift+M</kbd>)</td></tr>
         <tr><td><code>iono</code></td><td>Ionosphere wash: <code>tec</code> electron content (GloTEC), <code>drap</code> HF radio absorption (D-RAP), or <code>0</code> (key <kbd>Shift+I</kbd>)</td></tr>
         <tr><td><code>lightning</code>, <code>events</code>, <code>snow</code></td><td>lightning, GDACS floods/wildfires/eruptions, snow and ice (keys <kbd>Z</kbd> <kbd>Y</kbd> <kbd>I</kbd>)</td></tr>
+        <tr><td><code>ash</code></td><td>volcanic ash: EUMETSAT's Ash RGB, and GDACS's eruptions in a window (key <kbd>Shift</kbd>+<kbd>A</kbd>; off by default)</td></tr>
         <tr><td><code>radar</code>, <code>smoke</code>, <code>tsunami</code></td><td>RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts (keys <kbd>Shift+R</kbd> <kbd>Shift+S</kbd> <kbd>Shift+T</kbd>)</td></tr>
         <tr><td><code>imagery</code></td><td><code>live</code> GOES and MTG pictures by day, <code>daily</code> yesterday’s VIIRS when zoomed in, <code>painted</code> neither; with <code>live</code> or <code>daily</code>, the newest night’s lights when zoomed in (key <kbd>Shift+P</kbd>; the older <code>truecolor=0/1</code> still works)</td></tr>
         <tr><td><code>severe</code></td><td>US severe weather: NWS warning polygons and the SPC day-1 outlook (key <kbd>Shift+W</kbd>)</td></tr>

@@ -51,6 +51,8 @@ export interface FrameState {
   live: boolean;
   /** Himawari-9's live clouds over its disc, in place of the hourly map's (when set). */
   himawari: boolean;
+  /** Volcanic ash: the Ash RGB pictures over everything below (when any has been set). */
+  ash: boolean;
   /** GIBS night-lights detail (when one has been set). */
   nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
@@ -71,6 +73,9 @@ const LIVE_PX = 2048;
 const LIVE_UNIT = 12;
 /** Himawari's cloud opacity. Unit 4 is the Sun and Moon's too (bodies.ts), so it's bound every frame. */
 const HIM_UNIT = 4;
+/** The Ash RGB pictures (ash.ts): MSG 0°, the Indian Ocean disc, the Geo Ring. Unit 6, as 4. */
+const ASH_LAYERS = 3;
+const ASH_UNIT = 6;
 const UNIT: Record<Slot, number> = { day: 0, night: 1, cloudPrev: 2, cloudCur: 3 };
 const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight', cloudPrev: 'uCloudPrev', cloudCur: 'uCloudCur' };
 
@@ -120,6 +125,13 @@ export class GlobeRenderer {
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
   private detailSun: Vec3 = [0, 0, 0];
   private readonly himTex: WebGLTexture;
+  private ashTex: WebGLTexture;
+  private ashSized = false;
+  private readonly ashHas = new Float32Array(ASH_LAYERS);
+  private readonly ashBox = new Float32Array(ASH_LAYERS * 4);
+  private readonly ashSub = new Float32Array(ASH_LAYERS);
+  /** 0: shown first; 1: fills in where 0 doesn't; 2: a whole-world mosaic under both. */
+  private readonly ashTier = new Float32Array(ASH_LAYERS);
   private himBox: [number, number, number, number] | null = null;
   private himSub = 0;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
@@ -159,6 +171,10 @@ export class GlobeRenderer {
     this.nightDetailTex = empty();
     this.reliefTex = empty();
     this.himTex = empty();
+    this.ashTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     // The live discs' array starts as one transparent texel too, for the same reason.
     this.liveTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
@@ -425,6 +441,40 @@ export class GlobeRenderer {
     this.himSub = (subLon * Math.PI) / 180;
   }
 
+  /**
+   * One Ash RGB picture (layer 0–2) for a lat/lon box, with the longitude below its satellite
+   * and its tier (see ashTier). Drawn to the array's fixed size first, as the live discs are.
+   * Its no data is transparent (maskAshNoData); stored premultiplied, so the mipmaps average
+   * only the picture and the shader divides the alpha back out.
+   */
+  setAsh(layer: number, image: CanvasImageSource, box: LatLonBox, subLon: number, tier: number) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + ASH_UNIT);
+    if (!this.ashSized) {
+      gl.deleteTexture(this.ashTex);
+      this.ashTex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, Math.log2(LIVE_PX) + 1, gl.RGBA8, LIVE_PX, LIVE_PX, ASH_LAYERS);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.ashSized = true;
+    }
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
+    const canvas = new OffscreenCanvas(LIVE_PX, LIVE_PX);
+    canvas.getContext('2d')!.drawImage(image, 0, 0, LIVE_PX, LIVE_PX);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, LIVE_PX, LIVE_PX, 1, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    this.ashHas[layer] = 1;
+    this.ashBox.set([box.lon0, box.lat1, box.lonSpan, box.latSpan], layer * 4);
+    this.ashSub[layer] = (subLon * Math.PI) / 180;
+    this.ashTier[layer] = tier;
+  }
+
   get hasLive() {
     return this.liveHas.some((v) => v > 0);
   }
@@ -603,6 +653,14 @@ export class GlobeRenderer {
     gl.uniform1f(this.u('uHimOn'), f.himawari && this.himBox ? 1 : 0);
     if (this.himBox) gl.uniform4fv(this.u('uHimBox'), this.himBox);
     gl.uniform1f(this.u('uHimSub'), this.himSub);
+    gl.activeTexture(gl.TEXTURE0 + ASH_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
+    gl.uniform1i(this.u('uAsh'), ASH_UNIT);
+    gl.uniform1f(this.u('uAshOn'), f.ash && this.ashHas.some((v) => v > 0) ? 1 : 0);
+    gl.uniform1fv(this.u('uAshHas'), this.ashHas);
+    gl.uniform4fv(this.u('uAshBox'), this.ashBox);
+    gl.uniform1fv(this.u('uAshSub'), this.ashSub);
+    gl.uniform1fv(this.u('uAshTier'), this.ashTier);
     gl.activeTexture(gl.TEXTURE15);
     gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
     gl.uniform1i(this.u('uNightDetail'), 15);

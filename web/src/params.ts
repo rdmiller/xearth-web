@@ -73,6 +73,8 @@ export interface Settings extends ViewSettings {
   severe: boolean;
   /** The last day's meteors (GMN) and recent fireballs (CNEOS); off by default, it's thousands of streaks. */
   meteors: boolean;
+  /** Volcanic ash: EUMETSAT's Ash RGB over the globe, and GDACS's eruptions in a toast; off by default. */
+  ash: boolean;
   /** Buoys (NOAA OSMC, NDBC) as dots; off by default. */
   buoys: boolean;
   /** The buoy whose window is open (its id), or '' for none. */
@@ -174,6 +176,7 @@ export function defaults(): Settings {
     imagery: 'live',
     severe: true,
     meteors: false,
+    ash: false,
     buoys: false,
     buoy: '',
     pick: '',
@@ -304,6 +307,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     imagery: imageryMode(q, base.imagery),
     severe: bool(q, 'severe', base.severe),
     meteors: bool(q, 'meteors', base.meteors),
+    ash: bool(q, 'ash', base.ash),
     buoys: bool(q, 'buoys', base.buoys),
     buoy: q.get('buoy')?.trim() ?? base.buoy,
     pick: q.get('pick')?.trim() ?? base.pick,

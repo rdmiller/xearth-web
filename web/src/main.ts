@@ -73,6 +73,7 @@ import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import { FRP_CELL_DEG, FRP_WINDOW_MIN, FrpWindow, frpPoints, frpRows } from './mtgFires';
 import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
+import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import {
   decodeOutlook,
   decodeWarnings,
@@ -1583,6 +1584,7 @@ function syncDetail(date: Date, radiusPx: number) {
     live.want(day ? liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX) : null, at);
   } else live.clear();
   if (himawariSkipped && facesHimawari(date)) runHimawari();
+  if (settings.ash) ash.needDiscSize(radiusPx);
 }
 
 /** "106.6k", "940": counts in the readout. */
@@ -1763,6 +1765,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
   { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
+  { key: 'ash', label: 'Volcanic ash', source: 'EUMETSAT Ash RGB', freshMs: 7 * 60 * MIN, on: () => settings.ash, everyMs: LIVE_CHECK_MS },
   // GIBS draws a Himawari scan about an hour after it's taken.
   { key: 'himawari', label: 'Live clouds', source: 'Himawari-9', freshMs: 90 * MIN, on: himawariOn, everyMs: HIMAWARI_CHECK_MS },
   { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
@@ -2040,6 +2044,77 @@ overlayCanvas.addEventListener('pointerleave', () => {
   hover = undefined;
   overlayCanvas.classList.remove('over-pick');
 });
+
+// ---- volcanic ash (EUMETSAT Ash RGB) --------------------------------------------------------
+// The Geo Ring and MSG's two discs over the globe (ash.ts), checked every 5 minutes while the
+// layer is on, and a toast with what the colours mean and GDACS's eruptions.
+
+const ash = new LiveImagery(
+  (i, img) => {
+    const g = img.image.getContext('2d')!;
+    const px = g.getImageData(0, 0, img.image.width, img.image.height);
+    maskAshNoData(px.data, px.width, px.height);
+    g.putImageData(px, 0, 0);
+    renderer.setAsh(i, img.image, img.box, img.source.subLon, img.source.global ? 2 : img.source.fill ? 1 : 0);
+    renderAshToast();
+    requestRedraw();
+  },
+  () => {},
+  ASH_SOURCES,
+);
+let ashTimer: ReturnType<typeof setInterval> | undefined;
+let ashEvents: EventManifest | undefined;
+let ashEventsFailed = false;
+
+const ashView = new AshView(toasts.add({ id: 'ash', title: 'Volcanic ash', order: 6, onClose: () => update({ ash: false }) }), (v) =>
+  goTo({ name: v.event.name, detail: v.event.country, lat: v.event.pos[1], lon: v.event.pos[0] }),
+);
+
+function renderAshToast() {
+  if (!settings.ash) return;
+  const times = new Map([...ash.discs].map(([k, d]) => [k, d.time]));
+  ashView.render(times, ashEvents && ashVolcanoes(ashEvents.events, Date.now()), ashEventsFailed);
+}
+
+function runAsh(): Promise<void> {
+  feedLog.begin('ash', Date.now(), LIVE_CHECK_MS);
+  // GDACS's eruptions come with the events layer; without it, its file is fetched for the toast.
+  const events = layerData(settings.events, eventManifest, pipelineFile(settings.eventsrc), isEventManifest)
+    .then((m) => {
+      ashEvents = m;
+      ashEventsFailed = !m;
+    })
+    .catch(() => {
+      ashEventsFailed = true;
+    });
+  return Promise.all([
+    events,
+    ash.check().then(
+      () => {
+        // The oldest picture shown: the Geo Ring's, every 3 hours and ~3 hours behind.
+        const t = [...ash.discs.values()].map((d) => Date.parse(d.time));
+        feedLog.done('ash', Date.now(), t.length ? Math.min(...t) : undefined);
+      },
+      (err) => {
+        feedLog.fail('ash', Date.now(), err);
+        console.warn('volcanic ash:', err);
+      },
+    ),
+  ]).then(() => {
+    renderAshToast();
+    requestRedraw();
+  });
+}
+
+function syncAsh() {
+  clearInterval(ashTimer);
+  ashTimer = undefined;
+  ashView.show(settings.ash);
+  if (!settings.ash) return feedLog.stop('ash');
+  renderAshToast();
+  void runAsh();
+  ashTimer = setInterval(() => void runAsh(), LIVE_CHECK_MS);
+}
 
 const placeToast = toasts.add({
   id: 'place-card',
@@ -2372,6 +2447,7 @@ function frame(now: number) {
     detail: settings.imagery === 'daily' ? !!detail : liveShown(date) && liveDetail,
     live: liveShown(date),
     himawari: settings.clouds && liveShown(date),
+    ash: settings.ash,
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
@@ -2487,6 +2563,7 @@ function update(patch: Partial<Settings>) {
   const satsBefore = settings.sats;
   const launchesBefore = settings.launches;
   const imageryBefore = settings.imagery;
+  const ashBefore = settings.ash;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   settings = { ...settings, ...patch };
   if (settings.launches !== launchesBefore) syncLaunches();
@@ -2496,6 +2573,7 @@ function update(patch: Partial<Settings>) {
   if (settings.clouds !== cloudsBefore) syncClouds();
   if (settings.imagery !== imageryBefore) syncLive();
   if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
+  if (settings.ash !== ashBefore) syncAsh();
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -2701,6 +2779,7 @@ syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 syncLive();
 syncHimawari();
+syncAsh();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
