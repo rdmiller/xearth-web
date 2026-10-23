@@ -236,6 +236,10 @@ web/        Vite + TypeScript + WebGL2 app
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
             CelesTrak GP → satellites/latest.json (xearth_clouds.satellites)
+custom_components/xearth/   the Home Assistant integration (HACS: hacs.json at the root)
+  feeds.py           the feeds parsed as the app parses them, nearbyHazards() ported; no HA imports
+  coordinator.py     one fetch of every feed every 5 minutes, revalidated with ETags
+ha-tests/   its tests (pytest-homeassistant-custom-component)
 .github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages
 ```
 
@@ -262,7 +266,66 @@ pnpm dev
 The app runs without textures or clouds (plain blue globe, "clouds unavailable") and says
 which is missing in the label.
 
-Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
+Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`, `pytest ha-tests` for the Home
+Assistant integration (after `pip install pytest-homeassistant-custom-component`, on Linux
+or macOS).
+
+## Home Assistant
+
+`custom_components/xearth` is a Home Assistant integration: the globe in the sidebar, centred
+over your home, and the app's feeds as sensors, so an automation can act on lightning 4 km
+away or a G3 storm the same way the place card shows them.
+
+- **Install:** in HACS, add `https://github.com/rdmiller/xearth-web` as a custom repository
+  (type Integration) and download *xearth web*; or copy `custom_components/xearth` into your
+  configuration's `custom_components/`. Restart, then *Settings → Devices & services → Add
+  integration → xearth web*. The site defaults to the public build; a self-hosted one (the
+  Docker compose above) works the same. Home Assistant 2025.3 or newer.
+- **Panel:** an *Earth* item in the sidebar opens the site in a frame, with `lat` and `lon`
+  set to your home. *Configure* changes its title, turns it off, or adds URL parameters
+  (`view=sunrel&grid=1`, `track=iss`, anything from the table below). A browser blocks an
+  `http://` site inside an `https://` Home Assistant, so serve both the same way.
+- **Polling:** every 5 minutes, all at once: the site's `latest.json` files (revalidated with
+  their ETags, so an unchanged file is a 304; the pipeline writes them hourly), NOAA SWPC and
+  USGS. A feed that stops answering keeps its last data for 3 hours, then its entities go
+  unavailable; the rest carry on.
+
+| Entity | State | Attributes |
+|---|---|---|
+| Planetary K index · Geomagnetic storm level | Kp; none / G1–G5 | observed |
+| X-ray flux class · Last solar flare | GOES class now; peak of the latest flare | peak |
+| Solar wind speed · Bz · Bt | km/s; nT | |
+| Next launch · Next launch status | its NET (a timestamp); Launch Library status | name, provider, rocket, mission, orbit, window, pad, distance |
+| Earthquakes (24 h) · Largest · Nearest | USGS M2.5+ count; magnitude; km | place, time, depth, tsunami, PAGER alert |
+| Tropical cyclones · Nearest | count; km | each storm's class, wind, pressure, GDACS alert, distance |
+| Lightning flashes (30 min) · Nearest lightning | GOES GLM flashes; km | minutes ago (the Americas, Atlantic and eastern Pacific only) |
+| Fire detections (24 h) · Nearest fire | VIIRS detections; km | fire power, hours ago |
+| Floods · Wildfires · Volcanic eruptions | GDACS events | count by alert level, the nearest ten |
+| Tsunami bulletins | NTWC/PTWC bulletins on the map | each bulletin |
+| Smoke plumes | NOAA HMS plumes | light, medium, heavy |
+| Hazards nearby | how many the place card would list | each alert's level, title and detail |
+| Cloud map · Data updated (diagnostic) | GMGSI scan time; newest pipeline run | each feed's time |
+
+Binary sensors: *Geomagnetic storm* (Kp ≥ 5), *Launch webcast live*, and *Tropical cyclone*,
+*Tsunami alert*, *Earthquake*, *Flood, wildfire or eruption*, *Lightning* and *Fire nearby*
+(device class safety). "Nearby" means what it does on the place card: cyclones within 800 km,
+tsunami alerts within 1,000 km, an M4.5+ quake within 300 km (or any within 50 km), GDACS
+floods and fires within 300 km and eruptions within 150 km, lightning within 50 km and fire
+detections within 25 km. Distances are from the home location; long lists in attributes
+are left out of the recorder.
+
+```yaml
+# Unplug the TV when lightning comes within 50 km.
+automation:
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.xearth_web_lightning_nearby
+        to: "on"
+    actions:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.tv_plug
+```
 
 ## Android
 

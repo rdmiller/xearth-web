@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "xearth web",
+        "description": "The xearth web site to read: the public build, or your own (docker compose in the xearth-web repository).",
+        "data": {
+          "url": "Site URL"
+        },
+        "data_description": {
+          "url": "The address the globe opens at. Its layer feeds (clouds/latest.json and the rest) are read from beside it."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Couldn't reach the site.",
+      "not_xearth": "The site answered, but it isn't xearth web."
+    },
+    "abort": {
+      "single_instance_allowed": "xearth web is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sidebar panel",
+        "data": {
+          "panel": "Show the globe in the sidebar",
+          "panel_title": "Sidebar title",
+          "panel_params": "URL parameters"
+        },
+        "data_description": {
+          "panel_params": "The app's own settings, as in its address bar, e.g. view=sunrel&grid=1 or track=iss. The globe is centred over your home unless lat or lon is given."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "geomagnetic_storm": { "name": "Geomagnetic storm" },
+      "launch_webcast": { "name": "Launch webcast live" },
+      "tropical_cyclone_nearby": { "name": "Tropical cyclone nearby" },
+      "tsunami_nearby": { "name": "Tsunami alert nearby" },
+      "earthquake_nearby": { "name": "Earthquake nearby" },
+      "gdacs_event_nearby": { "name": "Flood, wildfire or eruption nearby" },
+      "lightning_nearby": { "name": "Lightning nearby" },
+      "fire_nearby": { "name": "Fire nearby" }
+    },
+    "sensor": {
+      "kp_index": { "name": "Planetary K index" },
+      "geomagnetic_storm_level": {
+        "name": "Geomagnetic storm level",
+        "state": {
+          "none": "None",
+          "g1": "G1 (minor)",
+          "g2": "G2 (moderate)",
+          "g3": "G3 (strong)",
+          "g4": "G4 (severe)",
+          "g5": "G5 (extreme)"
+        }
+      },
+      "xray_class": { "name": "X-ray flux class" },
+      "last_flare": { "name": "Last solar flare" },
+      "solar_wind_speed": { "name": "Solar wind speed" },
+      "solar_wind_bz": { "name": "Solar wind Bz" },
+      "solar_wind_bt": { "name": "Solar wind Bt" },
+      "next_launch": { "name": "Next launch" },
+      "next_launch_status": { "name": "Next launch status" },
+      "earthquakes": { "name": "Earthquakes (24 h)" },
+      "largest_earthquake": { "name": "Largest earthquake (24 h)" },
+      "nearest_earthquake": { "name": "Nearest earthquake" },
+      "tropical_cyclones": { "name": "Tropical cyclones" },
+      "nearest_tropical_cyclone": { "name": "Nearest tropical cyclone" },
+      "lightning_flashes": { "name": "Lightning flashes (30 min)" },
+      "nearest_lightning": { "name": "Nearest lightning" },
+      "fire_detections": { "name": "Fire detections (24 h)" },
+      "nearest_fire": { "name": "Nearest fire" },
+      "floods": { "name": "Floods" },
+      "wildfires": { "name": "Wildfires" },
+      "volcanic_eruptions": { "name": "Volcanic eruptions" },
+      "tsunami_bulletins": { "name": "Tsunami bulletins" },
+      "smoke_plumes": { "name": "Smoke plumes" },
+      "hazards_nearby": { "name": "Hazards nearby" },
+      "cloud_map": { "name": "Cloud map" },
+      "data_updated": { "name": "Data updated" }
+    }
+  }
+}

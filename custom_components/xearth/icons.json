@@ -1,0 +1,42 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "geomagnetic_storm": { "default": "mdi:shimmer" },
+      "launch_webcast": { "default": "mdi:video-off", "state": { "on": "mdi:video" } },
+      "tropical_cyclone_nearby": { "default": "mdi:weather-hurricane" },
+      "tsunami_nearby": { "default": "mdi:waves" },
+      "earthquake_nearby": { "default": "mdi:pulse" },
+      "gdacs_event_nearby": { "default": "mdi:alert-octagon" },
+      "lightning_nearby": { "default": "mdi:weather-lightning" },
+      "fire_nearby": { "default": "mdi:fire" }
+    },
+    "sensor": {
+      "kp_index": { "default": "mdi:magnet" },
+      "geomagnetic_storm_level": { "default": "mdi:shimmer" },
+      "xray_class": { "default": "mdi:white-balance-sunny" },
+      "last_flare": { "default": "mdi:flare" },
+      "solar_wind_speed": { "default": "mdi:weather-windy" },
+      "solar_wind_bz": { "default": "mdi:magnet-on" },
+      "solar_wind_bt": { "default": "mdi:magnet-on" },
+      "next_launch": { "default": "mdi:rocket-launch" },
+      "next_launch_status": { "default": "mdi:rocket" },
+      "earthquakes": { "default": "mdi:pulse" },
+      "largest_earthquake": { "default": "mdi:pulse" },
+      "nearest_earthquake": { "default": "mdi:pulse" },
+      "tropical_cyclones": { "default": "mdi:weather-hurricane" },
+      "nearest_tropical_cyclone": { "default": "mdi:weather-hurricane" },
+      "lightning_flashes": { "default": "mdi:weather-lightning" },
+      "nearest_lightning": { "default": "mdi:weather-lightning" },
+      "fire_detections": { "default": "mdi:fire" },
+      "nearest_fire": { "default": "mdi:fire" },
+      "floods": { "default": "mdi:home-flood" },
+      "wildfires": { "default": "mdi:pine-tree-fire" },
+      "volcanic_eruptions": { "default": "mdi:volcano" },
+      "tsunami_bulletins": { "default": "mdi:waves" },
+      "smoke_plumes": { "default": "mdi:smoke" },
+      "hazards_nearby": { "default": "mdi:alert" },
+      "cloud_map": { "default": "mdi:cloud" },
+      "data_updated": { "default": "mdi:update" }
+    }
+  }
+}

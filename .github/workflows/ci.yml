@@ -16,6 +16,18 @@ jobs:
       - run: pip install './pipeline[test]'
       - run: pytest pipeline/tests -q
 
+  homeassistant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      # Pulls in the current Home Assistant release.
+      - run: pip install pytest-homeassistant-custom-component
+      - run: pytest ha-tests -q
+      - uses: home-assistant/actions/hassfest@master
+
   web:
     runs-on: ubuntu-latest
     defaults:
