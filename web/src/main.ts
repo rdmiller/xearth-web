@@ -1973,6 +1973,7 @@ setInterval(() => settings.buoy && syncBuoyPanel(), 60_000);
 
 // ---- picking: a click on something on the globe opens its window ----------------------------
 // A buoy has its own window (above); everything else shares one, whose content picks.ts writes.
+// The ISS's telemetry window folds into it while the ISS is the pick.
 // A satellite, or a launch once it's flying, is followed as well; dragging the globe lets go.
 
 /** The picked satellite's key (`iss`, or a NORAD number), or ''. */
@@ -1998,7 +1999,18 @@ function followPick(follow: boolean) {
 }
 
 const pickPanel = new PickPanelView(
-  toasts.add({ id: 'pick', title: 'Details', order: 5, shrink: 0, onClose: () => update({ pick: '' }) }),
+  toasts.add({
+    id: 'pick',
+    title: 'Details',
+    order: 5,
+    shrink: 0,
+    onClose: () => {
+      // The ISS's window carries its telemetry, which (isslive=track) is up while it's followed:
+      // closing it lets go of the ISS too, rather than have the telemetry's own window open.
+      if (pickedSat() === 'iss' && settings.isslive === 'track' && followingPick()) followPick(false);
+      update({ pick: '' });
+    },
+  }),
   followPick,
 );
 
@@ -2822,8 +2834,14 @@ function frame(now: number) {
     lastReadoutBottom = readoutBottom;
     document.documentElement.style.setProperty('--readout-bottom', `${readoutBottom}px`);
   }
-  issPanelView.update(issPanelState(sunDir));
-  syncPickPanel(picked?.detail);
+  // While the ISS is the pick, its telemetry goes in the pick window rather than a second one,
+  // and the telemetry's sparkline tiles stand in for the pick's altitude and speed.
+  const iss = issPanelState(sunDir);
+  const issDocked = !!iss && !!picked && pickedSat() === 'iss';
+  issPanelView.update(iss, issDocked ? pickPanel.slot : undefined);
+  syncPickPanel(
+    issDocked && iss.orbit ? { ...picked.detail, tiles: picked.detail.tiles.filter((t) => t.label !== 'Altitude' && t.label !== 'Speed') } : picked?.detail,
+  );
   if (hover && performance.now() - hover.at > 300) hoverFrame ||= requestAnimationFrame(checkHover);
   perfPanel.update(
     settings.fps

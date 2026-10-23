@@ -273,11 +273,16 @@
       #buoy .argo-dot { fill: var(--c); stroke: var(--glass-fill-solid); stroke-width: 1.5; }
       /* A clicked thing's window (pickView.ts): the ISS window's tiles, then text and a foot. */
       #pick [hidden] { display: none; }
-      #pick .iss-chip { color: var(--pick); border-color: currentColor; background: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      #pick .pick-content > .iss-meta > .iss-chip { color: var(--pick); border-color: currentColor; background: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       #pick .iss-value { overflow: hidden; text-overflow: ellipsis; }
       #pick .pick-notes { display: grid; gap: 2px; font-size: 12px; color: var(--ink-3); }
       #pick .pick-notes p { margin: 0; overflow-wrap: anywhere; }
       #pick .pick-notes:empty { display: none; }
+      /* The ISS's live telemetry, docked under its details (issView.ts). */
+      #pick .pick-slot { padding-top: 9px; border-top: 1px solid rgb(var(--hud-cyan-rgb) / 0.1); }
+      #pick .pick-slot:empty { display: none; }
+      /* It carries one more chip (the signal) than the ISS window, so they wrap rather than clip. */
+      #pick .pick-slot .iss-chips { flex-wrap: wrap; justify-content: flex-end; }
       #pick .pick-foot { display: flex; align-items: center; gap: 8px; font-size: 11px; }
       #pick .pick-follow { padding: 2px 8px; font: 600 10px var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
         color: var(--hud-accent); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.45); border-radius: var(--r-md); cursor: pointer; }

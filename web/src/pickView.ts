@@ -4,6 +4,7 @@
 //   meta     what kind of thing it is, in its colour, and where it is
 //   tiles    its numbers (altitude and speed, magnitude and depth, wind and pressure…)
 //   notes    a line or two of text: a pad, an area, a time
+//   slot     another view's content, when it has more to say (the ISS's live telemetry)
 //   foot     Follow / Stop following for things that move, and a link to the source
 //
 // The DOM is built once; an update only touches what changed, so a followed satellite's
@@ -23,6 +24,8 @@ export class PickPanelView {
   private readonly notes: HTMLElement;
   private readonly follow: HTMLButtonElement;
   private readonly link: HTMLAnchorElement;
+  /** Above the foot, for another view to put its content in (issView.ts docks there). */
+  readonly slot: HTMLElement;
   private tileKeys = '';
 
   constructor(
@@ -37,6 +40,7 @@ export class PickPanelView {
     meta.append(this.kind, this.where);
     this.tiles = el('div', 'iss-tiles');
     this.notes = el('div', 'pick-notes');
+    this.slot = el('div', 'pick-slot');
     const foot = el('div', 'pick-foot');
     this.follow = el('button', 'pick-follow');
     this.follow.type = 'button';
@@ -45,7 +49,7 @@ export class PickPanelView {
     this.link.target = '_blank';
     this.link.rel = 'noopener';
     foot.append(this.follow, this.link);
-    content.append(meta, this.tiles, this.notes, foot);
+    content.append(meta, this.tiles, this.notes, this.slot, foot);
     toast.body.append(content);
   }
 

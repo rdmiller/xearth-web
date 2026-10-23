@@ -10,6 +10,9 @@
 // Values only change about once a second, so the DOM is built once and touched only when a
 // reading moves. While the station is out of signal, the instruments dim: the values are
 // the last ones received, and the header says how old.
+//
+// While the ISS is the thing clicked, the instruments move into its pick window (pickView.ts)
+// instead, so there's one window for it, not two; the signal chip goes with them.
 
 import { arcPath, fraction, polar, Series, severity, sparkPath, sparkScale, wrap360, type MeterScale } from './gauges';
 import type { IssReadings } from './isslive';
@@ -256,6 +259,7 @@ export class IssPanelView {
   private readonly content: HTMLElement;
   private readonly time: HTMLElement;
   private readonly chips: HTMLElement;
+  private readonly tiles: HTMLElement;
   private readonly alt = new SparkTile('Altitude', (v) => `${v.toFixed(1)} km`, (d) => `${signed(d, 1)} km`, 2);
   private readonly speed = new SparkTile('Speed', (v) => `${v.toFixed(3)} km/s`, (d) => `${signed(d * 1000, 1)} m/s`, 0.002);
   private readonly tle: HTMLElement;
@@ -271,7 +275,7 @@ export class IssPanelView {
     this.chips = el('span', 'iss-chips');
     meta.append(this.time, this.chips);
 
-    const tiles = el('div', 'iss-tiles');
+    const tiles = (this.tiles = el('div', 'iss-tiles'));
     tiles.append(this.alt.el, this.speed.el);
     this.tle = el('div', 'iss-note');
 
@@ -286,15 +290,25 @@ export class IssPanelView {
     toast.body.append(this.content);
   }
 
-  update(r: IssReadings | undefined) {
-    this.toast.show(!!r);
+  /**
+   * Show the readings (or close with undefined). `dock`: show them there, in another window,
+   * rather than in this one, which stays closed; their orbit tiles hide while there's no state
+   * vector, since that window then shows the predicted orbit's.
+   */
+  update(r: IssReadings | undefined, dock?: HTMLElement) {
+    const home = dock ?? this.toast.body;
+    if (this.content.parentElement !== home) home.append(this.content);
+    this.toast.show(!!r && !dock);
     if (!r) return;
     const now = Date.now();
-    this.toast.setStatus(`${r.aos ? '●' : '○'} ${r.status}`, r.aos ? 'ok' : 'warn');
+    const signal = `${r.aos ? '●' : '○'} ${r.status}`;
+    this.toast.setStatus(signal, r.aos ? 'ok' : 'warn');
     this.content.classList.toggle('los', !r.aos);
+    this.tiles.hidden = !!dock && !r.orbit;
     put(this.time, r.gmt);
 
     const chips: [string, string][] = [
+      ...(dock ? ([[signal, r.aos ? '' : 'warn']] as [string, string][]) : []),
       [r.mode, ''],
       [r.attitude, ''],
       ...(r.maneuvering ? ([['Maneuvering', 'warn']] as [string, string][]) : []),
