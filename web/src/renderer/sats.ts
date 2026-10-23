@@ -7,13 +7,16 @@
 import type { Camera } from '../view';
 import type { Vec3 } from '../vec';
 
+/** Bulk categories the colour / size / shape tables hold (satcategories.ts's BULK_LEAVES). */
+export const SAT_CATEGORIES = 16;
+
 const VERT = `#version 300 es
 in vec3 aPos;            // Earth-fixed, Earth radii; the origin means "no position"
 in vec3 aVel;            // Earth-fixed, Earth radii per second
 in float aCat;           // category: index into the colour / size / on tables
-uniform vec3 uColors[8];
-uniform float uSizes[8]; // CSS px; 0 = category off
-uniform float uShapes[8]; // 0 = soft dot, 1 = hollow diamond
+uniform vec3 uColors[${SAT_CATEGORIES}];
+uniform float uSizes[${SAT_CATEGORIES}]; // CSS px; 0 = category off
+uniform float uShapes[${SAT_CATEGORIES}]; // 0 = soft dot, 1 = hollow diamond
 uniform float uDt;       // seconds from the SGP4 pass to this frame
 uniform vec3 uDir;
 uniform vec3 uRight;
@@ -181,10 +184,10 @@ export class SatLayer {
     gl.uniform3fv(this.u('uSun'), f.sun);
     gl.uniform1f(this.u('uDt'), f.dt);
     gl.uniform1f(this.u('uDpr'), f.dpr);
-    const colors = new Float32Array(24);
-    const sizes = new Float32Array(8);
-    const shapes = new Float32Array(8);
-    f.categories.slice(0, 8).forEach((c, i) => {
+    const colors = new Float32Array(SAT_CATEGORIES * 3);
+    const sizes = new Float32Array(SAT_CATEGORIES);
+    const shapes = new Float32Array(SAT_CATEGORIES);
+    f.categories.slice(0, SAT_CATEGORIES).forEach((c, i) => {
       colors.set(c.color, i * 3);
       sizes[i] = c.size;
       shapes[i] = c.diamond ? 1 : 0;

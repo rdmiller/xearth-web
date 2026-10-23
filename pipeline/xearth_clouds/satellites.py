@@ -46,9 +46,11 @@ FEATURED = {
     62713: "SATGUS — Mark Rober / CrunchLabs Space Selfie",
 }
 # Bulk groups, drawn as point clouds. The web app splits and colours them (weather by orbit).
-GROUPS = ("starlink", "weather", "gps-ops", "glo-ops")
-# Groups small enough to carry names (for labels and the satellite tree); Starlink isn't.
-NAMED_GROUPS = ("weather", "gps-ops", "glo-ops")
+# On 2026-10-22: OneWeb 651, Kuiper 391, Qianfan 256, Galileo 32, BeiDou 54.
+GROUPS = ("starlink", "oneweb", "kuiper", "qianfan", "weather", "gps-ops", "glo-ops", "galileo", "beidou")
+# Groups small enough to carry names (for labels and the satellite tree); the broadband
+# constellations aren't.
+NAMED_GROUPS = ("weather", "gps-ops", "glo-ops", "galileo", "beidou")
 
 # Order of the compact element arrays; the web app mirrors this.
 FIELDS = (

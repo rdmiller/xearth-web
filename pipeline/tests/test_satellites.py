@@ -154,7 +154,8 @@ def test_a_new_group_not_updated_is_skipped_not_fatal():
 
 
 def test_default_groups_include_weather_and_navigation():
-    assert set(satellites.GROUPS) >= {"starlink", "weather", "gps-ops", "glo-ops"}
+    assert set(satellites.GROUPS) >= {"starlink", "oneweb", "kuiper", "qianfan", "weather", "gps-ops", "glo-ops", "galileo", "beidou"}
+    assert set(satellites.NAMED_GROUPS) <= set(satellites.GROUPS)
     assert "starlink" not in satellites.NAMED_GROUPS
 
 

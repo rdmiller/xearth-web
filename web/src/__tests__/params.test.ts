@@ -34,7 +34,7 @@ describe('parseSettings', () => {
     expect(parseSettings('?satshow=GPS,glonass,bogus').satshow).toEqual(['gps', 'glonass']);
     expect(parseSettings('?satshow=none').satshow).toEqual([]);
     expect(parseSettings('?satlabels=gps').satlabels).toEqual(['gps']);
-    expect(parseSettings('').satlabels).toEqual(['weather-geo', 'weather-heo', 'gps', 'glonass']);
+    expect(parseSettings('').satlabels).toEqual(['weather-geo', 'weather-heo', 'gps', 'glonass', 'galileo', 'beidou']);
     // Listed in any order, written back in tree order; defaults stay out of the URL.
     const s = parseSettings('?satshow=glonass,gps');
     expect(toQuery(s)).toBe('?satshow=gps%2Cglonass');

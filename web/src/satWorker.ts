@@ -1,5 +1,5 @@
-// Web Worker: SGP4 for every bulk satellite (Starlink's ~11,100 plus the weather,
-// GPS and GLONASS constellations; ~20 ms a pass on a desktop, several times that on
+// Web Worker: SGP4 for every bulk satellite (Starlink's ~11,100, ~1,300 more broadband
+// satellites, and the weather and navigation constellations; ~20 ms a pass on a desktop, several times that on
 // a phone) off the main thread. Categories that are switched off are skipped.
 // Each pass returns positions and Earth-fixed velocities; the renderer
 // extrapolates between passes, so passes can be infrequent.
