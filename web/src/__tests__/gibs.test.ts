@@ -10,7 +10,11 @@ import {
   tileCount,
   tileRange,
   tileSpanDeg,
+  domainUrl,
+  newestDate,
+  NIGHT_LIGHTS,
   tileUrl,
+  TRUE_COLOR,
   visibleBox,
 } from '../gibs';
 
@@ -64,5 +68,29 @@ describe('choosing tiles for the view', () => {
     const r = chooseRange(visibleBox(0, 0, 25), 0.004)!;
     expect(tileCount(r)).toBeLessThanOrEqual(MAX_TILES);
     expect(r.level).toBeLessThan(7);
+  });
+});
+
+describe('night lights (Black Marble nightly)', () => {
+  it('asks GIBS for its 500 m PNG tiles on the same grid', () => {
+    expect(tileUrl('2026-10-21', 4, 2, 10, NIGHT_LIGHTS)).toBe(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance/default/2026-10-21/500m/4/2/10.png',
+    );
+    expect(tileUrl('2026-10-21', 3, 2, 5)).toBe(tileUrl('2026-10-21', 3, 2, 5, TRUE_COLOR));
+  });
+
+  it('stops at the 500 m set’s finest level, 7 (488 m)', () => {
+    const r = chooseRange(visibleBox(45, 10, 1), 0.001, NIGHT_LIGHTS.maxLevel)!;
+    expect(r.level).toBe(7);
+    expect(chooseRange(visibleBox(45, 10, 1), 0.001)!.level).toBe(8);
+  });
+
+  it('asks GIBS for the newest night rather than guessing', () => {
+    expect(domainUrl(NIGHT_LIGHTS, new Date('2026-10-23T02:00:00Z'))).toBe(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance/default/500m/all/2026-10-13--2026-10-23.xml',
+    );
+    expect(newestDate('<Domain>2026-10-13/2026-10-21/P1D</Domain>')).toBe('2026-10-21');
+    expect(newestDate('<Domain>2026-10-13T00:00:00Z/2026-10-21T00:00:00Z/P1D</Domain>')).toBe('2026-10-21');
+    expect(newestDate('<Domains/>')).toBeUndefined();
   });
 });

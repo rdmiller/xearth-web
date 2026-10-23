@@ -36,6 +36,9 @@ uniform float uSmokeOn;
 uniform sampler2D uDetail;   // NASA GIBS true colour for the region on screen (zoomed in)
 uniform float uDetailOn;
 uniform vec4 uDetailBox;     // west lon, north lat, lon span, lat span (degrees); lon may run past 180
+uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
+uniform float uNightDetailOn;
+uniform vec4 uNightDetailBox;   // as uDetailBox
 uniform sampler2D uRelief;   // terrain slopes, east (r) and north (g), from ETOPO 2022 (make-relief.py)
 uniform float uReliefK;      // vertical exaggeration; 0 = off (the day texture then has NASA's shading)
 
@@ -49,6 +52,18 @@ vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec2 decodeSlope(vec2 t) {
   vec2 e = (t * 255.0 - 127.5) / 127.0;
   return sign(e) * e * e * 0.5;
+}
+
+// Where a lat/lon box (west lon, north lat, lon span, lat span, degrees) puts this point:
+// (u, v) in 0…1 inside it.
+vec2 boxUV(vec4 box, float lon, float lat) {
+  return vec2(mod(degrees(lon) - box.x, 360.0) / box.z, (box.y - degrees(lat)) / box.w);
+}
+
+// 0 at a box's edge, 1 from 4% of its size in, so a fetched region's seam doesn't show.
+float boxFade(vec2 duv, vec4 box, float coslat) {
+  vec2 edgeDeg = min(duv, 1.0 - duv) * box.zw * vec2(coslat, 1.0);
+  return smoothstep(0.0, 0.04 * min(box.z * coslat, box.w), min(edgeDeg.x, edgeDeg.y));
 }
 
 // Analytic mip level: texels per screen pixel at this point. Avoids dFdx,
@@ -157,6 +172,19 @@ void main() {
 
   float nightW = 1.0 - smoothstep(-0.12, 0.02, k);
   vec3 nightTex = uHasNight > 0.5 ? toLinear(textureLod(uNight, uv, lodFor(uNight, mu, coslat)).rgb) : albedo * 0.05;
+  // Zoomed in: the newest night's lights in place of 2016's. Its grey radiance takes the
+  // Black Marble's warm colour; the Black Marble's dark ground stays, its old lights don't.
+  if (uNightDetailOn > 0.5) {
+    vec2 duv = boxUV(uNightDetailBox, lon, lat);
+    if (duv.x >= 0.0 && duv.x <= 1.0 && duv.y >= 0.0 && duv.y <= 1.0) {
+      float texPerRad = float(textureSize(uNightDetail, 0).x) / radians(uNightDetailBox.z);
+      float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+      vec4 d = textureLod(uNightDetail, duv, lod);
+      vec3 ground = min(nightTex, vec3(0.006));
+      vec3 lights = ground + toLinear(d.rgb) * vec3(1.0, 0.755, 0.36); // sRGB (1, 0.88, 0.63)
+      nightTex = mix(nightTex, lights, d.a * boxFade(duv, uNightDetailBox, coslat));
+    }
+  }
   vec3 nightCol = nightTex * nightW * mix(0.15, 1.4, uLights);
 
   float ca = 0.0;

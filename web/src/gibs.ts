@@ -1,7 +1,8 @@
-// True-colour detail when zoomed in: NASA GIBS daily VIIRS mosaics (NOAA-20,
-// "corrected reflectance", down to 244 m a pixel), fetched only for the part
-// of the globe on screen and only once the view is zoomed past what the
-// monthly Blue Marble can show.
+// Real imagery when zoomed in: NASA GIBS daily VIIRS mosaics from NOAA-20, fetched only for
+// the part of the globe on screen and only once the view is zoomed past what the Blue and
+// Black Marble can show. By day, yesterday's true colour ("corrected reflectance", down to
+// 244 m a pixel); by night, the newest night's lights (NASA's Black Marble nightly product,
+// cloud-free and moonlight-corrected, down to 488 m), in place of the 2016 Black Marble.
 //
 // GIBS serves EPSG:4326 tiles — plain latitude/longitude, the same layout as
 // the globe's textures — with CORS, so the browser fetches them directly. The
@@ -10,12 +11,62 @@
 // The mosaic is a photo, clouds and all: where it shows, the live cloud layer
 // stands back.
 //
-// Tile matrix "250m" (from GIBS's WMTSCapabilities): 512 px tiles from the
-// top-left corner (-180°, 90°); level n is 0.5625 / 2^n degrees a pixel, so a
-// tile spans 288 / 2^n degrees and the matrix is ceil(360/span) × ceil(180/span).
+// Tile matrices "250m" and "500m" (from GIBS's WMTSCapabilities) share one grid: 512 px tiles
+// from the top-left corner (-180°, 90°); level n is 0.5625 / 2^n degrees a pixel, so a tile
+// spans 288 / 2^n degrees and the matrix is ceil(360/span) × ceil(180/span). "500m" stops at
+// level 7, "250m" at 8.
 
-export const GIBS_LAYER = 'VIIRS_NOAA20_CorrectedReflectance_TrueColor';
 export const GIBS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best';
+
+/** A GIBS daily layer to fetch detail from. */
+export interface GibsProduct {
+  layer: string;
+  matrix: '250m' | '500m';
+  ext: 'jpg' | 'png';
+  /** The finest level its matrix set has. */
+  maxLevel: number;
+  /** Days back to ask for until GIBS says what its newest is. */
+  daysBack: number;
+  /** A tile under this many bytes is empty for that day there yet: try the day before (0: never). */
+  emptyBytes: number;
+}
+
+export const TRUE_COLOR: GibsProduct = {
+  layer: 'VIIRS_NOAA20_CorrectedReflectance_TrueColor',
+  matrix: '250m',
+  ext: 'jpg',
+  maxLevel: 8,
+  daysBack: 1,
+  emptyBytes: 6000,
+};
+
+/**
+ * Black Marble nightly (VNP46A2-style, from NOAA-20): moonlight- and atmosphere-corrected,
+ * cloudy pixels filled from the last clear night. A one-band greyscale palette PNG,
+ * transparent where there's no data (polar day). GIBS has it a day or two after the night.
+ */
+export const NIGHT_LIGHTS: GibsProduct = {
+  layer: 'VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance',
+  matrix: '500m',
+  ext: 'png',
+  maxLevel: 7,
+  daysBack: 2,
+  // Empty means no data at all there (sunlit), not "not yet": no point trying earlier days.
+  emptyBytes: 0,
+};
+
+/** GIBS DescribeDomains for a daily layer over the last ten days. */
+export function domainUrl(p: GibsProduct, now: Date): string {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  return `${GIBS_BASE}/1.0.0/${p.layer}/default/${p.matrix}/all/${day(new Date(now.getTime() - 10 * 86_400_000))}--${day(now)}.xml`;
+}
+
+/** The newest date in `<Domain>start/end/P1D,…</Domain>`. */
+export function newestDate(xml: string): string | undefined {
+  const last = /<Domain>([^<]*)<\/Domain>/.exec(xml)?.[1].split(',').pop()?.trim().split('/');
+  const d = last && (last.length === 3 ? last[1] : last[0]);
+  return d && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : undefined;
+}
 export const TILE_PX = 512;
 export const MIN_LEVEL = 3;
 export const MAX_LEVEL = 8;
@@ -23,8 +74,6 @@ export const MAX_LEVEL = 8;
 export const DETAIL_BELOW_DEG_PER_PX = 0.09;
 /** At most this many tiles in one view (~48 × 70 KB: a 1920 px screen at the 50× maximum zoom needs 42 at 244 m); coarser levels fit the rest. */
 export const MAX_TILES = 48;
-/** A tile under this many bytes is GIBS's empty JPEG: no data for that day there yet. */
-export const EMPTY_TILE_BYTES = 6000;
 
 export const degPerTexel = (level: number) => 0.5625 / 2 ** level;
 export const tileSpanDeg = (level: number) => 288 / 2 ** level;
@@ -85,10 +134,10 @@ export const tileCount = (r: TileRange) => (r.col1 - r.col0 + 1) * (r.row1 - r.r
  * The finest level that's still no finer than a screen pixel, then coarser until the
  * visible box needs at most MAX_TILES. Null when zoomed out past where detail helps.
  */
-export function chooseRange(box: Box, degPerPx: number): TileRange | null {
+export function chooseRange(box: Box, degPerPx: number, maxLevel = MAX_LEVEL): TileRange | null {
   if (degPerPx >= DETAIL_BELOW_DEG_PER_PX) return null;
   let level = MIN_LEVEL;
-  while (level < MAX_LEVEL && degPerTexel(level + 1) >= degPerPx * 0.75) level++;
+  while (level < maxLevel && degPerTexel(level + 1) >= degPerPx * 0.75) level++;
   let r = tileRange(box, level);
   while (tileCount(r) > MAX_TILES && level > MIN_LEVEL) r = tileRange(box, --level);
   return tileCount(r) <= MAX_TILES ? r : null;
@@ -107,10 +156,10 @@ export function rangeBounds(r: TileRange): { lon0: number; lat1: number; lonSpan
 
 export const rangeKey = (r: TileRange, date: string) => `${date}/${r.level}/${r.col0}-${r.col1}/${r.row0}-${r.row1}`;
 
-export function tileUrl(date: string, level: number, row: number, col: number): string {
+export function tileUrl(date: string, level: number, row: number, col: number, p: GibsProduct = TRUE_COLOR): string {
   const { cols } = matrixSize(level);
   const c = ((col % cols) + cols) % cols;
-  return `${GIBS_BASE}/${GIBS_LAYER}/default/${date}/250m/${level}/${row}/${c}.jpg`;
+  return `${GIBS_BASE}/${p.layer}/default/${date}/${p.matrix}/${level}/${row}/${c}.${p.ext}`;
 }
 
 /** Yesterday (UTC): the newest day whose mosaic is complete everywhere. */
@@ -136,13 +185,32 @@ export class GibsDetail {
   private wanted: string | undefined;
   private shown: string | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** GIBS's newest date for the product, and when that was last asked. */
+  private newest: string | undefined;
+  private newestAt = 0;
   static readonly SETTLE_MS = 400;
   static readonly CACHE_TILES = 160;
+  static readonly NEWEST_EVERY_MS = 6 * 3_600_000;
 
-  constructor(private readonly onReady: (d: Detail | null) => void) {}
+  constructor(
+    private readonly onReady: (d: Detail | null) => void,
+    readonly product: GibsProduct = TRUE_COLOR,
+  ) {}
+
+  /** The date to show: GIBS's newest once known (asked every few hours), else `daysBack`. */
+  private dateFor(now: Date): string {
+    if (Date.now() - this.newestAt > GibsDetail.NEWEST_EVERY_MS) {
+      this.newestAt = Date.now();
+      void fetch(domainUrl(this.product, now))
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((xml) => (this.newest = newestDate(xml) ?? this.newest))
+        .catch(() => undefined);
+    }
+    return this.newest ?? mosaicDate(now, this.product.daysBack);
+  }
 
   want(range: TileRange | null, now: Date) {
-    const date = mosaicDate(now);
+    const date = this.dateFor(now);
     const key = range ? rangeKey(range, date) : undefined;
     if (key === this.wanted) return;
     this.wanted = key;
@@ -156,7 +224,7 @@ export class GibsDetail {
   }
 
   private async tile(date: string, level: number, row: number, col: number): Promise<ImageBitmap | null> {
-    const url = tileUrl(date, level, row, col);
+    const url = tileUrl(date, level, row, col, this.product);
     let p = this.tiles.get(url);
     if (!p) {
       p = (async () => {
@@ -164,7 +232,7 @@ export class GibsDetail {
         if (!r.ok) return null;
         const blob = await r.blob();
         // An empty day there: try the day before.
-        if (blob.size < EMPTY_TILE_BYTES) {
+        if (blob.size < this.product.emptyBytes) {
           const earlier = mosaicDate(new Date(`${date}T12:00:00Z`), 1);
           return earlier < mosaicDate(new Date(), 3) ? null : this.tile(earlier, level, row, col);
         }

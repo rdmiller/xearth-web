@@ -219,7 +219,7 @@ export const HOTKEYS: readonly Hotkey[] = [
   layer('shift+r', 'radar', 'Weather radar (RainViewer)'),
   layer('shift+s', 'smoke', 'Smoke plumes (NOAA HMS)'),
   layer('shift+t', 'tsunami', 'Tsunami alerts (NOAA)'),
-  layer('shift+p', 'truecolor', 'True-colour imagery when zoomed in (NASA GIBS)'),
+  layer('shift+p', 'truecolor', 'Real imagery when zoomed in: yesterday by day, the newest night’s lights by night (NASA GIBS)'),
   layer('shift+e', 'relief', 'Terrain lit by the Sun (ETOPO 2022)'),
   {
     keys: ['shift+o'],

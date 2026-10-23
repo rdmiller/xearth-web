@@ -95,12 +95,13 @@ Terrain in the dock) switches it off.
 - **Zoomed in:** where the true-colour imagery shows, the relief fades out, because the
   photo already has the real shadows from the satellite's pass.
 
-## True-colour imagery when zoomed in
+## Real imagery when zoomed in
 
-Zoom in past what the monthly Blue Marble can show (about 0.09° a screen pixel) and the day
-side switches to yesterday's real colour: NASA GIBS's daily VIIRS mosaic from NOAA-20
-("corrected reflectance"), down to 244 m a pixel at the 50× maximum zoom. Shift+P (or
-Imagery in the dock) turns it off.
+Zoom in past what the Blue and Black Marble can show (about 0.09° a screen pixel) and the
+globe switches to what NOAA-20's VIIRS actually saw: by day, yesterday's real colour (NASA
+GIBS's daily "corrected reflectance" mosaic, down to 244 m a pixel at the 50× maximum zoom);
+by night, the newest night's city lights (below). Shift+P (or Imagery in the dock) turns both
+off.
 
 - **Only what's on screen:** GIBS serves EPSG:4326 tiles (plain latitude/longitude, the
   globe's own layout) with CORS, so the browser fetches them directly. Once the view settles
@@ -117,6 +118,28 @@ Imagery in the dock) turns it off.
   resolution in use. Each place is imaged once a day, around 13:30 local time.
 - Zooming (wheel and +/−) now goes to 50×, as far as the URL always allowed; it used to stop
   at 8×, where the imagery is ~2 km a pixel.
+
+### Night lights
+
+The night side's counterpart: NASA's Black Marble nightly product from the same satellite's
+Day/Night Band (GIBS's "Gap-Filled BRDF Corrected Radiance"), in place of the 2016 Black
+Marble composite, down to 488 m a pixel.
+
+- **Why that one:** of GIBS's night-band layers, the raw at-sensor radiance shows moonlit cloud
+  smearing the lights (and the app already draws live cloud), and the blue/yellow composite
+  paints cloud blue. The Black Marble nightly one is corrected for moonlight and the
+  atmosphere, and fills cloudy pixels from the last clear night, so it's clean lights: what's
+  lit now, power cuts, new towns, gas flares, fishing fleets.
+- **The look:** it's one grey band, about as bright as the 2016 map (90th–99th percentile
+  52–217 against 62–173 over Europe on 2026-10-21), so the shader gives it the Black Marble's
+  warm colour, over the Black Marble's dark ground (capped, so the old lights don't show
+  through), fading out at the fetched area's edges and where it has no data (polar day).
+- **Which night:** GIBS has it a day or two after the night; the app asks GIBS for its newest
+  date (every 6 hours) rather than guess. The readout's "lights" row gives the date and
+  resolution.
+- **Only the side on screen:** night tiles are fetched only when the view reaches the night
+  side, and day tiles only when it reaches the day side (they used to be fetched for an
+  all-night view too).
 
 ## Going to a place
 
@@ -188,7 +211,7 @@ style. A test checks that every layer hotkey has a button.
 | `Shift+R` `Shift+S` `Shift+T` | weather radar, smoke, tsunami alerts on/off |
 | `Shift+L` | ISS telemetry panel: while tracking the ISS → always → off |
 | `S` | stars: on → camera exposure → off |
-| `Shift+P` | true-colour imagery when zoomed in (NASA GIBS) |
+| `Shift+P` | real imagery when zoomed in: yesterday's colour by day, the newest night's lights by night (NASA GIBS) |
 | `Shift+E` | terrain lit by the Sun (ETOPO 2022) |
 | `/` | go to a place: search by name or coordinates (or double-click the globe) |
 | `1` `2` `3` `4` | fixed, facing the Sun, orbit, from the Moon |
@@ -226,7 +249,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/satTree.ts     the satellite panel (tri-state checkbox tree)
   src/drawer.ts      the layer dock (Lucide icons; buttons run the hotkeys)
   src/places.ts      coordinates parsing, city lookup, geocoding, the great-circle glide
-  src/gibs.ts        NASA GIBS true-colour tiles for the region on screen
+  src/gibs.ts        NASA GIBS true-colour and night-lights tiles for the region on screen
   public/manifest.webmanifest, public/sw.js, public/icons/   installable app (and Android TWA)
   capacitor.config.ts, android/   the Capacitor Android app
   scripts/twa.mjs    Bubblewrap TWA manifest and assetlinks.json
@@ -377,7 +400,7 @@ docker compose down                 # stop (the data volume is kept)
 | `firehours` | show fires detected within this many hours (1–24) | 12 |
 | `lightning`, `events`, `snow` | lightning, GDACS events, snow and ice on/off | 1 |
 | `radar`, `smoke`, `tsunami` | RainViewer radar, NOAA HMS smoke, NOAA tsunami alerts on/off | 1 |
-| `truecolor` | NASA GIBS true-colour imagery when zoomed in | 1 |
+| `truecolor` | NASA GIBS imagery when zoomed in: VIIRS true colour by day, Black Marble nightly lights by night | 1 |
 | `relief` | terrain lit by the real Sun (ETOPO 2022); 0 shows NASA's fixed shaded relief | 1 |
 | `reliefscale` | terrain relief strength, 0.1–5 | 1 |
 | `isslive` | ISS telemetry: `track` (panel and stream only while tracking the ISS), `1` (always), `0` | `track` |
@@ -746,6 +769,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Relief Model (60″ surface elevation), doi:10.25921/fd45-gt74.
 - True-colour imagery: NASA Global Imagery Browse Services (GIBS), part of NASA's Earth
   Science Data and Information System (ESDIS); VIIRS corrected reflectance from NOAA-20.
+- Night lights: NASA Black Marble (Román et al.), NOAA-20 VIIRS Day/Night Band gap-filled BRDF
+  corrected radiance, via NASA GIBS.
 - Icons: Lucide (ISC License).
 - Place search: geocoding by Open-Meteo, with GeoNames data (CC BY 4.0).
 - Interface type: Chakra Petch by Cadson Demak (SIL Open Font License 1.1), bundled via

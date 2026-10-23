@@ -47,7 +47,7 @@ import {
   type NearbySources,
 } from './locale';
 import { PlaceSearch } from './search';
-import { chooseRange, GibsDetail, visibleBox, type Detail } from './gibs';
+import { chooseRange, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
 import {
   decodeNwsAlerts,
   isAlertCategory,
@@ -1000,10 +1000,20 @@ const gibs = new GibsDetail((d) => {
   requestRedraw();
 });
 
+/** The newest night's lights (Black Marble nightly), the night side's counterpart. */
+let nightDetail: Detail | null = null;
+const gibsNight = new GibsDetail((d) => {
+  nightDetail = d;
+  if (d) renderer.setNightDetail(d.image, d.bounds);
+  else renderer.clearNightDetail();
+  requestRedraw();
+}, NIGHT_LIGHTS);
+
 /** Ask for the tiles this view needs (or none), given device px per Earth radius. */
 function syncDetail(date: Date, radiusPx: number) {
   if (!settings.truecolor) {
     gibs.want(null, new Date());
+    gibsNight.want(null, new Date());
     return;
   }
   const degPerPx = 180 / Math.PI / Math.max(radiusPx, 1);
@@ -1011,7 +1021,15 @@ function syncDetail(date: Date, radiusPx: number) {
   const r = Math.hypot(globeCanvas.width, globeCanvas.height) / 2 / Math.max(radiusPx, 1);
   const radiusDeg = r >= 1 ? 90 : (Math.asin(r) * 180) / Math.PI;
   const at = viewerLatLon(settings, date, resolveTrack);
-  gibs.want(chooseRange(visibleBox(at.lat, at.lon, radiusDeg), degPerPx), new Date());
+  const box = visibleBox(at.lat, at.lon, radiusDeg);
+  // Only the side that's on screen: the Sun's angle from the view's centre, give or take what's
+  // visible, against the day (up to 96°: civil twilight's end) and the night (from 90°).
+  const sun = subsolarPoint(date);
+  const fromSun = (Math.acos(Math.max(-1, Math.min(1, dot(fromLatLon(at.lat, at.lon), fromLatLon(sun.lat, sun.lon))))) * 180) / Math.PI;
+  const day = fromSun - radiusDeg < 96;
+  const night = fromSun + radiusDeg > 90;
+  gibs.want(day ? chooseRange(box, degPerPx) : null, new Date());
+  gibsNight.want(night ? chooseRange(box, degPerPx, NIGHT_LIGHTS.maxLevel) : null, new Date());
 }
 
 /** "106.6k", "940": counts in the readout. */
@@ -1024,11 +1042,14 @@ const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String
 function layerRows(): ReadoutRow[] {
   const rows: ReadoutRow[] = [];
   const add = (key: string, value: string | undefined) => value && rows.push({ key, value });
-  if (settings.truecolor && detail) {
-    const day = new Date(`${detail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    const km = (0.5625 / 2 ** detail.level) * 111.32;
-    add('imagery', `${day} · ${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`);
-  }
+  // "22 Oct · 244 m/px": the mosaic's day and the resolution in use.
+  const mosaic = (d: Detail) => {
+    const day = new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const km = (0.5625 / 2 ** d.level) * 111.32;
+    return `${day} · ${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}/px`;
+  };
+  if (settings.truecolor && detail) add('imagery', mosaic(detail));
+  if (settings.truecolor && nightDetail) add('lights', mosaic(nightDetail));
   if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
   if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
@@ -1512,6 +1533,7 @@ function frame(now: number) {
     radar: settings.radar,
     smoke: settings.smoke,
     detail: settings.truecolor && !!detail,
+    nightDetail: settings.truecolor && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
   });
