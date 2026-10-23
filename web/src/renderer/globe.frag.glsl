@@ -52,6 +52,10 @@ uniform vec4 uLiveBox[4];    // as uDetailBox, per disc
 uniform float uLiveSub[4];   // longitude below each satellite (radians)
 uniform vec3 uLiveSun[4];    // the Sun's direction when each was taken
 uniform float uLiveFill[4];  // 1: shown only where the other discs leave gaps
+uniform sampler2D uHim;      // Himawari-9 cloud opacity (himawariClouds.ts): r = opacity × valid, g = valid
+uniform float uHimOn;
+uniform vec4 uHimBox;        // as uDetailBox
+uniform float uHimSub;       // longitude below Himawari (radians)
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -225,6 +229,18 @@ void main() {
   if (uCloudOn > 0.5) {
     float lc = lodFor(uCloudCur, mu, coslat);
     ca = mix(textureLod(uCloudPrev, uv, lc).r, textureLod(uCloudCur, uv, lc).r, uCloudMix);
+    // Over Himawari's disc, its live clouds (the hourly map's recipe, every 10 minutes) in
+    // place of the hourly map's, faded toward its limb as the live pictures are.
+    if (uHimOn > 0.5) {
+      vec2 hu = boxUV(uHimBox, lon, lat);
+      if (hu.x >= 0.0 && hu.x <= 1.0 && hu.y >= 0.0 && hu.y <= 1.0) {
+        float texPerRad = float(textureSize(uHim, 0).x) / radians(uHimBox.z);
+        float lod = log2(max(texPerRad / (uRadiusPx * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05)), 1.0));
+        vec2 hv = textureLod(uHim, hu, lod).rg;
+        float w = hv.g * smoothstep(LIMB_COS, LIMB_COS_IN, coslat * cos(lon - uHimSub));
+        ca = mix(ca, hv.r / max(hv.g, 1e-3), w);
+      }
+    }
     // The true-colour photo has its own (yesterday's) clouds: two sets would read as mush.
     ca *= 1.0 - 0.9 * detailA;
   }

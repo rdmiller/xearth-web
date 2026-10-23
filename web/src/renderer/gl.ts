@@ -49,6 +49,8 @@ export interface FrameState {
   detail: boolean;
   /** Live geostationary discs (when any has been set). */
   live: boolean;
+  /** Himawari-9's live clouds over its disc, in place of the hourly map's (when set). */
+  himawari: boolean;
   /** GIBS night-lights detail (when one has been set). */
   nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
@@ -67,6 +69,8 @@ type Slot = 'day' | 'night' | 'cloudPrev' | 'cloudCur';
 const LIVE_LAYERS = 4;
 const LIVE_PX = 2048;
 const LIVE_UNIT = 12;
+/** Himawari's cloud opacity. Unit 4 is the Sun and Moon's too (bodies.ts), so it's bound every frame. */
+const HIM_UNIT = 4;
 const UNIT: Record<Slot, number> = { day: 0, night: 1, cloudPrev: 2, cloudCur: 3 };
 const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight', cloudPrev: 'uCloudPrev', cloudCur: 'uCloudCur' };
 
@@ -115,6 +119,9 @@ export class GlobeRenderer {
   /** The Sun's direction when each disc, and the zoomed-in live picture, was taken. */
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
   private detailSun: Vec3 = [0, 0, 0];
+  private readonly himTex: WebGLTexture;
+  private himBox: [number, number, number, number] | null = null;
+  private himSub = 0;
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
   private readonly textures: Record<Slot, WebGLTexture>;
   private readonly loaded: Record<Slot, boolean> = { day: false, night: false, cloudPrev: false, cloudCur: false };
@@ -151,6 +158,7 @@ export class GlobeRenderer {
     this.detailTex = empty();
     this.nightDetailTex = empty();
     this.reliefTex = empty();
+    this.himTex = empty();
     // The live discs' array starts as one transparent texel too, for the same reason.
     this.liveTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.liveTex);
@@ -398,6 +406,25 @@ export class GlobeRenderer {
     this.liveSun.set(scanSun, layer * 3);
   }
 
+  /**
+   * Himawari's cloud opacity (RGBA bytes: r = opacity × valid, g = valid) for a lat/lon box,
+   * with the longitude below the satellite (degrees). Mipmapped, so a valid-weighted mean.
+   */
+  setHimawari(rgba: Uint8Array, w: number, h: number, box: LatLonBox, subLon: number) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + HIM_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.himTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.himBox = [box.lon0, box.lat1, box.lonSpan, box.latSpan];
+    this.himSub = (subLon * Math.PI) / 180;
+  }
+
   get hasLive() {
     return this.liveHas.some((v) => v > 0);
   }
@@ -570,6 +597,12 @@ export class GlobeRenderer {
     gl.uniform1fv(this.u('uLiveSub'), this.liveSub);
     gl.uniform1fv(this.u('uLiveFill'), this.liveFill);
     gl.uniform3fv(this.u('uLiveSun'), this.liveSun);
+    gl.activeTexture(gl.TEXTURE0 + HIM_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.himTex);
+    gl.uniform1i(this.u('uHim'), HIM_UNIT);
+    gl.uniform1f(this.u('uHimOn'), f.himawari && this.himBox ? 1 : 0);
+    if (this.himBox) gl.uniform4fv(this.u('uHimBox'), this.himBox);
+    gl.uniform1f(this.u('uHimSub'), this.himSub);
     gl.activeTexture(gl.TEXTURE15);
     gl.bindTexture(gl.TEXTURE_2D, this.nightDetailTex);
     gl.uniform1i(this.u('uNightDetail'), 15);

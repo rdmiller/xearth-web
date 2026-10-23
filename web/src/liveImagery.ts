@@ -38,9 +38,13 @@ export interface LiveSource {
    * blank picture there means night, not an unrendered scan: the newest listed scan is used.
    */
   dayOnly?: boolean;
+  /** GetMap's format: JPEG unless the colours are data (Himawari's Band 13 is read back to temperatures). */
+  format?: 'image/png';
+  /** GIBS's tile-matrix set, for its list of times (GOES GeoColor is 1km). */
+  matrix?: string;
 }
 
-const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
+export const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
 const EUMETSAT_WMS = 'https://view.eumetsat.int/geoserver/ows';
 
 /**
@@ -148,7 +152,7 @@ export function getMapUrl(s: LiveSource, time: string, part: WmsPart, lat0: numb
     BBOX: [lat0, part.lon0, lat1, part.lon1].map((v) => +v.toFixed(4)).join(','),
     WIDTH: String(part.width),
     HEIGHT: String(height),
-    FORMAT: 'image/jpeg',
+    FORMAT: s.format ?? 'image/jpeg',
     TIME: time,
   });
   return `${s.wms}?${q}`;
@@ -159,7 +163,7 @@ export function timesUrl(s: LiveSource, now: Date): string {
   if (s.times === 'gibs') {
     const iso = (d: Date) => `${d.toISOString().slice(0, 16)}:00Z`;
     const since = new Date(now.getTime() - 3 * 3_600_000);
-    return `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/${s.layer}/default/1km/all/${iso(since)}--${iso(now)}.xml`;
+    return `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/${s.layer}/default/${s.matrix ?? '1km'}/all/${iso(since)}--${iso(now)}.xml`;
   }
   // GeoServer's per-layer virtual service: the capabilities of just this layer.
   const [ws, name] = s.layer.split(':');

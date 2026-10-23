@@ -68,9 +68,11 @@ import {
 import { PickPanelView } from './pickView';
 import { decodeMeteors, fireballRows, isMeteorManifest, labelledFireballs, meteorSummary, showerColors, BANDS, type MeteorManifest } from './meteors';
 import { chooseRange, DETAIL_BELOW_DEG_PER_PX, GibsDetail, NIGHT_LIGHTS, visibleBox, type Detail } from './gibs';
-import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange } from './liveImagery';
+import { hhmm, LIVE_CHECK_MS, LIVE_MAX_SKEW_MS, LiveImagery, liveRange, viewAngleDeg } from './liveImagery';
 import { CELL_DEG, LI_WINDOW_MIN, LiWindow, mergeCells } from './mtgLightning';
 import { FRP_CELL_DEG, FRP_WINDOW_MIN, FrpWindow, frpPoints, frpRows } from './mtgFires';
+import { HIMAWARI_SUB_LON } from './himawariCloud';
+import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import {
   decodeOutlook,
   decodeWarnings,
@@ -1496,6 +1498,60 @@ function syncLive() {
   liveTimer = setInterval(() => void runLive(), LIVE_CHECK_MS);
 }
 
+// ---- live clouds over Asia and the west Pacific (Himawari-9) --------------------------------
+// The hourly cloud map's recipe on Himawari's own infrared and visible bands, every 10 minutes,
+// in place of the hourly map over its disc; see himawariClouds.ts. Part of live imagery, and
+// only fetched while its disc faces the view (~2.7 MB a scan).
+
+const himawari = new HimawariClouds(
+  (f) => {
+    renderer.setHimawari(f.rgba, f.w, f.h, f.box, HIMAWARI_SUB_LON);
+    requestRedraw();
+  },
+  (time) => new URL(dayTextureUrl(TEXTURE_BASE, new Date(time)), location.href).href,
+);
+const himawariOn = () => settings.clouds && settings.imagery === 'live';
+let himawariTimer: ReturnType<typeof setInterval> | undefined;
+/** A check was skipped while the disc faced away: run it once the view turns toward it. */
+let himawariSkipped = false;
+let himawariBusy = false;
+
+/** Does any of Himawari's disc (its usable 72°) face the view? */
+function facesHimawari(date: Date): boolean {
+  const at = viewerLatLon(settings, date, resolveTrack);
+  return viewAngleDeg(at.lat, at.lon, HIMAWARI_SUB_LON) < 90 + 72;
+}
+
+function runHimawari() {
+  if (!himawariOn() || himawariBusy) return;
+  if (!facesHimawari(new Date())) {
+    himawariSkipped = true;
+    return;
+  }
+  himawariSkipped = false;
+  himawariBusy = true;
+  feedLog.begin('himawari', Date.now(), HIMAWARI_CHECK_MS);
+  himawari
+    .check()
+    .then(() => feedLog.done('himawari', Date.now(), himawari.time))
+    .catch((err) => {
+      feedLog.fail('himawari', Date.now(), err);
+      console.warn('Himawari clouds:', err);
+    })
+    .finally(() => {
+      himawariBusy = false;
+      requestRedraw();
+    });
+}
+
+function syncHimawari() {
+  clearInterval(himawariTimer);
+  himawariTimer = undefined;
+  if (!himawariOn()) return feedLog.stop('himawari');
+  runHimawari();
+  himawariTimer = setInterval(runHimawari, HIMAWARI_CHECK_MS);
+}
+
 /** The newest night's lights (Black Marble nightly), the night side's counterpart, with either real-imagery mode. */
 let nightDetail: Detail | null = null;
 const gibsNight = new GibsDetail((d) => {
@@ -1526,6 +1582,7 @@ function syncDetail(date: Date, radiusPx: number) {
     // Its pictures are day-side only, so an all-night view asks for none.
     live.want(day ? liveRange(box, degPerPx, DETAIL_BELOW_DEG_PER_PX) : null, at);
   } else live.clear();
+  if (himawariSkipped && facesHimawari(date)) runHimawari();
 }
 
 /** "106.6k", "940": counts in the readout. */
@@ -1549,7 +1606,8 @@ function layerRows(): ReadoutRow[] {
   if (settings.imagery === 'live' && live.discs.size) {
     const times = [...live.discs.values()].map((d) => d.time).sort();
     const span = times[0] === times[times.length - 1] ? hhmm(times[0]) : `${hhmm(times[0])}–${hhmm(times[times.length - 1])}`;
-    add('imagery', `live ${span} UTC${live.detail && liveDetail ? ` · ${live.detail.source.name} ${perPx(live.detail.level)}` : ''}`);
+    const him = settings.clouds && himawari.time ? ` · Himawari clouds ${hhmm(himawari.time)}` : '';
+    add('imagery', `live ${span} UTC${him}${live.detail && liveDetail ? ` · ${live.detail.source.name} ${perPx(live.detail.level)}` : ''}`);
   }
   if (settings.imagery !== 'painted' && nightDetail) {
     const night = new Date(`${nightDetail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -1705,6 +1763,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'clouds', label: 'Clouds', source: 'NOAA GMGSI', freshMs: 2 * 60 * MIN, on: () => settings.clouds, everyMs: clouds.intervalMs },
   // GOES scans land in GIBS ~50 min after they're taken, MTG's in EUMETView ~20 and Meteosat-9's ~30.
   { key: 'imagery', label: 'Live imagery', source: 'GOES · MTG · Meteosat', freshMs: 60 * MIN, on: () => settings.imagery === 'live', everyMs: LIVE_CHECK_MS },
+  // GIBS draws a Himawari scan about an hour after it's taken.
+  { key: 'himawari', label: 'Live clouds', source: 'Himawari-9', freshMs: 90 * MIN, on: himawariOn, everyMs: HIMAWARI_CHECK_MS },
   { key: 'snow', label: 'Snow & ice', source: 'NOAA IMS', freshMs: PIPELINE_FRESH, on: () => settings.snow },
   { key: 'radar', label: 'Radar', source: 'RainViewer', freshMs: 20 * MIN, on: () => settings.radar },
   // The early run lands ~5 h after its half hour.
@@ -2311,6 +2371,7 @@ function frame(now: number) {
     smoke: settings.smoke,
     detail: settings.imagery === 'daily' ? !!detail : liveShown(date) && liveDetail,
     live: liveShown(date),
+    himawari: settings.clouds && liveShown(date),
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
@@ -2434,6 +2495,7 @@ function update(patch: Partial<Settings>) {
   }
   if (settings.clouds !== cloudsBefore) syncClouds();
   if (settings.imagery !== imageryBefore) syncLive();
+  if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
   if (settings.iono !== ionoBefore) syncIono();
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
@@ -2638,6 +2700,7 @@ syncSatellites();
 syncLaunches();
 for (const key of Object.keys(HAZARDS) as HazardKey[]) syncHazard(key);
 syncLive();
+syncHimawari();
 syncIono();
 // A link with ?buoy= opens that buoy's window, with or without the layer.
 if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
