@@ -100,9 +100,14 @@ export function volcanoSummary(placed: readonly UsVolcano[]): string {
   return parts.join(' · ');
 }
 
-/** Raised ones larger and labelled; normal ones small and quiet: there are ~65 of them. */
+/** Showing activity: an alert level above NORMAL, or an aviation code above GREEN. */
+export function isActive(v: UsVolcano): boolean {
+  return alertRank(v.hans.alert_level) >= 1 || ['YELLOW', 'ORANGE', 'RED'].includes(v.hans.color_code.toUpperCase());
+}
+
+/** Only the active ones, larger by level and labelled: the ~65 quiet ones aren't alerts. */
 export function volcanoOverlays(placed: readonly UsVolcano[]): EventOverlay[] {
-  return placed.map((v) => {
+  return placed.filter(isActive).map((v) => {
     const rank = alertRank(v.hans.alert_level);
     return {
       kind: 'VO',

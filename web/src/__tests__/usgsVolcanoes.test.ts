@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import monitored from './fixtures/hans-monitored-2026-10-23.json';
 import notice from './fixtures/hans-notice-avo-2026-10-22.json';
-import { alertRank, aviationColor, htmlText, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type HansVolcano } from '../usgsVolcanoes';
+import { alertRank, aviationColor, htmlText, isActive, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type HansVolcano } from '../usgsVolcanoes';
 
 const list = monitored as HansVolcano[];
 const { placed, unplaced } = placeVolcanoes(list);
@@ -34,16 +34,21 @@ describe('placing HANS’s volcanoes at the Smithsonian’s positions', () => {
 });
 
 describe('on the globe', () => {
-  it('draws raised volcanoes large and labelled in their aviation colour, normal ones small and quiet', () => {
+  it('draws only the active volcanoes, large and labelled in their aviation colour', () => {
     const o = volcanoOverlays(placed);
+    expect(o).toHaveLength(4);
     const sitkin = o[0];
     expect(sitkin.color).toBe(aviationColor('ORANGE'));
     expect(sitkin.size).toBe(8);
     expect(sitkin.rows).toEqual({ title: 'GREAT SITKIN · WATCH', detail: 'ORANGE · AVO', impact: 0, impactColor: '' });
-    const quiet = o[o.length - 1];
-    expect(quiet.color).toBe(aviationColor('GREEN'));
-    expect(quiet.size).toBe(3.5);
-    expect(quiet.rows).toBeUndefined();
+    expect(o.every((x) => x.rows && x.color !== aviationColor('GREEN'))).toBe(true);
+  });
+
+  it('counts a raised level or a raised aviation code as activity, not NORMAL/GREEN', () => {
+    expect(isActive(find('Great Sitkin'))).toBe(true);
+    expect(isActive(find('Yellowstone'))).toBe(false);
+    const yellowOnly = { ...find('Yellowstone'), hans: { ...find('Yellowstone').hans, color_code: 'YELLOW' } };
+    expect(isActive(yellowOnly)).toBe(true);
   });
 
   it('ranks the alert levels, and colours an unknown code grey', () => {

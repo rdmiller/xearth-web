@@ -79,7 +79,7 @@ import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
 import { isWindManifest, loadWindField, MAX_PARTICLES, WindParticles, windSummary, type WindField, type WindManifest } from './winds';
 import { EmscPush, EmscQuakes, emscQueryUrl, isEmscFeed, mergeQuakes } from './emsc';
-import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
+import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isActive, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
 import { detailRequest, fetchFloodCells, FLOOD_CHECK_MS, FLOOD_H, FLOOD_REFRESH_MS, FLOOD_W, floodPoints, floodSummary, newestFloodDate, withDetail, WORLD, type FloodBox, type FloodCell } from './flood';
 import {
   decodeOutlook,
@@ -2379,7 +2379,7 @@ function targetAt(clientX: number, clientY: number): string | undefined {
   if (settings.quakes) for (const q of quakes) add(fromLatLon(q.lat, q.lon), Math.max(8, quakeRadius(q.mag) + 3), pickKey('quake', q.id));
   if (settings.storms) for (const st of stormManifest?.storms ?? []) add(fromLatLon(st.pos[1], st.pos[0]), REACH.storm, pickKey('storm', st.id));
   if (settings.events) for (const e of eventManifest?.events ?? []) add(fromLatLon(e.pos[1], e.pos[0]), eventSize(e.alert) + 5, pickKey('event', e.id));
-  if (settings.events) for (const v of usVolcanoes) if (v.hans.vnum) add(fromLatLon(v.lat, v.lon), (alertRank(v.hans.alert_level) >= 1 ? 6 + alertRank(v.hans.alert_level) : 3.5) + 5, pickKey('volcano', v.hans.vnum));
+  if (settings.events) for (const v of usVolcanoes) if (v.hans.vnum && isActive(v)) add(fromLatLon(v.lat, v.lon), (alertRank(v.hans.alert_level) >= 1 ? 6 + alertRank(v.hans.alert_level) : 3.5) + 5, pickKey('volcano', v.hans.vnum));
   if (settings.tsunami) {
     for (const b of tsunamiManifest?.bulletins ?? []) if (tsunamiShown(b, now)) add(fromLatLon(b.lat, b.lon), REACH.tsunami, pickKey('tsunami', b.id));
   }
@@ -2615,8 +2615,9 @@ function wantFloodDetail(view: { lat0: number; lat1: number; lon0: number; lon1:
 }
 
 // ---- US volcano alert levels (USGS HANS), with the GDACS events ------------------------------
-// HANS's monitored volcanoes, placed at the Smithsonian's positions (usgsVolcanoes.ts); a
-// volcano's latest notice is fetched when its window opens, once per notice.
+// HANS's monitored volcanoes, placed at the Smithsonian's positions (usgsVolcanoes.ts); only
+// those showing activity are drawn and pickable, the quiet ones just counted. A volcano's
+// latest notice is fetched when its window opens, once per notice.
 
 let usVolcanoes: UsVolcano[] = [];
 let usVolcanoCache: EventOverlay[] | undefined;
