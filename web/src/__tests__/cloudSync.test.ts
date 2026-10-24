@@ -63,6 +63,71 @@ describe('CloudSync', () => {
   });
 });
 
+describe('CloudSync polling', () => {
+  /** A fetchJson that waits until released, so a test can act while a check is in flight. */
+  function pending() {
+    const releases: (() => void)[] = [];
+    const fetchJson = vi.fn(() => new Promise<unknown>((resolve) => releases.push(() => resolve(manifest('2026-10-21T15:00:00Z')))));
+    const release = () => releases.splice(0).forEach((r) => r());
+    return { fetchJson, release };
+  }
+
+  it('checks now, then once per interval until stopped', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchJson = vi.fn(async () => manifest('2026-10-21T15:00:00Z'));
+      const sync = new CloudSync('https://example.test/', { fetchJson, loadImage: async () => 'x' }, () => {}, () => {}, 1000);
+      sync.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchJson).toHaveBeenCalledTimes(1);
+      expect(sync.nextCheckAt).toBeDefined();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+      sync.stop();
+      expect(sync.nextCheckAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stays stopped when stop() comes while a check is in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetchJson, release } = pending();
+      const sync = new CloudSync('https://example.test/', { fetchJson, loadImage: async () => 'x' }, () => {}, () => {}, 1000);
+      sync.start();
+      sync.stop();
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sync.nextCheckAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchJson).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('runs one loop, not two, when stopped and restarted during a check', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetchJson, release } = pending();
+      const sync = new CloudSync('https://example.test/', { fetchJson, loadImage: async () => 'x' }, () => {}, () => {}, 1000);
+      sync.start();
+      sync.stop();
+      sync.start(); // shares the first start's in-flight check
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(1);
+      sync.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('cloud status in the readout', () => {
   const now = new Date('2026-10-21T16:24:00Z');
   it('speaks up only while there are no clouds to show (their times are in the feeds window)', () => {

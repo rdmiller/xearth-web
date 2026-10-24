@@ -30,6 +30,8 @@ export class CloudSync<Img> {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private current: CloudManifest | undefined;
   private inFlight: Promise<boolean> | undefined;
+  /** Bumped by stop(): a tick from an older start() finds it changed and schedules nothing. */
+  private generation = 0;
   status: CloudStatus = { state: 'idle' };
   /** Wall-clock ms the next scheduled check is due; undefined while stopped. */
   nextCheckAt: number | undefined;
@@ -49,8 +51,10 @@ export class CloudSync<Img> {
 
   start() {
     this.stop();
+    const generation = this.generation;
     const tick = async () => {
       await this.check();
+      if (generation !== this.generation) return;
       this.timer = setTimeout(tick, this.intervalMs);
       this.nextCheckAt = Date.now() + this.intervalMs;
     };
@@ -58,6 +62,7 @@ export class CloudSync<Img> {
   }
 
   stop() {
+    this.generation++;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.nextCheckAt = undefined;
