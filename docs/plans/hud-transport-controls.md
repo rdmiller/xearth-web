@@ -269,8 +269,16 @@ or hidden.
 ### Satellites far from now
 
 Satellites need one extra limit: SGP4 from today's elements drifts badly beyond a few weeks.
-More than 30 days from now, the bulk point clouds hide and the named satellites show a
-"position approximate" tag; beyond a year they hide too.
+`satAge.ts` measures from the elements themselves, not from now:
+
+- **The constellations** (the point clouds, their name labels and their clicks) go more than
+  30 days from the catalog's date. The readout's satellites row says so ("constellations
+  hidden: orbits from 24 Oct 2026").
+- **The named satellites** (and one picked or followed from a constellation), each from its
+  own epoch: past 30 days the label reads "ISS · APPROX.", the tracking row and pick window
+  say "position approximate"; past a year they go, with their pick window. A view following
+  one stays where it was set; the ISS camera goes with the ISS.
+- NASA's live ISS telemetry already only places the ISS near now (`STATE_VECTOR_MAX_AGE_MS`).
 
 ## Architecture
 
@@ -385,7 +393,7 @@ Each is its own PR, shippable alone.
    (dock included), `--transport-h` stacking.
 4. **Picker** (done). Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
    on phones.
-5. **Satellite age limit.** Hide/tag satellites far from their elements' epoch.
+5. **Satellite age limit** (done). Hide/tag satellites far from their elements' epoch.
 
 ## Testing
 
