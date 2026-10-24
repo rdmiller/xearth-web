@@ -446,8 +446,8 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
   - Local time and UTC offset.
   - The weather drawn: an icon for the conditions (day or night), the temperature large with
     feels-like and the day's high and low, chips for wind (an arrow the way it blows),
-    humidity and UV (coloured by WHO band), and the sun's day as an arc over the horizon,
-    the part travelled lit and the sun where it is now, sunrise and sunset at its ends.
+    humidity and UV (coloured by WHO band), and sunrise and sunset by their icons with the
+    daylight between.
   - For a city (clicked, or searched and matched by name within 25 km): its region and
     country, whether it's a national or regional capital, and its metro population
     (Natural Earth, baked into `cityFacts.ts`, a chunk loaded on the first city card); then

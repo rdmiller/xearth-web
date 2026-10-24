@@ -182,24 +182,6 @@ export function weatherIcon(code: number, isDay = true): WeatherIcon {
   return 'cloudy';
 }
 
-/** Minutes after midnight of a "07:36" clock, or null. */
-export function clockMinutes(hhmm: string | null): number | null {
-  const m = hhmm?.match(/^(\d\d):(\d\d)$/);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-}
-
-/**
- * How far through today's daylight the place is now: 0 at sunrise, 1 at sunset (below 0
- * before, above 1 after), or null without both times (polar night, midnight sun).
- */
-export function dayProgress(w: LocalWeather, now: number): number | null {
-  const rise = clockMinutes(w.sunrise);
-  const set = clockMinutes(w.sunset);
-  if (rise === null || set === null || set <= rise) return null;
-  const local = clockMinutes(localClock(now, w.utcOffsetS))!;
-  return (local - rise) / (set - rise);
-}
-
 /** The WHO's UV index bands. */
 export function uvBand(uv: number): 'low' | 'moderate' | 'high' | 'very high' | 'extreme' {
   return uv < 3 ? 'low' : uv < 6 ? 'moderate' : uv < 8 ? 'high' : uv < 11 ? 'very high' : 'extreme';

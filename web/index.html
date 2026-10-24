@@ -375,18 +375,11 @@
       #place-card .chip.uv-high svg { color: #ff9f43; }
       #place-card .chip.uv-very-high svg { color: var(--bad); }
       #place-card .chip.uv-extreme svg { color: #c77dff; }
-      /* The sun's day: its arc over the horizon, the travelled part lit, the sun where it is now. */
-      #place-card .sunarc { margin-top: 8px; }
-      #place-card .sunarc .arc { display: block; width: 100%; height: auto; overflow: visible; }
-      #place-card .arc .horizon { stroke: var(--ink-4); stroke-width: 1; }
-      #place-card .arc .track { fill: none; stroke: rgba(255, 201, 77, 0.35); stroke-width: 1.2; stroke-dasharray: 2 3; }
-      #place-card .arc .done { fill: none; stroke: #ffc94d; stroke-width: 1.8; }
-      #place-card .arc .glow { fill: rgba(255, 201, 77, 0.22); }
-      #place-card .arc .disc { fill: #ffd76a; }
-      #place-card .sun-times { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; font-size: 12px; color: #ffe2a0; }
-      #place-card .sun-end { display: inline-flex; align-items: center; gap: 5px; }
-      #place-card .sun-end svg { color: #ffc94d; }
-      #place-card .daylight { font-size: 11px; color: var(--ink-3); }
+      /* Sunrise and sunset by their icons, then the daylight. */
+      #place-card .sun-times { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 8px; font-size: 13px; color: #ffe2a0; }
+      #place-card .sun-time { display: inline-flex; align-items: center; gap: 6px; }
+      #place-card .sun-time svg { color: #ffc94d; }
+      #place-card .daylight { margin-left: auto; font-size: 11px; color: var(--ink-3); }
       #place-card .about { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--ink-3);
         display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; line-clamp: 5; overflow: hidden; }
       #place-card .about strong { font-weight: 600; color: var(--ink-2); }

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   aqiAlert,
-  clockMinutes,
   compass,
   conditionsLine,
-  dayProgress,
   daylightText,
   decodeForecast,
   decodeNwsPointAlerts,
@@ -64,16 +62,6 @@ describe('the weather, drawn', () => {
     expect(weatherIcon(95)).toBe('thunder');
     expect(weatherIcon(99)).toBe('hail');
     expect(weatherIcon(1234)).toBe('cloudy');
-  });
-
-  it('finds how far through its day the sun is', () => {
-    const w = decodeForecast(LONDON)!; // up 07:36, down 17:52, UTC+1
-    expect(clockMinutes('07:36')).toBe(456);
-    expect(clockMinutes(null)).toBeNull();
-    expect(dayProgress(w, Date.parse('2026-10-22T06:36Z'))).toBe(0); // 07:36 there
-    expect(dayProgress(w, Date.parse('2026-10-22T12:15Z'))).toBeCloseTo(339 / 616, 6);
-    expect(dayProgress(w, Date.parse('2026-10-22T20:00Z'))).toBeGreaterThan(1);
-    expect(dayProgress({ ...w, sunrise: null }, 0)).toBeNull();
   });
 
   it('bands the UV index and reads the daylight', () => {
