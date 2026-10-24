@@ -13,6 +13,7 @@
 import {
   Activity,
   AlignLeft,
+  Clock,
   Cloud,
   CloudFog,
   createElement,
@@ -55,11 +56,16 @@ export interface DrawerItem {
   /** A Lucide icon, or initials when the library has nothing fitting. */
   icon: IconNode | string;
   /** On, plus a small tag for the in-between states of cycling layers. */
-  state(s: Settings): { on: boolean; tag?: string };
+  state(s: Settings, ui?: DrawerUi): { on: boolean; tag?: string };
   /** A second, smaller button beside it (the satellite categories panel). */
   extra?: { icon: IconNode; label: string; action: 'satTree' };
   /** An action, not a layer: no on/off state. */
   momentary?: boolean;
+}
+
+/** State that isn't a setting: the time controls kept on screen. */
+export interface DrawerUi {
+  transport: boolean;
 }
 
 export interface DrawerGroup {
@@ -143,6 +149,7 @@ export const DRAWER: DrawerGroup[] = [
       { key: 'l', label: 'Readout', icon: AlignLeft, state: (s) => ({ on: s.label !== 'off', tag: s.label === 'short' ? 'SHORT' : undefined }) },
       { key: 'd', label: 'FPS', icon: Gauge, state: flag('fps') },
       { key: 'shift+u', label: 'Feeds', icon: Timer, state: flag('feeds') },
+      { key: 'shift+c', label: 'Time', icon: Clock, state: (_, ui) => ({ on: !!ui?.transport }) },
     ],
   },
 ];
@@ -193,9 +200,10 @@ export interface DrawerHandlers {
    * and sinks with the pointer — fine for toasts, which nobody clicks); `full`: px it covers
    * when fully shown, which only changes with the window size — what panels the pointer has
    * to reach anchor to, so they don't move as it approaches; `reserved`: px labels keep out
-   * of — only while pinned, since a passing reveal just floats over the map.
+   * of — only while pinned, since a passing reveal just floats over the map; `grip`: px to the
+   * top of the grip, which is always there (the time controls sit on it while the dock is down).
    */
-  resized(shown: number, reserved: number, full: number): void;
+  resized(shown: number, reserved: number, full: number, grip: number): void;
 }
 
 export class Drawer {
@@ -206,6 +214,8 @@ export class Drawer {
   private reveal = 0;
   private pointer: { x: number; y: number } | null = null;
   private frame = 0;
+  /** Elements above the dock that keep it shown while the pointer or keyboard focus is on them. */
+  private readonly holds: HTMLElement[] = [];
   /** The satellite categories button, for the panel's aria-expanded. */
   satTreeButton: HTMLButtonElement | undefined;
 
@@ -250,6 +260,8 @@ export class Drawer {
       this.pointer = null;
       this.schedule();
     });
+    // Once it has slid up (or down), say where it ended: what's stacked on it follows.
+    this.dock.addEventListener('transitionend', () => this.schedule());
     this.dock.addEventListener('focusin', () => this.schedule());
     this.dock.addEventListener('focusout', () => this.schedule());
     window.addEventListener('resize', () => this.schedule());
@@ -298,6 +310,13 @@ export class Drawer {
     return box;
   }
 
+  /** Keep the dock shown while the pointer is over `el`, or keyboard focus is in it (the time controls). */
+  holdOpen(el: HTMLElement) {
+    this.holds.push(el);
+    el.addEventListener('focusin', () => this.schedule());
+    el.addEventListener('focusout', () => this.schedule());
+  }
+
   private schedule() {
     this.frame ||= requestAnimationFrame(() => {
       this.frame = 0;
@@ -308,9 +327,16 @@ export class Drawer {
   /** Work out how shown the dock is, and size the buttons near the pointer. */
   private apply() {
     const h = window.innerHeight;
-    const near = this.pointer ? revealFor(h - this.pointer.y) : 0;
+    const p = this.pointer;
+    const near = p ? revealFor(h - p.y) : 0;
+    const held = this.holds.some((el) => {
+      if (el.querySelector(':focus-visible')) return true;
+      if (!p || !el.classList.contains('shown')) return false;
+      const r = el.getBoundingClientRect();
+      return p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+    });
     const focused = this.dock.contains(document.activeElement);
-    this.reveal = this.pinned || focused ? 1 : near;
+    this.reveal = this.pinned || focused || held ? 1 : near;
     const shown = this.reveal > 0.02;
     this.root.style.setProperty('--reveal', this.reveal.toFixed(3));
     this.root.classList.toggle('shown', shown);
@@ -332,7 +358,8 @@ export class Drawer {
     const dockTop = Math.ceil(h - this.dock.getBoundingClientRect().top);
     // Layout height, which the reveal's transform doesn't change: the dock fully shown.
     const full = Math.ceil(this.root.offsetHeight + parseFloat(getComputedStyle(this.root).bottom || '0'));
-    this.handlers.resized(shown ? dockTop : 0, this.pinned ? full : 0, full);
+    const grip = Math.ceil(h - this.handle.getBoundingClientRect().top);
+    this.handlers.resized(shown ? dockTop : 0, this.pinned ? full : 0, full, grip);
   }
 
   get open() {
@@ -350,9 +377,9 @@ export class Drawer {
     this.apply();
   }
 
-  refresh(s: Settings) {
+  refresh(s: Settings, ui?: DrawerUi) {
     for (const b of this.buttons) {
-      const st = b.item.state(s);
+      const st = b.item.state(s, ui);
       if (b.item.momentary) b.el.removeAttribute('aria-pressed');
       else b.el.setAttribute('aria-pressed', String(st.on));
       b.tag.textContent = st.tag ?? '';

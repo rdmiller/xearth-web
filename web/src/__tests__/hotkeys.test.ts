@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HOTKEYS, MAG_MAX, formatSpeed, forwardSpeed, helpRows, matchHotkey, nextSpeed, rewindSpeed, type HotkeyContext, type KeyLike } from '../hotkeys';
+import { HOTKEYS, MAG_MAX, formatSpeed, forwardSpeed, helpRows, matchHotkey, nextSpeed, rewindSpeed, shortSpeed, type HotkeyContext, type KeyLike } from '../hotkeys';
 import { defaults, type Settings } from '../params';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
@@ -35,6 +35,7 @@ function harness(initial: Partial<Settings> = {}) {
     toggleHelp: vi.fn(),
     toggleSatTree: vi.fn(),
     toggleDrawer: vi.fn(),
+    toggleTransport: vi.fn(() => true),
     openSearch: vi.fn(),
     toast(m) {
       this.toasts.push(m);
@@ -62,7 +63,7 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: 'R', shiftKey: true })?.description).toMatch(/^Rain: radar/);
     expect(matchHotkey({ key: 'S', shiftKey: true })?.description).toBe('Smoke plumes (NOAA HMS)');
     expect(matchHotkey({ key: 'r' })?.description).toBe('Check for new clouds now');
-    expect(matchHotkey({ key: 'C', shiftKey: true })?.description).toBe('Clouds');
+    expect(matchHotkey({ key: 'G', shiftKey: true })?.description).toBe('Grid');
     expect(matchHotkey({ key: '?', shiftKey: true })?.description).toBe('This help');
     expect(matchHotkey({ key: 'T', shiftKey: true })?.description).toBe('Tsunami alerts (NOAA)');
   });
@@ -342,6 +343,13 @@ describe('time keys', () => {
     expect(matchHotkey({ key: '>', repeat: true })).toBeUndefined();
   });
 
+  it('Shift+C keeps the time controls on screen', () => {
+    const h = harness();
+    h.press('C', { shiftKey: true });
+    expect(h.ctx.toggleTransport).toHaveBeenCalled();
+    expect(h.ctx.toasts.at(-1)).toBe('Time controls: kept on screen');
+  });
+
   it('T returns to now', () => {
     const h = harness({ speed: 600 });
     h.press('t');
@@ -371,6 +379,16 @@ describe('helpers', () => {
     expect(rewindSpeed(-600)).toBe(-3600);
     expect(rewindSpeed(-3600)).toBe(-3600);
     expect(rewindSpeed(-100)).toBe(-600);
+  });
+
+  it('shortSpeed fits the rate chip', () => {
+    expect(shortSpeed(0)).toBe('PAUSED');
+    expect(shortSpeed(1)).toBe('1×');
+    expect(shortSpeed(10)).toBe('10×');
+    expect(shortSpeed(-10)).toBe('−10×');
+    expect(shortSpeed(600)).toBe('10 MIN/S');
+    expect(shortSpeed(-3600)).toBe('−1 H/S');
+    expect(shortSpeed(86400)).toBe('1 DAY/S');
   });
 
   it('formatSpeed reads naturally', () => {

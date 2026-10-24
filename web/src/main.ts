@@ -198,6 +198,7 @@ import {
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { clockAt, isLive, jumpTo as jumpClock, live as liveClock, stepBy, withSpeed, type Clock } from './clock';
 import { ANNOUNCE_MIN_FADE, anyFaded, fadesAt, hazardFade, type FadedLayer, type Fades } from './hazardFade';
+import { Transport } from './transport';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
   clearOverlaySprites,
@@ -2113,15 +2114,44 @@ const satTree = new SatTree(document.getElementById('sat-tree') as HTMLElement, 
 let drawerInset = 0;
 let drawerShown = -1;
 let drawerFull = -1;
-const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
-  run(key) {
-    const hk = hotkeyByKey(key);
-    const k = key.replace('shift+', '');
-    hk?.run(hotkeyContext, { key: k, shiftKey: key.startsWith('shift+') });
+/** What labels keep clear of for the time controls (while they're on screen for good). */
+let transportInset = 0;
+
+/** Run a hotkey by the name HOTKEYS gives it ("c", "shift+r"), as a button press. */
+function runKey(key: string) {
+  const hk = hotkeyByKey(key);
+  const k = key.replace('shift+', '');
+  hk?.run(hotkeyContext, { key: k, shiftKey: key.startsWith('shift+') });
+}
+
+const transport = new Transport(
+  document.getElementById('transport') as HTMLElement,
+  {
+    run: runKey,
+    now: () => simTime(),
+    realTime() {
+      hotkeyContext.setSpeed(1);
+      toast(formatSpeed(1));
+    },
+    explainHazards: () => toast('Hazards are live data: hidden away from now'),
+    resized(top, full, reserved) {
+      // The status toast sits above the bar; panels above where it is with the dock up.
+      document.documentElement.style.setProperty('--transport-top', `${top}px`);
+      document.documentElement.style.setProperty('--transport-full', `${full}px`);
+      if (reserved === transportInset) return;
+      transportInset = reserved;
+      queueMicrotask(requestRedraw);
+    },
   },
+  matchMedia(SMALL_SCREEN),
+);
+const drawerUi = () => ({ transport: transport.pinned });
+const drawer = new Drawer(document.getElementById('drawer') as HTMLElement, {
+  run: runKey,
   openSatTree: () => satTree.toggle(),
   keyLabel: (key) => hotkeyByKey(key)?.label ?? key.toUpperCase(),
-  resized(shown, reserved, full) {
+  resized(shown, reserved, full, grip) {
+    transport.setDock(shown, grip, full);
     // Toasts follow the dock as it rises and sinks…
     if (shown !== drawerShown) {
       drawerShown = shown;
@@ -2997,6 +3027,7 @@ function frame(now: number) {
     announceAlarms();
   }
   alertsWere = alerts;
+  transport.refresh({ speed: settings.speed, live: isLive(clock()), hazardsFaded: anyFaded(fade, layerOn) });
 
   if (renderer.cloudMix < 1) {
     renderer.cloudMix = Math.min(1, (performance.now() - fadeStart) / FADE_MS);
@@ -3148,7 +3179,7 @@ function frame(now: number) {
     severeLabels: shown('severe', fade) ? severeOverlays().labels : undefined,
     // Every hazard the overlay draws is on the live tier.
     hazardAlpha: hazardFade(date.getTime() - Date.now(), 'live'),
-    bottomInset: drawerInset,
+    bottomInset: Math.max(drawerInset, transportInset),
     panels: [...toasts.rects(), ...domRects(credits, radarCredit)],
     target: target && target.until > Date.now() ? target : undefined,
     picked: pickedMark,
@@ -3269,7 +3300,7 @@ function update(patch: Partial<Settings>) {
   if (settings.buoy !== buoyBefore) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
   syncIssLive();
   satTree.refresh(settings, treeCounts());
-  drawer.refresh(settings);
+  drawer.refresh(settings, drawerUi());
   feedBoard.show(settings.feeds);
   // RainViewer's credit link shows whenever radar does.
   radarCredit.hidden = !settings.radar;
@@ -3429,6 +3460,11 @@ const hotkeyContext: HotkeyContext = {
   toggleSatTree(open) {
     satTree.toggle(open);
   },
+  toggleTransport() {
+    const pinned = transport.toggle();
+    drawer.refresh(settings, drawerUi());
+    return pinned;
+  },
   toggleDrawer() {
     drawer.toggle();
   },
@@ -3442,8 +3478,8 @@ window.addEventListener('keydown', (e) => {
   // Events aimed at the window or document (not an element) have no closest().
   const target = e.target instanceof Element ? e.target : null;
   if (target?.closest('textarea, select, [contenteditable], input:not([type="checkbox"])')) return;
-  // In the satellite panel, Space and Enter work its checkboxes and buttons.
-  if (target?.closest('#sat-tree') && (e.key === ' ' || e.key === 'Enter')) return;
+  // In the satellite panel and the time controls, Space and Enter work their buttons.
+  if (target?.closest('#sat-tree, #transport') && (e.key === ' ' || e.key === 'Enter')) return;
   const hk = matchHotkey(e);
   if (!hk) return;
   e.preventDefault(); // Space would scroll, arrows would pan the page
@@ -3494,6 +3530,10 @@ if (Capacitor.isNativePlatform()) {
       if (search.open) search.toggle(false);
       else if (satTree.open) satTree.toggle(false);
       else if (!help.hidden) help.hidden = true;
+      else if (transport.pinned) {
+        transport.toggle(false);
+        drawer.refresh(settings, drawerUi());
+      }
       else void App.minimizeApp();
     }),
   );
@@ -3503,6 +3543,7 @@ if (Capacitor.isNativePlatform()) {
 radarCredit.hidden = !settings.radar;
 syncIssLive();
 satTree.refresh(settings, treeCounts());
-drawer.refresh(settings);
+drawer.refresh(settings, drawerUi());
+drawer.holdOpen(document.getElementById('transport') as HTMLElement);
 feedBoard.show(settings.feeds);
 requestRedraw();

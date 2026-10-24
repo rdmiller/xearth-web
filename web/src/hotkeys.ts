@@ -41,6 +41,8 @@ export interface HotkeyContext {
   toggleSatTree(open?: boolean): void;
   /** Pin or unpin the layer dock along the bottom. */
   toggleDrawer(): void;
+  /** Keep the time controls on screen, or let them come and go with the dock; returns pinned. */
+  toggleTransport(): boolean;
   /** The place search box. */
   openSearch(): void;
   toast(message: string): void;
@@ -227,6 +229,16 @@ const stepKey = (keys: [string, string], dir: 1 | -1): Hotkey => ({
     ctx.toast(`${dir > 0 ? 'Forward' : 'Back'} ${day ? 'a day' : 'an hour'} · ${utcMinute(shown)}`);
   },
 });
+
+/** The time controls' rate chip: "PAUSED", "1×", "10×", "10 MIN/S", "−1 H/S", "1 DAY/S". */
+export function shortSpeed(speed: number): string {
+  if (speed === 0) return 'PAUSED';
+  const a = Math.abs(speed);
+  const sign = speed < 0 ? '−' : '';
+  if (a < 60) return `${sign}${a}×`;
+  const rate = a >= 86400 ? `${a / 86400} DAY` : a >= 3600 ? `${a / 3600} H` : `${a / 60} MIN`;
+  return `${sign}${rate}/S`;
+}
 
 export function formatSpeed(speed: number): string {
   if (speed === 0) return 'Paused';
@@ -584,6 +596,15 @@ export const HOTKEYS: readonly Hotkey[] = [
     run(ctx) {
       ctx.goLive();
       ctx.toast('Now');
+    },
+  },
+  {
+    keys: ['shift+c'],
+    label: 'Shift+C',
+    description: 'Keep the time controls on screen',
+    group: 'Time',
+    run(ctx) {
+      ctx.toast(ctx.toggleTransport() ? 'Time controls: kept on screen' : 'Time controls: with the layer buttons');
     },
   },
 
