@@ -29,8 +29,10 @@ uniform float uLights;
 uniform float uGrid;
 uniform sampler2D uAurora;  // r: OVATION probability of visible aurora, 0–100 as bytes;
                             // g: GloTEC TEC, 0–120 TECU; b: D-RAP HF absorption, 0–35 MHz (ionosphere.ts)
+// Data layers' u…On are strengths, 0 to 1: they fade as the clock leaves now (hazardFade.ts).
 uniform float uAuroraOn;
 uniform float uIonoMode;    // 0 off, 1 TEC, 2 HF absorption
+uniform float uIonoFade;
 uniform sampler2D uSnowIce;  // r = snow on land, g = ice concentration (NOAA IMS + Sea Ice Index)
 uniform float uSnowIceOn;
 uniform sampler2D uRadar;    // RainViewer composite, Web Mercator ±85.05°, premultiplied
@@ -65,6 +67,7 @@ uniform float uAshSub[3];    // longitude below each satellite (radians)
 uniform float uAshTier[3];   // 0 first, 1 where 0 isn't, 2 (a whole-world mosaic) under both
 uniform sampler2D uSst;      // sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts)
 uniform float uSstMode;      // 0 off, 1 temperature, 2 anomaly
+uniform float uSstFade;
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -198,8 +201,8 @@ void main() {
   // Today's snow and ice over the month's Blue Marble. Snow under forest reads
   // grey from space, so it whitens dark ground less; sea ice is a bluer white.
   float iceC = 0.0;
-  if (uSnowIceOn > 0.5) {
-    vec2 si = textureLod(uSnowIce, uv, lodFor(uSnowIce, mu, coslat)).rg;
+  if (uSnowIceOn > 0.0) {
+    vec2 si = textureLod(uSnowIce, uv, lodFor(uSnowIce, mu, coslat)).rg * uSnowIceOn;
     float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
     // (The true-colour photo already shows its own snow and ice.)
     float snowCover = si.r * mix(0.55, 0.9, smoothstep(0.02, 0.12, lum)) * (1.0 - photoA);
@@ -232,8 +235,8 @@ void main() {
   // Smoke: a grey-brown haze over the sunlit ground (HMS maps it by day only),
   // under the clouds. Heavy smoke hides about half of what's below.
   float smokeA = 0.0;
-  if (uSmokeOn > 0.5) {
-    smokeA = textureLod(uSmoke, uv, lodFor(uSmoke, mu, coslat)).r * 0.55;
+  if (uSmokeOn > 0.0) {
+    smokeA = textureLod(uSmoke, uv, lodFor(uSmoke, mu, coslat)).r * 0.55 * uSmokeOn;
     vec3 smoke = vec3(0.50, 0.45, 0.38) * dayW * (0.35 + 0.65 * lambert) * tint;
     dayCol = mix(dayCol, smoke, smokeA);
   }
@@ -345,7 +348,7 @@ void main() {
   // day and night, over everything so far. The discs fade toward their limbs as the live
   // pictures do; each tier goes under the ones before it. Their no data is transparent
   // (maskAshNoData), premultiplied, so the alpha is both the mask and the divisor.
-  if (uAshOn > 0.5) {
+  if (uAshOn > 0.0) {
     float texPerRad = float(textureSize(uAsh, 0).x);
     vec3 ashPre = vec3(0.0);
     float ashA = 0.0;
@@ -372,6 +375,8 @@ void main() {
       ashPre += acc / max(wsum, 1e-30) * ta * (1.0 - ashA);
       ashA += ta * (1.0 - ashA);
     }
+    ashPre *= uAshOn;
+    ashA *= uAshOn;
     col = col * (1.0 - ashA) + ashPre;
     liveA += ashA * (1.0 - liveA); // no sun glint on the picture
   }
@@ -393,7 +398,7 @@ void main() {
         c = anomalyRamp(clamp(an / 3.0, -1.0, 1.0));
         a = 0.15 + 0.75 * smoothstep(0.3, 2.0, abs(an));
       }
-      a *= smoothstep(0.5, 0.95, s4.a);
+      a *= smoothstep(0.5, 0.95, s4.a) * uSstFade;
       col = mix(col, toLinear(c), a);
       liveA += a * (1.0 - liveA); // no sun glint on the data
     }
@@ -403,25 +408,25 @@ void main() {
   // estimate, and ~5 hours old. Under the radar, so the two never double up at the edge.
   bool merc = abs(lat) < 1.4844;
   vec2 ruv = vec2(uv.x, 0.5 - log(tan(PI / 4.0 + lat / 2.0)) / (2.0 * PI));
-  if (uImergOn > 0.5) {
+  if (uImergOn > 0.0) {
     float noRadar = merc ? textureLod(uRadarCover, ruv, 0.0).a : 1.0;
     vec4 m = textureLod(uImerg, uv, lodFor(uImerg, mu, coslat));
     float a = m.a * noRadar;
     if (a > 0.004) {
       vec3 echo = toLinear(m.rgb / m.a) * mix(0.55, 1.0, dayW);
-      col = mix(col, echo, a * 0.65);
+      col = mix(col, echo, a * 0.65 * uImergOn);
     }
   }
 
   // Radar on top of the clouds, as on a weather map (it shows the rain beneath
   // them). The texture is Web Mercator, so latitude maps through ln tan; its
   // texel size on the ground shrinks with cos(latitude), which sets the mip level.
-  if (uRadarOn > 0.5 && merc) {
+  if (uRadarOn > 0.0 && merc) {
     float texPerRad = float(textureSize(uRadar, 0).x) / (2.0 * PI) / max(coslat, 0.05);
     vec4 r = textureLod(uRadar, ruv, log2(max(texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)), 1.0)));
     if (r.a > 0.004) {
       vec3 echo = toLinear(r.rgb / r.a) * mix(0.55, 1.0, dayW);
-      col = mix(col, echo, r.a * 0.85);
+      col = mix(col, echo, r.a * 0.85 * uRadarOn);
     }
   }
 
@@ -429,12 +434,12 @@ void main() {
   // (Sun at least ~6° below the horizon). The response 1 − exp(−2.5·p^1.4) keeps
   // the likely core of the oval bright and its low-probability fringe faint, so it
   // reads as a band rather than a slab. Green oxygen line, a red tint where strong.
-  if (uAuroraOn > 0.5) {
+  if (uAuroraOn > 0.0) {
     float ap = textureLod(uAurora, uv, 0.0).r * 2.55; // byte v/255 → v/100
     float dark = 1.0 - smoothstep(-0.16, -0.02, k);
     float glow = (1.0 - exp(-2.5 * pow(ap, 1.4))) * dark;
     vec3 aurora = mix(vec3(0.08, 0.95, 0.32), vec3(0.9, 0.2, 0.45), 0.3 * smoothstep(0.5, 1.0, ap));
-    col += aurora * glow * 0.6;
+    col += aurora * glow * 0.6 * uAuroraOn;
   }
 
   // The ionosphere, ~300 km up: a colour wash over everything below, day and night. TEC
@@ -445,10 +450,10 @@ void main() {
     vec4 sw = textureLod(uAurora, uv, 0.0);
     if (uIonoMode < 1.5) {
       float t = sw.g;
-      col = mix(col, toLinear(tecRamp(t)), smoothstep(0.065, 0.6, t) * 0.55);
+      col = mix(col, toLinear(tecRamp(t)), smoothstep(0.065, 0.6, t) * 0.55 * uIonoFade);
     } else {
       float t = sw.b;
-      col = mix(col, toLinear(drapRamp(t)), smoothstep(0.03, 0.45, t) * 0.6);
+      col = mix(col, toLinear(drapRamp(t)), smoothstep(0.03, 0.45, t) * 0.6 * uIonoFade);
     }
   }
 

@@ -59,6 +59,7 @@ uniform float uMinI;       // hide cells dimmer than this (zoom-dependent)
 uniform float uDay;
 uniform float uFadeTo;
 uniform float uMinPx;
+uniform float uOpacity;   // the whole layer's, as the clock leaves now
 out float vAlpha;
 out float vHeat;
 out float vSize;
@@ -82,7 +83,7 @@ void main() {
   float fade = mix(1.0, uFadeTo, clamp(age / max(uWindow, 1.0), 0.0, 1.0));
   float strong = uMinI > 0.0 ? smoothstep(uMinI * 0.8, uMinI, aLook.x) : 1.0;
   vHeat = aLook.x;
-  vAlpha = (0.3 + 0.7 * aLook.x) * mix(uDay, 1.0, night) * fade * strong;
+  vAlpha = (0.3 + 0.7 * aLook.x) * mix(uDay, 1.0, night) * fade * strong * uOpacity;
   vSize = max(uMinPx, aLook.z * uRadiusPx / 6371.0);
   bool show = facing && age <= uWindow && vAlpha > 0.02;
   gl_Position = show ? vec4(q * uRadiusPx / (0.5 * uRes), 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
@@ -113,6 +114,8 @@ export interface PointFrameState {
   /** Oldest age shown, in the same units as the points' ages. */
   window: number;
   minIntensity: number;
+  /** The whole layer's opacity, 0–1 (1 when absent). */
+  opacity?: number;
 }
 
 export class SurfacePointLayer {
@@ -178,6 +181,7 @@ export class SurfacePointLayer {
     gl.uniform1f(this.u('uDay'), s.day);
     gl.uniform1f(this.u('uFadeTo'), s.fadeTo);
     gl.uniform1f(this.u('uMinPx'), s.minPx);
+    gl.uniform1f(this.u('uOpacity'), f.opacity ?? 1);
     gl.uniform3fv(this.u('uLow'), s.low);
     gl.uniform3fv(this.u('uHigh'), s.high);
     gl.enable(gl.BLEND);

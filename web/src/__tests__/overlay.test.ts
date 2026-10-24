@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calloutRect, layoutSatLabels, placeCallout, readoutLines, SHORT_ROWS, slideClear, type Rect } from '../overlay';
+import { calloutRect, fadeRequests, layoutSatLabels, placeCallout, readoutLines, SHORT_ROWS, slideClear, type Rect } from '../overlay';
 
 const screen = { w: 800, h: 600 };
 
@@ -129,5 +129,19 @@ describe('readoutLines', () => {
   it('has no "more" line when nothing is left out, and nothing at all when off', () => {
     expect(readoutLines('TIME', rows.slice(0, 2), 'short', 20, measure).some((l) => l.more)).toBe(false);
     expect(readoutLines('TIME', rows, 'off', 20, measure)).toEqual([]);
+  });
+});
+
+describe('fadeRequests', () => {
+  const reqs = [{ id: 1 }, { id: 2 }] as { id: number; alpha?: number }[];
+
+  it('leaves labels alone while their layer is fully shown', () => {
+    expect(fadeRequests(reqs, 1)).toBe(reqs);
+  });
+
+  it('fades them with the layer, and drops them once too faint to name', () => {
+    expect(fadeRequests(reqs, 0.6)).toEqual([{ id: 1, alpha: 0.6 }, { id: 2, alpha: 0.6 }]);
+    expect(fadeRequests(reqs, 0.29)).toEqual([]);
+    expect(fadeRequests(reqs, 0)).toEqual([]);
   });
 });

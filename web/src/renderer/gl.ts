@@ -48,17 +48,19 @@ export interface FrameState {
   stars: { frame: Float32Array; focal: number; magShift: number } | null;
   /** Sun and Moon discs (drawn behind the globe). */
   bodies: BodyDraw[];
-  aurora: boolean;
+  // Data layers are strengths, 0 (off) to 1: they fade as the clock leaves now (hazardFade.ts).
+  aurora: number;
   /** Ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
   iono: 'off' | 'tec' | 'drap';
+  ionoFade: number;
   /** Snow on land and sea ice (NOAA IMS + Sea Ice Index). */
-  snowIce: boolean;
+  snowIce: number;
   /** RainViewer radar composite. */
-  radar: boolean;
+  radar: number;
   /** NASA IMERG satellite rain where RainViewer has no radar (needs its coverage). */
-  imerg: boolean;
+  imerg: number;
   /** NOAA HMS smoke plumes. */
-  smoke: boolean;
+  smoke: number;
   /** The zoomed-in picture (when one has been set): yesterday's VIIRS, or a live one. */
   detail: boolean;
   /** Whose zoomed-in pictures (detail, nightDetail): the main view's (the default) or the ISS camera's. */
@@ -68,19 +70,20 @@ export interface FrameState {
   /** Himawari-9's live clouds over its disc, in place of the hourly map's (when set). */
   himawari: boolean;
   /** Volcanic ash: the Ash RGB pictures over everything below (when any has been set). */
-  ash: boolean;
+  ash: number;
   /** Sea surface temperature: 0 off, 1 the temperature, 2 its anomaly (when set). */
   sst: number;
+  sstFade: number;
   /** GIBS night-lights detail (when one has been set). */
   nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
   relief: number;
   /** Fire layer: detections at most `windowH` old, dimmer than `minIntensity` hidden. */
-  fires: { windowH: number; minIntensity: number } | null;
+  fires: { windowH: number; minIntensity: number; opacity: number } | null;
   /** Flood extent (NASA LANCE), with the GDACS events. */
-  floods: boolean;
+  floods: number;
   /** Lightning layer: flashes at most `windowMin` old. */
-  lightning: { windowMin: number } | null;
+  lightning: { windowMin: number; opacity: number } | null;
   /** Draw the bulk satellite layer (Starlink), extrapolated `dt` seconds past its SGP4 pass. */
   satellites: { dt: number; categories: SatCategoryLook[] } | null;
   dpr: number;
@@ -754,17 +757,18 @@ export class GlobeRenderer {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, this.auroraTex);
     gl.uniform1i(this.u('uAurora'), 5);
-    gl.uniform1f(this.u('uAuroraOn'), f.aurora && this.hasAurora ? 1 : 0);
+    gl.uniform1f(this.u('uAuroraOn'), this.hasAurora ? f.aurora : 0);
     const iono = f.iono === 'tec' && this.tecBytes ? 1 : f.iono === 'drap' && this.drapBytes ? 2 : 0;
-    gl.uniform1f(this.u('uIonoMode'), iono);
+    gl.uniform1f(this.u('uIonoMode'), f.ionoFade > 0 ? iono : 0);
+    gl.uniform1f(this.u('uIonoFade'), f.ionoFade);
     gl.activeTexture(gl.TEXTURE7);
     gl.bindTexture(gl.TEXTURE_2D, this.snowIceTex);
     gl.uniform1i(this.u('uSnowIce'), 7);
-    gl.uniform1f(this.u('uSnowIceOn'), f.snowIce && this.hasSnowIce ? 1 : 0);
+    gl.uniform1f(this.u('uSnowIceOn'), this.hasSnowIce ? f.snowIce : 0);
     gl.activeTexture(gl.TEXTURE8);
     gl.bindTexture(gl.TEXTURE_2D, this.radarTex);
     gl.uniform1i(this.u('uRadar'), 8);
-    gl.uniform1f(this.u('uRadarOn'), f.radar && this.hasRadar ? 1 : 0);
+    gl.uniform1f(this.u('uRadarOn'), this.hasRadar ? f.radar : 0);
     gl.activeTexture(gl.TEXTURE13);
     gl.bindTexture(gl.TEXTURE_2D, this.imergTex);
     gl.uniform1i(this.u('uImerg'), 13);
@@ -772,11 +776,11 @@ export class GlobeRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
     gl.uniform1i(this.u('uRadarCover'), 14);
     // Without the coverage, a 5-hour-old estimate would sit under live radar: wait for it.
-    gl.uniform1f(this.u('uImergOn'), f.imerg && this.hasImerg && this.hasCover ? 1 : 0);
+    gl.uniform1f(this.u('uImergOn'), this.hasImerg && this.hasCover ? f.imerg : 0);
     gl.activeTexture(gl.TEXTURE9);
     gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
     gl.uniform1i(this.u('uSmoke'), 9);
-    gl.uniform1f(this.u('uSmokeOn'), f.smoke && this.hasSmoke ? 1 : 0);
+    gl.uniform1f(this.u('uSmokeOn'), this.hasSmoke ? f.smoke : 0);
     gl.activeTexture(gl.TEXTURE10);
     const det = this.details[f.detailSlot ?? 'main'];
     gl.bindTexture(gl.TEXTURE_2D, det.tex);
@@ -804,7 +808,7 @@ export class GlobeRenderer {
     gl.activeTexture(gl.TEXTURE0 + ASH_UNIT);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
     gl.uniform1i(this.u('uAsh'), ASH_UNIT);
-    gl.uniform1f(this.u('uAshOn'), f.ash && this.ashHas.some((v) => v > 0) ? 1 : 0);
+    gl.uniform1f(this.u('uAshOn'), this.ashHas.some((v) => v > 0) ? f.ash : 0);
     gl.uniform1fv(this.u('uAshHas'), this.ashHas);
     gl.uniform4fv(this.u('uAshBox'), this.ashBox);
     gl.uniform1fv(this.u('uAshSub'), this.ashSub);
@@ -812,7 +816,8 @@ export class GlobeRenderer {
     gl.activeTexture(gl.TEXTURE0 + SST_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, this.sstTex);
     gl.uniform1i(this.u('uSst'), SST_UNIT);
-    gl.uniform1f(this.u('uSstMode'), this.hasSst ? f.sst : 0);
+    gl.uniform1f(this.u('uSstMode'), this.hasSst && f.sstFade > 0 ? f.sst : 0);
+    gl.uniform1f(this.u('uSstFade'), f.sstFade);
     gl.activeTexture(gl.TEXTURE15);
     const night = this.nightDetails[f.detailSlot ?? 'main'];
     gl.bindTexture(gl.TEXTURE_2D, night.tex);
@@ -826,12 +831,14 @@ export class GlobeRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
 
-    if (f.floods) this.floodLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: 1, minIntensity: 0 }, res);
-    if (f.fires) {
-      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.fires.windowH, minIntensity: f.fires.minIntensity }, res);
+    if (f.floods > 0) this.floodLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: 1, minIntensity: 0, opacity: f.floods }, res);
+    if (f.fires && f.fires.opacity > 0) {
+      const { windowH, minIntensity, opacity } = f.fires;
+      this.fireLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: windowH, minIntensity, opacity }, res);
     }
-    if (f.lightning) {
-      this.lightningLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: f.lightning.windowMin, minIntensity: 0 }, res);
+    if (f.lightning && f.lightning.opacity > 0) {
+      const { windowMin, opacity } = f.lightning;
+      this.lightningLayer.draw({ camera: cam, radiusPx: f.radiusPx, sun: f.sun, window: windowMin, minIntensity: 0, opacity }, res);
     }
 
     if (f.satellites) {

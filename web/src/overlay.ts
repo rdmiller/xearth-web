@@ -7,6 +7,7 @@ import type { CloudStatus } from './cloudSync';
 import type { ReadoutMode } from './params';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
+import { LABEL_MIN_FADE } from './hazardFade';
 import { tok } from './tokens';
 import { project, type Camera } from './view';
 import { dot, fromLatLon, normalize, sub, type Vec3 } from './vec';
@@ -363,6 +364,11 @@ export interface OverlayState {
   /** Severe weather: NWS warning polygons, SPC outlook areas and MeteoAlarm regions, drawn under everything else. */
   severe?: SevereShape[];
   severeLabels?: SevereLabel[];
+  /**
+   * The hazards above (storms to severe; not buoys) as the clock leaves now, 0–1 (hazardFade.ts):
+   * drawn at this opacity, their labels likewise until LABEL_MIN_FADE. 1 when absent.
+   */
+  hazardAlpha?: number;
   /** Names beside the satellites in the categories ticked for labels (the GL layer draws the points). */
   satLabels?: SatLabelOverlay[];
   /** CSS px the pinned layer dock covers at the bottom: labels keep out of it. */
@@ -447,6 +453,8 @@ interface CalloutRequest {
   gap: number;
   /** Drop the label (the marker still shows) when every spot is taken, rather than overlap. */
   optional?: boolean;
+  /** Opacity, for a fading layer's labels (1 when absent). */
+  alpha?: number;
 }
 
 interface Callout {
@@ -454,6 +462,7 @@ interface Callout {
   x: number;
   y: number;
   rows: Row[];
+  alpha?: number;
   /** Screen box, including the dark backing — reserved before city labels are placed. */
   rect: Rect;
 }
@@ -502,7 +511,7 @@ function placeCallouts(
     // No free side: overlapping another label beats covering the readout or the drawer.
     const clearOfReserved = (b: Rect) => onScreen(b) && !reserved.some((t) => overlaps(t, b));
     const pick = free ?? candidates.find((c) => clearOfReserved(boxAt(c))) ?? candidates.find((c) => onScreen(boxAt(c))) ?? candidates[0];
-    out.push({ x: pick.x, y: pick.y, rows: r.rows, rect: boxAt(pick) });
+    out.push({ x: pick.x, y: pick.y, rows: r.rows, rect: boxAt(pick), alpha: r.alpha });
   }
   ctx.restore();
   return out;
@@ -515,6 +524,7 @@ function drawCallouts(ctx: CanvasRenderingContext2D, callouts: Callout[]) {
   ctx.letterSpacing = '0.1em';
   ctx.textBaseline = 'middle';
   for (const c of callouts) {
+    ctx.globalAlpha = c.alpha ?? 1;
     ctx.fillStyle = 'rgba(4, 10, 20, 0.85)';
     ctx.beginPath();
     ctx.roundRect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, 3);
@@ -1578,6 +1588,37 @@ function readoutValueX(ctx: CanvasRenderingContext2D, lines: ReadoutLine[]): num
 }
 
 /** Draws the overlay; returns where the status readout is (CSS px), or null when there's none. */
+/** A fading layer's labels: at its opacity, and none once it's too faint to name. */
+export function fadeRequests<T extends { alpha?: number }>(reqs: T[], alpha: number): T[] {
+  if (alpha >= 1) return reqs;
+  return alpha < LABEL_MIN_FADE ? [] : reqs.map((r) => ({ ...r, alpha }));
+}
+
+let fadeCanvas: HTMLCanvasElement | undefined;
+
+/**
+ * Draw at an opacity, as one: the draw functions set their own globalAlpha, so a group fades
+ * by drawing to a scratch canvas composited at `alpha`. Fully shown it draws directly; gone, not at all.
+ */
+function drawFaded(ctx: CanvasRenderingContext2D, alpha: number, draw: (c: CanvasRenderingContext2D) => void) {
+  if (alpha >= 1) return draw(ctx);
+  if (alpha <= 0) return;
+  const { width, height } = ctx.canvas;
+  fadeCanvas ??= document.createElement('canvas');
+  if (fadeCanvas.width !== width || fadeCanvas.height !== height) Object.assign(fadeCanvas, { width, height });
+  const f = fadeCanvas.getContext('2d')!;
+  f.setTransform(1, 0, 0, 1, 0, 0);
+  f.clearRect(0, 0, width, height);
+  f.setTransform(ctx.getTransform());
+  Object.assign(f, { font: ctx.font, textAlign: ctx.textAlign, textBaseline: ctx.textBaseline, letterSpacing: ctx.letterSpacing });
+  draw(f);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(fadeCanvas, 0, 0);
+  ctx.restore();
+}
+
 export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): Rect | null {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
@@ -1611,22 +1652,37 @@ export function drawOverlay(canvas: HTMLCanvasElement, s: OverlayState): Rect | 
   const reserved: Rect[] = [...(readout ? [readout] : []), ...(inset ? [{ x: 0, y: h - inset, w, h: inset }] : []), ...(s.panels ?? [])];
   // Priority for label space: tsunami alerts, severe weather warnings, launches, storms, quakes,
   // GDACS events, then cities (the SPC outlook's label gives way to all of them).
+  const hazard = s.hazardAlpha ?? 1;
   const callouts = placeCallouts(
     ctx,
     s,
     w,
     h,
-    [...targetRequests(s), ...tsunamiRequests(s), ...severeRequests(s), ...launchRequests(s), ...stormRequests(s), ...quakeRequests(s), ...eventRequests(s), ...meteorRequests(s)],
+    [
+      ...targetRequests(s),
+      ...fadeRequests(tsunamiRequests(s), hazard),
+      ...fadeRequests(severeRequests(s), hazard),
+      ...launchRequests(s),
+      ...fadeRequests(stormRequests(s), hazard),
+      ...fadeRequests(quakeRequests(s), hazard),
+      ...fadeRequests(eventRequests(s), hazard),
+      ...fadeRequests(meteorRequests(s), hazard),
+    ],
     reserved,
   );
-  drawSevere(ctx, s, w, h);
-  drawEvents(ctx, s, w, h, dpr);
-  drawMeteors(ctx, s, w, h, dpr);
+  // Each run of hazards fades as one, keeping the order things are stacked in.
+  drawFaded(ctx, hazard, (c) => {
+    drawSevere(c, s, w, h);
+    drawEvents(c, s, w, h, dpr);
+    drawMeteors(c, s, w, h, dpr);
+  });
   drawBuoys(ctx, s, w, h, dpr);
-  drawQuakes(ctx, s, w, h, dpr);
-  drawTsunami(ctx, s, w, h, dpr);
+  drawFaded(ctx, hazard, (c) => {
+    drawQuakes(c, s, w, h, dpr);
+    drawTsunami(c, s, w, h, dpr);
+  });
   drawTarget(ctx, s, w, h, dpr);
-  drawStorms(ctx, s, w, h, dpr);
+  drawFaded(ctx, hazard, (c) => drawStorms(c, s, w, h, dpr));
   drawPicked(ctx, s, w, h, dpr);
   if (s.markers || s.places?.length) drawCities(ctx, s, w, h, dpr, [...callouts.map((c) => c.rect), ...reserved]);
   drawSatellites(ctx, s, w, h, dpr);

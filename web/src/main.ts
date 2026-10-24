@@ -197,6 +197,7 @@ import {
 } from './launches';
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { clockAt, isLive, jumpTo as jumpClock, live as liveClock, stepBy, withSpeed, type Clock } from './clock';
+import { ANNOUNCE_MIN_FADE, anyFaded, fadesAt, hazardFade, type FadedLayer, type Fades } from './hazardFade';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
   clearOverlaySprites,
@@ -316,6 +317,25 @@ function clockLabel(): string | undefined {
   if (isLive(clock())) return undefined;
   return settings.speed === 1 ? 'fixed start time' : formatSpeed(settings.speed).toLowerCase();
 }
+
+/** How far each hazard layer has faded at `date`, as the clock leaves now (hazardFade.ts). */
+const fadesFor = (date: Date): Fades => fadesAt(date.getTime() - Date.now());
+
+/** Whether a fading layer is switched on (the flood map comes with the events). */
+function layerOn(k: FadedLayer): boolean {
+  if (k === 'iono') return settings.iono !== 'off';
+  if (k === 'sst') return settings.sst !== 'off';
+  if (k === 'floods') return settings.events;
+  return settings[k];
+}
+
+/** On, and not faded away: drawn, labelled, listed and clickable. */
+const shown = (k: FadedLayer, fade: Fades) => layerOn(k) && fade[k] > 0;
+
+/** Alerts wait while their layer is faded away from now, and are announced once it's back. */
+const announcing = (k: FadedLayer) => layerOn(k) && fadesFor(simTime())[k] >= ANNOUNCE_MIN_FADE;
+/** Whether alerts were being announced at the last frame, to catch up as the clock comes back. */
+let alertsWere = true;
 
 let renderer: GlobeRenderer;
 try {
@@ -791,6 +811,33 @@ const announced = new Set<string>();
 /** MeteoAlarm's warnings for Europe, via the pipeline; its red warnings already announced. */
 let alarmManifest: AlarmManifest | undefined;
 const announcedAlarms = new Set<string>();
+
+/** Toast the NWS tsunami alerts not yet announced. */
+function announceTsunami() {
+  if (!announcing('tsunami')) return;
+  for (const a of nwsTsunami) {
+    if (announced.has(a.id)) continue;
+    announced.add(a.id);
+    toast(`${a.event} in effect — ${a.areaDesc.split(';')[0]}`);
+  }
+}
+
+/** Toast the tornado and extreme wind warnings not yet announced. */
+function announceSevere() {
+  if (!announcing('severe')) return;
+  const fresh = severeWarnings.filter((w) => (w.event === 'Tornado Warning' || w.event === 'Extreme Wind Warning') && !announced.has(w.id));
+  for (const w of fresh) announced.add(w.id);
+  if (fresh.length > 3) toast(`${fresh.length} new tornado and extreme wind warnings`);
+  else for (const w of fresh) toast(`${w.event} — ${w.areaDesc.split(';')[0]}`);
+}
+
+/** Toast MeteoAlarm's red warnings not yet announced. */
+function announceAlarms() {
+  if (!alarmManifest || !announcing('severe')) return;
+  const fresh = freshRed(alarmManifest, announcedAlarms, Date.now());
+  if (fresh.length > 3) toast(`${fresh.length} new red weather warnings in Europe`);
+  else for (const w of fresh) toast(redToast(alarmManifest, w));
+}
 let alarmTimer: ReturnType<typeof setInterval> | undefined;
 let radarFrame: RadarFrame | undefined;
 let radarZoomShown = 0;
@@ -1137,11 +1184,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       await Promise.allSettled(
         missing.map(async (z) => zoneCentroids.set(z, zoneCentroid(((await fetchJson(z)) as { geometry?: unknown }).geometry))),
       );
-      for (const a of nwsTsunami) {
-        if (announced.has(a.id)) continue;
-        announced.add(a.id);
-        toast(`${a.event} in effect — ${a.areaDesc.split(';')[0]}`);
-      }
+      announceTsunami();
       tsunamiCache = undefined;
     },
     dataAt: () => tsunamiManifest?.generated,
@@ -1183,10 +1226,7 @@ const HAZARDS: Record<HazardKey, { everyMs: number; load: () => Promise<void>; d
       } else if (spc.status === 'rejected') console.warn('SPC outlook:', spc.reason);
       if (nws.status === 'rejected') throw nws.reason;
       severeWarnings = decodeWarnings(nws.value);
-      const fresh = severeWarnings.filter((w) => (w.event === 'Tornado Warning' || w.event === 'Extreme Wind Warning') && !announced.has(w.id));
-      for (const w of fresh) announced.add(w.id);
-      if (fresh.length > 3) toast(`${fresh.length} new tornado and extreme wind warnings`);
-      else for (const w of fresh) toast(`${w.event} — ${w.areaDesc.split(';')[0]}`);
+      announceSevere();
       severeCache = undefined;
     },
     dataAt: () => {
@@ -1574,9 +1614,7 @@ function runAlarm(): Promise<void> {
       if (m.generated !== alarmManifest?.generated) {
         alarmManifest = m;
         severeCache = undefined;
-        const fresh = freshRed(m, announcedAlarms, Date.now());
-        if (fresh.length > 3) toast(`${fresh.length} new red weather warnings in Europe`);
-        else for (const w of fresh) toast(redToast(m, w));
+        announceAlarms();
         requestRedraw();
       }
       feedLog.done('meteoalarm', Date.now(), Date.parse(m.generated));
@@ -1936,7 +1974,7 @@ const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String
  * The readout's rows for the data layers on: what each shows, one row apiece. When it was
  * fetched, and from where, is the feeds window's job (and the credits line's).
  */
-function layerRows(): ReadoutRow[] {
+function layerRows(fade: Fades): ReadoutRow[] {
   const rows: ReadoutRow[] = [];
   const add = (key: string, value: string | undefined) => value && rows.push({ key, value });
   const perPx = (level: number) => {
@@ -1957,42 +1995,44 @@ function layerRows(): ReadoutRow[] {
     const night = new Date(`${nightDetail.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
     add('lights', `${night} · ${perPx(nightDetail.level)}`);
   }
-  if (settings.radar && settings.imerg && imerg) {
+  if (shown('radar', fade) && settings.imerg && imerg) {
     add('rain', `radar now · satellite ${imerg.time.slice(11, 16)} UTC where no radar`);
   }
-  if (settings.smoke && smoke) add('smoke', smokeSummary(smoke));
-  if (settings.aurora && aurora) add('aurora', `peak ${aurora.peak} %`);
-  if (settings.sst !== 'off' && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
+  if (shown('smoke', fade) && smoke) add('smoke', smokeSummary(smoke));
+  if (shown('aurora', fade) && aurora) add('aurora', `peak ${aurora.peak} %`);
+  if (shown('sst', fade) && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
   if (settings.winds !== 'off' && windManifest && windField) add('winds', windSummary(settings.winds, windManifest));
-  if (settings.iono === 'tec' && tecManifest) add('ionosphere', tecSummary(tecManifest));
-  if (settings.iono === 'drap' && drap) add('ionosphere', drapSummary(drap));
+  if (settings.iono === 'tec' && shown('iono', fade) && tecManifest) add('ionosphere', tecSummary(tecManifest));
+  if (settings.iono === 'drap' && shown('iono', fade) && drap) add('ionosphere', drapSummary(drap));
   // Space weather comes with the aurora (the same NOAA SWPC fetch), so it sits beside it.
-  if (settings.aurora && spaceWeather) add('space wx', spaceWeatherSummary(spaceWeather));
-  if (settings.storms && stormManifest) add('cyclones', String(stormManifest.storms.length));
-  if (settings.fires && firePoints) {
+  if (shown('aurora', fade) && spaceWeather) add('space wx', spaceWeatherSummary(spaceWeather));
+  if (shown('storms', fade) && stormManifest) add('cyclones', String(stormManifest.storms.length));
+  if (shown('fires', fade) && firePoints) {
     // FIRMS counts VIIRS detections; MTG, its fire pixels (~1 km and larger) in the last hour.
     const firms = firmsPoints ? `FIRMS ${compact(firesWithin(firmsPoints, settings.firehours).detections)} in ${settings.firehours} h` : undefined;
     const mtg = frpFires ? `MTG ${compact(frpWindow.pixels)} in ${FRP_WINDOW_MIN} min` : undefined;
     add('fires', [firms, mtg].filter(Boolean).join(' · '));
   }
-  if (settings.quakes && quakes.length) {
+  if (shown('quakes', fade) && quakes.length) {
     const emsc = quakes.filter((q) => q.source === 'EMSC').length;
     add('quakes', `${quakes.length} M2.5+ in 24 h${emsc ? ` · ${emsc} from EMSC` : ''}`);
   }
-  if (settings.lightning && (lightningManifest || liCells.length)) {
+  if (shown('lightning', fade) && (lightningManifest || liCells.length)) {
     // GOES counts flashes; MTG's frames give flashes per pixel, so it counts the 0.1° cells lit.
     const goes = lightningManifest ? `GOES ${compact(lightningManifest.flashes)} flashes` : undefined;
     const mtg = liCells.length ? `MTG ${compact(liCells.length / 4)} cells lit` : undefined;
     add('lightning', [goes, mtg, `${LI_WINDOW_MIN} min`].filter(Boolean).join(' · '));
   }
-  if (settings.events && eventManifest) add('GDACS', eventSummary(eventManifest));
-  if (settings.events && floodWorld) add('flood map', floodSummary(floodWorld.date, floodWorld.cells));
-  if (settings.events && usVolcanoes.length) add('US volcanoes', volcanoSummary(usVolcanoes));
-  if (settings.tsunami) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
-  if (settings.meteors && meteorManifest) add('meteors', meteorSummary(meteorManifest));
+  if (shown('events', fade) && eventManifest) add('GDACS', eventSummary(eventManifest));
+  if (shown('floods', fade) && floodWorld) add('flood map', floodSummary(floodWorld.date, floodWorld.cells));
+  if (shown('events', fade) && usVolcanoes.length) add('US volcanoes', volcanoSummary(usVolcanoes));
+  if (shown('tsunami', fade)) add('tsunami', tsunamiSummary(tsunamiManifest, nwsTsunami, Date.now()));
+  if (shown('meteors', fade) && meteorManifest) add('meteors', meteorSummary(meteorManifest));
   if (settings.buoys && buoyManifest) add('buoys', buoySummary(buoyManifest));
-  if (settings.severe && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
-  if (settings.severe && alarmManifest) add('Europe', alarmSummary(alarmManifest, Date.now()));
+  if (shown('severe', fade) && feedLog.get('severe').checkedAt !== undefined) add('severe', severeSummary(severeWarnings, spcOutlook));
+  if (shown('severe', fade) && alarmManifest) add('Europe', alarmSummary(alarmManifest, Date.now()));
+  // Hazard data is of the present: away from now it fades, and says so.
+  if (anyFaded(fade, layerOn)) add('hazards', `${anyFaded(fade, (k) => shown(k, fade)) ? 'fading' : 'hidden'} · their data shows now`);
   return rows;
 }
 
@@ -2247,7 +2287,7 @@ const pickPanel = new PickPanelView(
  * The picked thing's window and where it is, or undefined while it isn't there: its layer is
  * off, or its data hasn't arrived (a link) or no longer lists it.
  */
-function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]): { detail: PickDetail; pos?: Vec3 } | undefined {
+function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[], fade: Fades): { detail: PickDetail; pos?: Vec3 } | undefined {
   const p = parsePick(settings.pick);
   if (!p) return undefined;
   const now = Date.now();
@@ -2266,38 +2306,38 @@ function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]
       return st && { detail: launchDetail(st, LAUNCH_COLOR), pos: st.pos };
     }
     case 'quake': {
-      const q = settings.quakes ? quakes.find((q) => q.id === p.id) : undefined;
+      const q = shown('quakes', fade) ? quakes.find((q) => q.id === p.id) : undefined;
       return q && { detail: quakeDetail(q, now), pos: at(q.lat, q.lon) };
     }
     case 'storm': {
-      const st = settings.storms ? stormManifest?.storms.find((s) => s.id === p.id) : undefined;
+      const st = shown('storms', fade) ? stormManifest?.storms.find((s) => s.id === p.id) : undefined;
       return st && { detail: stormInfo(st, stormColor(stormClass(st)), now), pos: at(st.pos[1], st.pos[0]) };
     }
     case 'event': {
-      const e = settings.events ? eventManifest?.events.find((e) => e.id === p.id) : undefined;
+      const e = shown('events', fade) ? eventManifest?.events.find((e) => e.id === p.id) : undefined;
       return e && { detail: eventInfo(e, now), pos: at(e.pos[1], e.pos[0]) };
     }
     case 'tsunami': {
-      const b = settings.tsunami ? tsunamiManifest?.bulletins.find((b) => b.id === p.id) : undefined;
+      const b = shown('tsunami', fade) ? tsunamiManifest?.bulletins.find((b) => b.id === p.id) : undefined;
       return b && { detail: tsunamiInfo(b, now), pos: at(b.lat, b.lon) };
     }
     case 'fireball': {
-      const f = settings.meteors ? meteorManifest?.fireballs.find((f) => f.time === p.id) : undefined;
+      const f = shown('meteors', fade) ? meteorManifest?.fireballs.find((f) => f.time === p.id) : undefined;
       return f && { detail: fireballInfo(f, FIREBALL_COLOR, now), pos: at(f.lat, f.lon) };
     }
     case 'volcano': {
-      const v = settings.events ? usVolcanoes.find((v) => v.hans.vnum === p.id) : undefined;
+      const v = shown('events', fade) ? usVolcanoes.find((v) => v.hans.vnum === p.id) : undefined;
       return v && { detail: volcanoInfo(v, volcanoNotice(v)), pos: at(v.lat, v.lon) };
     }
     case 'warning': {
-      const w = settings.severe ? severeWarnings.find((w) => w.id === p.id) : undefined;
+      const w = shown('severe', fade) ? severeWarnings.find((w) => w.id === p.id) : undefined;
       if (!w) return undefined;
       const ring = largestRing(w.polygons);
       const centre = ring && ringCentre(ring);
       return { detail: warningInfo(w, WARNING_COLOR[w.event], centre, now), pos: centre && at(centre[1], centre[0]) };
     }
     case 'alarm': {
-      const region = settings.severe ? alarmManifest?.regions[p.id] : undefined;
+      const region = shown('severe', fade) ? alarmManifest?.regions[p.id] : undefined;
       if (!region) return undefined;
       const ring = largestRing(region.polygons);
       const centre = ring && ringCentre(ring);
@@ -2351,6 +2391,7 @@ const REACH = { sat: 14, bulk: 8, launch: 14, storm: 14, tsunami: 14, fireball: 
 function targetAt(clientX: number, clientY: number): string | undefined {
   const rect = overlayCanvas.getBoundingClientRect();
   const date = simTime();
+  const fade = fadesFor(date);
   const camera = cameraFor(settings, date, resolveTrack);
   const r = radiusCss();
   const cx = overlayCanvas.clientWidth / 2;
@@ -2383,19 +2424,19 @@ function targetAt(clientX: number, clientY: number): string | undefined {
     add(st.pos, REACH.launch, pickKey('launch', st.launch.id));
     add(st.pad, REACH.launch, pickKey('launch', st.launch.id));
   }
-  if (settings.quakes) for (const q of quakes) add(fromLatLon(q.lat, q.lon), Math.max(8, quakeRadius(q.mag) + 3), pickKey('quake', q.id));
-  if (settings.storms) for (const st of stormManifest?.storms ?? []) add(fromLatLon(st.pos[1], st.pos[0]), REACH.storm, pickKey('storm', st.id));
-  if (settings.events) for (const e of eventManifest?.events ?? []) add(fromLatLon(e.pos[1], e.pos[0]), eventSize(e.alert) + 5, pickKey('event', e.id));
-  if (settings.events) for (const v of usVolcanoes) if (v.hans.vnum && isActive(v)) add(fromLatLon(v.lat, v.lon), (alertRank(v.hans.alert_level) >= 1 ? 6 + alertRank(v.hans.alert_level) : 3.5) + 5, pickKey('volcano', v.hans.vnum));
-  if (settings.tsunami) {
+  if (shown('quakes', fade)) for (const q of quakes) add(fromLatLon(q.lat, q.lon), Math.max(8, quakeRadius(q.mag) + 3), pickKey('quake', q.id));
+  if (shown('storms', fade)) for (const st of stormManifest?.storms ?? []) add(fromLatLon(st.pos[1], st.pos[0]), REACH.storm, pickKey('storm', st.id));
+  if (shown('events', fade)) for (const e of eventManifest?.events ?? []) add(fromLatLon(e.pos[1], e.pos[0]), eventSize(e.alert) + 5, pickKey('event', e.id));
+  if (shown('events', fade)) for (const v of usVolcanoes) if (v.hans.vnum && isActive(v)) add(fromLatLon(v.lat, v.lon), (alertRank(v.hans.alert_level) >= 1 ? 6 + alertRank(v.hans.alert_level) : 3.5) + 5, pickKey('volcano', v.hans.vnum));
+  if (shown('tsunami', fade)) {
     for (const b of tsunamiManifest?.bulletins ?? []) if (tsunamiShown(b, now)) add(fromLatLon(b.lat, b.lon), REACH.tsunami, pickKey('tsunami', b.id));
   }
-  if (settings.meteors) for (const f of meteorManifest?.fireballs ?? []) add(fromLatLon(f.lat, f.lon), REACH.fireball, pickKey('fireball', f.time));
+  if (shown('meteors', fade)) for (const f of meteorManifest?.fireballs ?? []) add(fromLatLon(f.lat, f.lon), REACH.fireball, pickKey('fireball', f.time));
   if (settings.buoys) for (const b of buoyManifest?.buoys ?? []) add(fromLatLon(b.lat, b.lon), REACH.buoy, `buoy:${b.id}`);
 
   const hit = nearestTarget(hits, x, y);
   if (hit) return hit.key;
-  if (!settings.severe || (!severeWarnings.length && !alarmManifest)) return undefined;
+  if (!shown('severe', fade) || (!severeWarnings.length && !alarmManifest)) return undefined;
   const ground = unproject(camera, (x - cx) / r, -(y - cy) / r);
   if (!ground) return undefined;
   const { lat, lon } = toLatLon(ground);
@@ -2945,6 +2986,17 @@ function frame(now: number) {
   renderer.resize();
   const date = simTime(now);
   void ensureDayTexture(date);
+  const fade = fadesFor(date);
+  /** A layer's strength: its fade while it's on, else 0. */
+  const strength = (k: FadedLayer) => (layerOn(k) ? fade[k] : 0);
+  // Tsunami and severe weather share the live tier: one test covers both.
+  const alerts = fade.severe >= ANNOUNCE_MIN_FADE;
+  if (alerts && !alertsWere) {
+    announceTsunami();
+    announceSevere();
+    announceAlarms();
+  }
+  alertsWere = alerts;
 
   if (renderer.cloudMix < 1) {
     renderer.cloudMix = Math.min(1, (performance.now() - fadeStart) / FADE_MS);
@@ -2985,7 +3037,7 @@ function frame(now: number) {
   const lStates = launchStates(date);
   const lFocus = launchFocus(lStates);
   const launch = launchOverlay(lStates, lFocus);
-  const picked = pickedThing(satOverlay, lStates);
+  const picked = pickedThing(satOverlay, lStates, fade);
   // A followed launch already has its reticle.
   const pickedMark = picked?.pos && !(parsePick(settings.pick)?.kind === 'launch' && followingPick()) ? { pos: picked.pos, color: picked.detail.color } : undefined;
   launchFlags = {
@@ -3004,22 +3056,24 @@ function frame(now: number) {
     stars: settings.stars === 'off' ? null : { frame: starFrame(date), focal: skyFocal(camera), magShift },
     satellites: showBulk && Number.isFinite(bulkTime) ? { dt: bulkDt, categories: satLooks } : null,
     bodies: bodies.draws,
-    aurora: settings.aurora,
+    aurora: strength('aurora'),
     iono: settings.iono,
+    ionoFade: strength('iono'),
     fires: settings.fires
-      ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)) }
+      ? { windowH: settings.firehours, minIntensity: fireMinIntensity(6371 / Math.max(radiusPx, 1)), opacity: fade.fires }
       : null,
-    lightning: settings.lightning && (lightningManifest || liCells.length) ? { windowMin: LI_WINDOW_MIN } : null,
-    snowIce: settings.snow,
-    radar: settings.radar,
-    imerg: settings.radar && settings.imerg,
-    smoke: settings.smoke,
+    lightning: settings.lightning && (lightningManifest || liCells.length) ? { windowMin: LI_WINDOW_MIN, opacity: fade.lightning } : null,
+    snowIce: strength('snow'),
+    radar: strength('radar'),
+    imerg: settings.imerg ? strength('radar') : 0,
+    smoke: strength('smoke'),
     detail: settings.imagery === 'daily' ? !!detail : liveShown(date) && liveDetail,
     live: liveShown(date),
     himawari: settings.clouds && liveShown(date),
-    ash: settings.ash,
+    ash: strength('ash'),
     sst: settings.sst === 'temp' ? 1 : settings.sst === 'anomaly' ? 2 : 0,
-    floods: settings.events,
+    sstFade: strength('sst'),
+    floods: strength('floods'),
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
     dpr: scale,
@@ -3083,21 +3137,23 @@ function frame(now: number) {
     satLabels: satLabels(date),
     bodies: settings.bodies ? bodies.markers : undefined,
     launches: launch.overlays,
-    storms: stormOverlays(),
-    quakes: quakeOverlays(),
-    meteors: meteorOverlay(),
+    storms: shown('storms', fade) ? stormOverlays() : undefined,
+    quakes: shown('quakes', fade) ? quakeOverlays() : undefined,
+    meteors: shown('meteors', fade) ? meteorOverlay() : undefined,
     buoys: buoyOverlay(),
-    events: [...eventOverlays(), ...usVolcanoOverlays()],
-    tsunami: tsunamiOverlays().bulletins,
-    tsunamiZones: tsunamiOverlays().zones,
-    severe: severeOverlays().shapes,
-    severeLabels: severeOverlays().labels,
+    events: shown('events', fade) ? [...eventOverlays(), ...usVolcanoOverlays()] : undefined,
+    tsunami: shown('tsunami', fade) ? tsunamiOverlays().bulletins : undefined,
+    tsunamiZones: shown('tsunami', fade) ? tsunamiOverlays().zones : undefined,
+    severe: shown('severe', fade) ? severeOverlays().shapes : undefined,
+    severeLabels: shown('severe', fade) ? severeOverlays().labels : undefined,
+    // Every hazard the overlay draws is on the live tier.
+    hazardAlpha: hazardFade(date.getTime() - Date.now(), 'live'),
     bottomInset: drawerInset,
     panels: [...toasts.rects(), ...domRects(credits, radarCredit)],
     target: target && target.until > Date.now() ? target : undefined,
     picked: pickedMark,
     places: placeLabels,
-    rows: [...(launch.row ? [launch.row] : []), ...layerRows()],
+    rows: [...(launch.row ? [launch.row] : []), ...layerRows(fade)],
     sun,
     markers: settings.markers,
     label: settings.label,
