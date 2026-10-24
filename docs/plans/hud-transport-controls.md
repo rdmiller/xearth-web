@@ -33,8 +33,10 @@ to a moment** and **step by an amount**.
 1. A transport bar: rewind, play/pause, fast-forward, step back/forward, and a Now button.
 2. The current simulated date and time and the rate, always readable on the bar.
 3. A date-and-time picker, with presets for moments worth seeing.
-4. Mouse, touch and keyboard all work, and the bar never hides that the data is "now".
-5. Fully usable on a phone, portrait or landscape, in the browser, the installed web app and
+4. Mouse, touch and keyboard all work.
+5. Hazard layers fade out as the clock moves away from now, since their data is of the
+   present, and fade back in as it returns.
+6. Fully usable on a phone, portrait or landscape, in the browser, the installed web app and
    the Android app: thumb-sized targets, no hover needed, clear of the notch and home
    indicator, and never covering the rest of the HUD.
 
@@ -194,11 +196,61 @@ layout every frame. The bar adds no work to `frame()` beyond a string compare.
 24 October 2026, 14:32 UTC. Change"). The time is not an `aria-live` region; it would talk
 every second.
 
-### Being honest about the data
+### Hazards fade away from now
 
-When the clock is more than `LIVE_MAX_SKEW_MS` (30 min) from now, the bar shows an amber
-**DATA: NOW** chip, with a title explaining that clouds and hazards show the present, not the
-chosen time. The Sun, Moon, stars and satellites are what move.
+Hazard data is a snapshot of the present: last night's quake ringed over a Tuesday three
+weeks ago would be a lie. So as the clock moves away from now, in either direction, the
+hazard layers fade out, and they fade back in as it returns. The Sun, Moon, stars,
+satellites and launches are what keep moving.
+
+**The curve.** `hazardFade(offsetMs, tier)` returns 1 (fully shown) to 0 (gone), as a
+smoothstep on `|simTime − now|`, in two tiers:
+
+| Tier | Layers | Fully shown within | Gone by |
+| --- | --- | --- | --- |
+| **Live** (minutes to hours old) | aurora, ionosphere, lightning, radar + IMERG, quakes, fires, storms, severe weather + MeteoAlarm, tsunami, GDACS events and US volcano alerts, smoke, ash, meteors, buoys | 30 min (`LIVE_MAX_SKEW_MS`, the same as live imagery) | 2 h |
+| **Daily** (a day's product) | snow and sea ice, sea temperature, the VIIRS flood map | 12 h | 36 h |
+
+At real time a fade takes over an hour; at 1 h/s it takes about 1.5 s, which reads as a
+deliberate fade; a jump from the picker is instant. A storm's forecast track is the one
+case of hazard data that's about the future, but it still fades on the live tier: it's
+today's forecast, not what happened.
+
+**What stays.** Clouds, the live-imagery fallback (already handled by `liveShown`), winds,
+the Blue Marble's month, and the ISS telemetry window. Clouds aren't a hazard, and without
+them the globe would be bare; the bar's chip (below) says they're current.
+
+**What fading means, layer by layer:**
+
+- **Globe shader** (aurora, iono, snow/ice, radar, smoke, ash, SST, floods): the `u…On`
+  flags become strengths. Each `if (uXOn > 0.5)` becomes `> 0.0`, and that layer's blend
+  is multiplied by the strength. No new uniforms or textures, so the 16-texture-unit test
+  still holds.
+- **Overlay canvas** (quakes, storms, events, tsunami, severe, fires, lightning, meteors,
+  buoys): each hazard group draws under `ctx.globalAlpha = fade`. Below 0.3, a layer's
+  labels drop out of the label placement (`overlay.ts`'s priority list), so faded symbols
+  don't take label space from cities and launches.
+- **At 0** a layer is skipped entirely: no drawing, no label requests, and no hit-testing
+  in `pickAt` / `hoverAt`, so nothing invisible can be clicked. An open window on a hazard
+  (`settings.pick`) closes the same way it does when its layer is switched off
+  (`pickedThing` returns undefined), and reopens when the clock comes back to now.
+- **Readout:** a faded-out layer's row goes, and one row says "Hazards hidden: live data
+  shows now".
+- **Toasts:** new-alert toasts (MeteoAlarm reds, tsunami bulletins, eruptions) aren't raised
+  while their layer is faded below 0.5; they're shown when the clock comes back, if they're
+  still current.
+- **Settings and the URL don't change.** Fading is a view of the clock, not a setting: the
+  dock buttons stay lit, toggling a layer still works and takes effect on return, and a link
+  still carries `quakes=1`.
+- **Polling carries on** on the usual schedules, so coming back to now is instant. The
+  feeds are small. Pausing them while faded would save a little mobile data at the cost of a
+  blank return, so it's not worth it.
+
+**The chip.** While any layer is faded below 1, the bar shows an amber **HAZARDS HIDDEN**
+chip (compact on phones: a warning icon). Tapping it shows a toast: "Hazard data shows the
+present, so it's hidden away from now. Clouds are current too. NOW to go back."
+
+### Satellites far from now
 
 Satellites need one extra limit: SGP4 from today's elements drifts badly beyond a few weeks.
 More than 30 days from now, the bulk point clouds hide and the named satellites show a
@@ -262,10 +314,29 @@ A class like `PerfPanel` / `Drawer`:
   insets, and reduced-motion and `.lite` variants, like the rest. `#toasts`, `#pick` and
   `#toast` add `var(--transport-h, 0px)` to their bottom offsets.
 
-### 4. Wiring in `main.ts`
+### 4. `web/src/hazardFade.ts` (new, pure)
+
+```ts
+export type FadeTier = 'live' | 'daily';
+export const FADE_TIER: Record<HazardLayer, FadeTier>;            // the table above
+export function hazardFade(offsetMs: number, tier: FadeTier): number; // 1 → 0, smoothstep
+export function fades(offsetMs: number): Record<HazardLayer, number>;  // every layer, once a frame
+```
+
+`frame()` computes `fades(date − Date.now())` once and passes it on:
+
+- `FrameState` (renderer): `aurora`, `iono`, `snowIce`, `radar`, `imerg`, `smoke`, `ash`,
+  `sst`, `floods` become strengths, `settings.x ? fade.x : 0`. `gl.ts` sets the uniforms
+  from them unchanged; `globe.frag.glsl` multiplies each layer's blend by its strength.
+- The overlay state: a `fade` per hazard group. `overlay.ts` sets `globalAlpha` around each
+  group, and leaves out a group's label requests below 0.3 and the whole group at 0.
+- `pickAt`, the hover hit-test, `pickedThing`, the readout rows and the alert toasts check
+  `fade.x > 0` (or `≥ 0.5` for toasts) alongside `settings.x`.
+
+### 5. Wiring in `main.ts`
 
 - Construct the transport after the drawer; call `transport.refresh(...)` in `frame()` next
-  to `perfPanel.update`.
+  to `perfPanel.update`, passing whether any hazard is faded (for the chip).
 - Add `jumpTo`/`stepTime` to `hotkeyContext`.
 - Add the satellite age limit where `satelliteOverlay` and the bulk propagation run.
 - A jump of any size clears and re-requests what depends on the time: `liveShown()` already
@@ -285,13 +356,16 @@ Each is its own PR, shippable alone.
 1. **Clock model.** `clock.ts` + tests; `main.ts` delegates to it; `jumpTo`/`stepTime` in
    the hotkey context; the new step and rewind/forward hotkeys. *Keyboard-only users get
    everything except the picker.*
-2. **Transport bar.** `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
-   Time button, the DATA: NOW chip, and all of *Mobile* that applies to the bar: compact and
-   landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas (dock
-   included), `--transport-h` stacking.
-3. **Picker.** Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
+2. **Hazard fade.** `hazardFade.ts` + tests; shader strengths; overlay alpha, labels and
+   hit-testing; readout row; toast suppression. Worth having before the bar: the `,` / `.`
+   keys can already take the clock far from now today.
+3. **Transport bar.** `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
+   Time button, the HAZARDS HIDDEN chip, and all of *Mobile* that applies to the bar:
+   compact and landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas
+   (dock included), `--transport-h` stacking.
+4. **Picker.** Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
    on phones.
-4. **Satellite age limit.** Hide/tag satellites far from their elements' epoch.
+5. **Satellite age limit.** Hide/tag satellites far from their elements' epoch.
 
 ## Testing
 
@@ -300,11 +374,19 @@ Each is its own PR, shippable alone.
   times against known dates (2026-12-21 solstice, 2027-08-02 total solar eclipse);
   `hotkeys.test.ts` already checks for key collisions.
 - **Drawer test:** extend `drawer.test.ts` for the Time button.
+- **Unit, hazard fade:** `hazardFade` is 1 within 30 min and 0 beyond 2 h on the live
+  tier (12 h / 36 h daily), the same for past and future offsets, and never rises as the
+  offset grows; every `HazardKey` plus ash, SST, iono and floods has a tier; the shader
+  test still passes with the strengths.
 - **Unit, mobile helpers:** `compactDate` fits the 320 px budget (character count in the
   tabular face) for every month name; `holdStep` gives an hour, then a day after 2 s.
 - **In the browser** (Playwright, pre-installed): load `?time=2027-08-02T10:07:00Z&speed=0`
   and screenshot the eclipse; click ⏩ twice and check the rate chip and URL; confirm
   `T`/NOW returns to live and the chip clears.
+- **Hazard fade in the browser:** with quakes, radar and severe on, load `?time=` 3 h ago:
+  the quake rings and radar are gone, the HAZARDS HIDDEN chip shows, and a click where a
+  quake was picks nothing. Load 1 h ago: they're partly faded. Press NOW: they're back in
+  full, and `quakes=1` was in the URL throughout.
 - **Phones in Playwright** (device emulation with `hasTouch`: iPhone SE at 320 × 568,
   iPhone 15, Pixel 7, and the iPhone 15 in landscape):
   - no horizontal scroll (`scrollWidth === clientWidth`), and the bar inside the viewport;
@@ -315,19 +397,16 @@ Each is its own PR, shippable alone.
   - a held ⏩ steps the clock forward by hours, and releasing stops it;
   - tapping the grip shows the bar while live, and it stays while not live;
   - the picker opens as a sheet, the inputs are ≥ 16 px, and it closes on a tap outside.
-- **Real devices, before merging phases 2 and 3:** iOS Safari (home indicator, notch in
+- **Real devices, before merging phases 3 and 4:** iOS Safari (home indicator, notch in
   landscape, the time wheel, no focus zoom), Android Chrome, and the Capacitor build
   (`pnpm android:run`: native date/time dialogs in the WebView, the back button order).
   Playwright can't emulate safe-area insets, so they're checked by hand here.
 
-## Open questions
+## Decisions
 
-1. **Hazards in the past.** Keep them drawn with the DATA: NOW chip (proposed), or fade them
-   out when the clock is far from now?
-2. **Bar placement.** Bottom-centre above the dock (proposed), or under the readout, top
-   left, where the time already is?
-3. **Step size.** Fixed 1 h / 1 day (proposed), or scaled to the speed (one second's worth
-   of the current rate)?
+1. **Hazards away from now:** they fade out (see *Hazards fade away from now*).
+2. **Bar placement:** bottom centre, above the dock.
+3. **Step size:** fixed, 1 hour (Shift or a long hold: 1 day).
 
 ## Later
 
