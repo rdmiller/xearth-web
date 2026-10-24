@@ -36,3 +36,23 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm exec vite build
+
+  # Chrome and Edge on Windows translate every shader to HLSL (ANGLE's Direct3D 11 backend);
+  # SwiftShader never does, and passes shaders D3D rejects. No GPU here: WARP, D3D in software.
+  shaders-d3d11:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:shaders --warp

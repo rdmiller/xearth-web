@@ -5,7 +5,7 @@
 
 import type { Vec3 } from '../vec';
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec2 aCorner;          // −1..1
 uniform vec2 uCenter;     // clip space
 uniform vec2 uHalf;       // quad half-size, clip space
@@ -16,7 +16,7 @@ void main() {
   gl_Position = vec4(uCenter + aCorner * uHalf, 0.0, 1.0);
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in vec2 vQ;
 uniform int uKind;        // 0 = Sun, 1 = Moon

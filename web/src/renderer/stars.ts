@@ -4,7 +4,7 @@
 import { appearanceBuffer, type StarCatalog } from '../stars';
 import type { Camera } from '../view';
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec3 aDir;      // J2000 unit vector
 in vec3 aColor;    // sRGB, max channel 1
 in vec2 aLook;     // peak, sigma (CSS px)
@@ -32,7 +32,7 @@ void main() {
   gl_PointSize = show ? min(ceil(vSigma * 6.0) + 1.0, 48.0) : 0.0;
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in vec3 vColor;
 in float vPeak;

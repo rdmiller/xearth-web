@@ -43,7 +43,7 @@ export const FLOOD_STYLE: PointStyle = { low: [0.45, 0.85, 1.0], high: [0.12, 0.
 /** Blue-white sparks, fading out across the window. */
 export const LIGHTNING_STYLE: PointStyle = { low: [0.42, 0.58, 1.0], high: [0.9, 0.94, 1.0], day: 0.6, fadeTo: 0.2, minPx: 1.5 };
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec3 aPos;      // unit sphere, Earth-fixed
 in vec3 aLook;     // intensity 0..1, age, footprint diameter km
 uniform vec3 uDir;
@@ -90,7 +90,7 @@ void main() {
   gl_PointSize = show ? vSize : 0.0;
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in float vAlpha;
 in float vHeat;

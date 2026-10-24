@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "check:shaders": "node scripts/check-shaders.mjs",
     "textures": "node scripts/fetch-textures.mjs",
     "clouds": "cd ../pipeline && python -m xearth_clouds --out ../web/public/clouds",
     "satellites": "cd ../pipeline && python -m xearth_clouds.satellites --out ../web/public/satellites",

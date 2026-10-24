@@ -33,7 +33,7 @@ export interface LatLonBox {
   latSpan: number;
 }
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 

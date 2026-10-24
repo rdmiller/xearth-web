@@ -8,7 +8,7 @@
 import type { Camera } from '../view';
 import { POINT_FLOATS, RAMP_STRETCH, TRAIL_SLOTS, WIND_RAMP, type WindMode } from '../winds';
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec4 aA;        // older end: Earth-fixed unit vector, life id
 in vec4 aB;        // newer end
 in float aSpeed;   // m/s at the newer end
@@ -74,7 +74,7 @@ void main() {
   gl_Position = ok ? vec4(xy / (0.5 * uRes), 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in vec4 vColor;
 in float vAcross;

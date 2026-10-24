@@ -10,7 +10,7 @@ import type { Vec3 } from '../vec';
 /** Bulk categories the colour / size / shape tables hold (satcategories.ts's BULK_LEAVES). */
 export const SAT_CATEGORIES = 16;
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec3 aPos;            // Earth-fixed, Earth radii; the origin means "no position"
 in vec3 aVel;            // Earth-fixed, Earth radii per second
 in float aCat;           // category: index into the colour / size / on tables
@@ -63,7 +63,7 @@ void main() {
   gl_PointSize = show ? uSizes[cat] * uDpr : 0.0;
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in float vLight;
 in vec3 vColor;

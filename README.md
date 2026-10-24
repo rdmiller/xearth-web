@@ -683,6 +683,15 @@ which is missing in the label.
 
 Tests: `pnpm test` in `web/`, `pytest` in `pipeline/`.
 
+Shaders: `pnpm check:shaders` in `web/`, on Windows, after changing any of them. Chrome and
+Edge on Windows draw WebGL through ANGLE's Direct3D 11 backend, which translates every shader
+to HLSL and compiles it at the first draw; a shader SwiftShader and other GPUs accept can fail
+there and lose the context (the globe's sampler overloads did). The check compiles, links and
+draws every program in `src/renderer/shaders.ts` in a throwaway Chrome profile on this GPU
+(`--warp` for Windows' software D3D11, as CI does), and fails on any error in Chrome's log.
+Never try a shader fix in your own Chrome: a few lost contexts block WebGL on every site until
+the browser exits.
+
 ## Android
 
 Two ways to ship it, from the same code. Both need the site hosted somewhere public over

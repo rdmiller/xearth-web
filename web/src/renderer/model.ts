@@ -8,7 +8,7 @@
 
 import type { Vec3 } from '../vec';
 
-const VERT = `#version 300 es
+export const VERT = `#version 300 es
 in vec3 aPos;
 in vec3 aNormal;
 in vec3 aColor;
@@ -33,7 +33,7 @@ void main() {
   vToEye = vec3(0.0, 0.0, -uHeight) - p.xyz;
 }`;
 
-const FRAG = `#version 300 es
+export const FRAG = `#version 300 es
 precision highp float;
 in vec3 vNormal;
 in vec3 vColor;
