@@ -6,11 +6,12 @@ import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
 import type { IonoMode } from './ionosphere';
 import type { LstMode } from './lst';
+import type { SoilMode } from './soil';
 import type { SstMode } from './sst';
 import type { WindMode } from './winds';
 
 /** The ionosphere wash: GloTEC total electron content, D-RAP HF absorption, or none. */
-export type { IonoMode, LstMode, SstMode, WindMode };
+export type { IonoMode, LstMode, SoilMode, SstMode, WindMode };
 
 /** `photo` dims the stars the way a camera exposed for sunlit Earth would. */
 export type StarMode = 'on' | 'off' | 'photo';
@@ -133,6 +134,8 @@ export interface Settings extends ViewSettings {
   sst: SstMode;
   /** Land surface temperature (VIIRS, MODIS): off, each side its own, the afternoon's, or the night's. */
   lst: LstMode;
+  /** Soil moisture (SMAP L4): off, the top 5 cm, or the root zone. */
+  soil: SoilMode;
   /** Where the pipeline's GloTEC latest.json lives. */
   ionosrc: string;
   /** Global winds (NOAA GFS) as moving trails: off, at 10 m, or the jet stream's level (250 hPa). */
@@ -226,6 +229,7 @@ export function defaults(): Settings {
     iono: 'off',
     sst: 'off',
     lst: 'off',
+    soil: 'off',
     ionosrc: dataSrc('VITE_IONO_BASE', 'ionosphere/'),
     winds: 'off',
     windsrc: dataSrc('VITE_WINDS_BASE', 'winds/'),
@@ -319,6 +323,14 @@ function lstMode(q: URLSearchParams, fallback: LstMode): LstMode {
   if (raw === undefined) return fallback;
   if (raw === 'auto' || raw === 'day' || raw === 'night') return raw;
   return FALSY.includes(raw) ? 'off' : 'auto';
+}
+
+/** `soil=surface|root|off`; anything else true-ish means the top 5 cm. */
+function soilMode(q: URLSearchParams, fallback: SoilMode): SoilMode {
+  const raw = q.get('soil')?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (raw === 'surface' || raw === 'root') return raw;
+  return FALSY.includes(raw) ? 'off' : 'surface';
 }
 
 /** `winds=surface|jet|off`; anything else true-ish means the surface winds. */
@@ -424,6 +436,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     iono: ionoMode(q, base.iono),
     sst: sstMode(q, base.sst),
     lst: lstMode(q, base.lst),
+    soil: soilMode(q, base.soil),
     ionosrc: q.get('ionosrc') ?? base.ionosrc,
     winds: windMode(q, base.winds),
     windsrc: q.get('windsrc') ?? base.windsrc,

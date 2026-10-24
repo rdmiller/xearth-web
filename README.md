@@ -63,6 +63,10 @@ global cloud layer refreshed every hour from geostationary satellites.
     passes and yesterday's, blue below freezing to deep red past 50 °C. By default the sunlit
     side shows the afternoon's and the dark side the night's; the readout gives the hottest
     place and the warmest night.
+  - **Soil moisture** (Shift+F: top 5 cm → root zone → off): NASA's SMAP Level 4, the GMAO
+    land model with SMAP's L-band passes folded in, so it's gap-free under cloud and between
+    swaths, at 9 km. Its 12 UTC field, about four days behind, brown where the ground is dry to
+    blue where it's soaked; the readout gives how much of the land is below 0.1 m³/m³.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
   - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,

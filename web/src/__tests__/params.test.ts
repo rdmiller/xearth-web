@@ -65,6 +65,14 @@ describe('parseSettings', () => {
     expect(toQuery(parseSettings('?lst=auto'))).toBe('?lst=auto');
   });
 
+  it('reads the soil moisture mode, off by default', () => {
+    expect(parseSettings('').soil).toBe('off');
+    expect(parseSettings('?soil=ROOT').soil).toBe('root');
+    expect(parseSettings('?soil=1').soil).toBe('surface');
+    expect(parseSettings('?soil=0').soil).toBe('off');
+    expect(toQuery(parseSettings('?soil=root'))).toBe('?soil=root');
+  });
+
   it('reads the launch settings', () => {
     expect(parseSettings('?launches=0').launches).toBe(false);
     expect(parseSettings('?view=track&track=launch')).toMatchObject({ view: 'track', track: 'launch' });

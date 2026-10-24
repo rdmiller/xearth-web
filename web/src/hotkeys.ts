@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type LstMode, type ReadoutMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
+import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type LstMode, type ReadoutMode, type SatMode, type Settings, type SoilMode, type SstMode, type StarMode, type WindMode } from './params';
 import { HAZARD_LAYERS, HAZARD_TREE, type HazardLayer } from './hazardSources';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
@@ -141,6 +141,12 @@ export const LST_LABELS: Record<LstMode, string> = {
   day: 'Land surface temperature: the afternoon’s (VIIRS, MODIS)',
   night: 'Land surface temperature: the night’s (VIIRS, MODIS)',
   off: 'Land temperature off',
+};
+const NEXT_SOIL: Record<SoilMode, SoilMode> = { off: 'surface', surface: 'root', root: 'off' };
+export const SOIL_LABELS: Record<SoilMode, string> = {
+  surface: 'Soil moisture: the top 5 cm (SMAP L4)',
+  root: 'Soil moisture: the root zone, 0–100 cm (SMAP L4)',
+  off: 'Soil moisture off',
 };
 const NEXT_WINDS: Record<WindMode, WindMode> = { off: 'surface', surface: 'jet', jet: 'off' };
 export const WIND_LABELS: Record<WindMode, string> = {
@@ -348,6 +354,17 @@ export const HOTKEYS: readonly Hotkey[] = [
       const next = NEXT_LST[ctx.settings.lst];
       ctx.update({ lst: next });
       ctx.toast(LST_LABELS[next]);
+    },
+  },
+  {
+    keys: ['shift+f'],
+    label: 'Shift+F',
+    description: 'Soil moisture: the top 5 cm → the root zone → off (SMAP)',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_SOIL[ctx.settings.soil];
+      ctx.update({ soil: next });
+      ctx.toast(SOIL_LABELS[next]);
     },
   },
   {

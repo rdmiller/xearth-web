@@ -37,7 +37,7 @@ describe('hazard fade', () => {
 
   it('fades every hazard, but not clouds, winds or buoys', () => {
     expect(Object.keys(FADE_TIER).sort()).toEqual(
-      ['aurora', 'ash', 'events', 'fires', 'floods', 'iono', 'lightning', 'lst', 'meteors', 'quakes', 'radar', 'severe', 'smoke', 'snow', 'sst', 'storms', 'tsunami'].sort(),
+      ['aurora', 'ash', 'events', 'fires', 'floods', 'iono', 'lightning', 'lst', 'meteors', 'quakes', 'radar', 'severe', 'smoke', 'snow', 'soil', 'sst', 'storms', 'tsunami'].sort(),
     );
     for (const k of ['buoys', 'clouds', 'winds']) expect(FADE_TIER).not.toHaveProperty(k);
   });

@@ -251,6 +251,21 @@ describe('Shift+K cycles the land surface temperature', () => {
   });
 });
 
+describe('Shift+F cycles the soil moisture', () => {
+  it('top 5 cm → root zone → off', () => {
+    const h = harness();
+    const seen = [1, 2, 3].map(() => (h.press('shift+f'), h.s.soil));
+    expect(seen).toEqual(['surface', 'root', 'off']);
+    expect(h.ctx.toasts[1]).toBe('Soil moisture: the root zone, 0–100 cm (SMAP L4)');
+  });
+
+  it('leaves plain F to fullscreen', () => {
+    const h = harness();
+    h.press('f');
+    expect(h.s.soil).toBe('off');
+  });
+});
+
 describe('Shift+P cycles the imagery', () => {
   it('live → yesterday’s → painted → live', () => {
     const h = harness();

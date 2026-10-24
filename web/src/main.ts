@@ -80,6 +80,7 @@ import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
 import { LST_CHECK_MS, LstLoader, lstSummary, type LstFrame } from './lst';
+import { loadSoil, SOIL_CHECK_MS, soilSummary, type SoilFrame } from './soil';
 import { isWindManifest, loadWindField, MAX_PARTICLES, WindParticles, windSummary, type WindField, type WindManifest } from './winds';
 import { EmscPush, EmscQuakes, emscQueryUrl, isEmscFeed, mergeQuakes } from './emsc';
 import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isActive, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
@@ -335,6 +336,7 @@ function layerOn(k: FadedLayer): boolean {
   if (k === 'iono') return settings.iono !== 'off';
   if (k === 'sst') return settings.sst !== 'off';
   if (k === 'lst') return settings.lst !== 'off';
+  if (k === 'soil') return settings.soil !== 'off';
   if (k === 'floods') return srcOn('events.flood');
   return settings[k];
 }
@@ -2088,6 +2090,7 @@ function layerRows(fade: Fades): ReadoutRow[] {
   if (shown('aurora', fade) && aurora) add('aurora', `peak ${aurora.peak} %`);
   if (shown('sst', fade) && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
   if (settings.lst !== 'off' && shown('lst', fade) && lstFrame) add('land temp', lstSummary(settings.lst, lstFrame));
+  if (settings.soil !== 'off' && shown('soil', fade) && soilFrame) add('soil', soilSummary(settings.soil, soilFrame));
   if (settings.winds !== 'off' && windManifest && windField) add('winds', windSummary(settings.winds, windManifest));
   if (settings.iono === 'tec' && shown('iono', fade) && tecManifest) add('ionosphere', tecSummary(tecManifest));
   if (settings.iono === 'drap' && shown('iono', fade) && drap) add('ionosphere', drapSummary(drap));
@@ -2338,6 +2341,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'sst', label: 'Sea temperature', source: 'GHRSST MUR', freshMs: 3 * 24 * 60 * MIN, on: () => settings.sst !== 'off', everyMs: SST_CHECK_MS },
   // Today's passes land in GIBS ~3 hours after they're taken, yesterday's fill the rest.
   { key: 'lst', label: 'Land temperature', source: 'VIIRS · MODIS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.lst !== 'off', everyMs: LST_CHECK_MS },
+  // SMAP L4 is a model run with SMAP's passes assimilated: its 12 UTC field lands ~4 days on.
+  { key: 'soil', label: 'Soil moisture', source: 'NASA SMAP L4', freshMs: 6 * 24 * 60 * MIN, on: () => settings.soil !== 'off', everyMs: SOIL_CHECK_MS },
   // GFS runs every 6 hours and lands ~4–5 hours after it starts: the newest is up to ~11 hours old.
   { key: 'winds', label: 'Winds', source: 'NOAA GFS', freshMs: 12 * 60 * MIN, on: () => settings.winds !== 'off', everyMs: WIND_CHECK_MS },
   // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
@@ -2801,6 +2806,38 @@ function syncLst() {
   }
   void runLst();
   lstTimer = setInterval(() => void runLst(), LST_CHECK_MS);
+}
+
+// ---- soil moisture (SMAP L4, via NASA GIBS) -------------------------------------------------
+// The day's top 5 cm and root zone, both in the surface texture's third layer, so switching
+// between them is free; GIBS has each day ~4 days on, so an hourly look is plenty. See soil.ts.
+
+let soilFrame: SoilFrame | undefined;
+let soilTimer: ReturnType<typeof setInterval> | undefined;
+
+function runSoil(): Promise<void> {
+  feedLog.begin('soil', Date.now(), SOIL_CHECK_MS);
+  return loadSoil(new Date(), soilFrame?.date)
+    .then((f) => {
+      if (f) {
+        soilFrame = f;
+        renderer.setSoil(f.rgba, SST_W, SST_H);
+      }
+      feedLog.done('soil', Date.now(), soilFrame && Date.parse(`${soilFrame.date}T12:00:00Z`));
+    })
+    .catch((err) => {
+      feedLog.fail('soil', Date.now(), err);
+      console.warn('soil moisture:', err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncSoil() {
+  clearInterval(soilTimer);
+  soilTimer = undefined;
+  if (settings.soil === 'off') return feedLog.stop('soil');
+  void runSoil();
+  soilTimer = setInterval(() => void runSoil(), SOIL_CHECK_MS);
 }
 
 // ---- flood extent (NASA LANCE VIIRS, via GIBS), with the GDACS events --------------------------
@@ -3294,6 +3331,8 @@ function frame(now: number) {
     sstFade: strength('sst'),
     lst: ['off', 'auto', 'day', 'night'].indexOf(settings.lst),
     lstFade: strength('lst'),
+    soil: ['off', 'surface', 'root'].indexOf(settings.soil),
+    soilFade: strength('soil'),
     floods: strength('floods'),
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
@@ -3469,6 +3508,7 @@ function update(patch: Partial<Settings>) {
   const ashBefore = settings.ash;
   const sstBefore = settings.sst;
   const lstBefore = settings.lst;
+  const soilBefore = settings.soil;
   const windsBefore = settings.winds;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   const sourcesBefore = HAZARD_LAYERS.map((k) => sourcesKey(k, settings));
@@ -3486,6 +3526,7 @@ function update(patch: Partial<Settings>) {
   if (settings.ash !== ashBefore) syncAsh();
   if ((settings.sst === 'off') !== (sstBefore === 'off')) syncSst();
   if (settings.lst !== lstBefore) syncLst();
+  if ((settings.soil === 'off') !== (soilBefore === 'off')) syncSoil();
   if (sourcesChanged.has('events')) {
     syncFlood();
     syncHans();
@@ -3721,6 +3762,7 @@ syncHimawari();
 syncAsh();
 syncSst();
 syncLst();
+syncSoil();
 syncFlood();
 syncHans();
 syncAlarm();

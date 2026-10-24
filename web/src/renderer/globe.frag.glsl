@@ -65,12 +65,15 @@ uniform float uAshHas[3];
 uniform vec4 uAshBox[3];     // as uDetailBox, per picture
 uniform float uAshSub[3];    // longitude below each satellite (radians)
 uniform float uAshTier[3];   // 0 first, 1 where 0 isn't, 2 (a whole-world mosaic) under both
-uniform sampler2DArray uSurfTemp; // layer 0: sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts);
-                             // layer 1: land surface temperature −80…80 °C, afternoon (r, over b) and night (g, over a) (lst.ts)
+uniform sampler2DArray uSurface; // layer 0: sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts);
+                             // layer 1: land surface temperature −80…80 °C, afternoon (r, over b) and night (g, over a) (lst.ts);
+                             // layer 2: soil moisture 0…0.75 m³/m³, top 5 cm (r) and root zone (g), premultiplied (soil.ts)
 uniform float uSstMode;      // 0 off, 1 temperature, 2 anomaly
 uniform float uSstFade;
 uniform float uLstMode;      // 0 off, 1 each side its own (afternoon by day, night by night), 2 afternoon, 3 night
 uniform float uLstFade;
+uniform float uSoilMode;     // 0 off, 1 top 5 cm, 2 root zone
+uniform float uSoilFade;
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -136,6 +139,16 @@ vec3 lstRamp(float c) {
   vec3 d = mix(b, vec3(0.98, 0.88, 0.35), smoothstep(0.4, 0.6, t));
   vec3 e = mix(d, vec3(0.95, 0.45, 0.12), smoothstep(0.58, 0.78, t));
   return mix(e, vec3(0.62, 0.05, 0.10), smoothstep(0.75, 1.0, t));
+}
+
+// Soil moisture, m³/m³: dry brown through tan and green to deep blue where it's soaked, over
+// 0.05…0.5 (a desert's sand to a saturated loam; peat runs past it).
+vec3 soilRamp(float m) {
+  float t = clamp((m - 0.05) / 0.45, 0.0, 1.0);
+  vec3 a = mix(vec3(0.45, 0.25, 0.08), vec3(0.85, 0.70, 0.40), smoothstep(0.0, 0.25, t));
+  vec3 b = mix(a, vec3(0.55, 0.78, 0.38), smoothstep(0.2, 0.45, t));
+  vec3 c = mix(b, vec3(0.15, 0.62, 0.65), smoothstep(0.45, 0.7, t));
+  return mix(c, vec3(0.10, 0.22, 0.62), smoothstep(0.7, 1.0, t));
 }
 
 // HF absorption toward 35 MHz: violet, green, yellow, red. (SWPC's own maps start at blue, on
@@ -405,7 +418,7 @@ void main() {
   // The anomaly is faint near zero and strong past ±2 °C, so El Niño's tongue and the marine
   // heatwaves stand out at a glance. The texture is premultiplied: alpha is the sea's share.
   if (uSstMode > 0.5) {
-    vec4 s4 = textureLod(uSurfTemp, vec3(uv, 0.0), lodFor(uSurfTemp, mu, coslat));
+    vec4 s4 = textureLod(uSurface, vec3(uv, 0.0), lodFor(uSurface, mu, coslat));
     if (s4.a > 0.02) {
       vec2 v = s4.rg / s4.a;
       vec3 c;
@@ -428,7 +441,7 @@ void main() {
   // side its own: the afternoon's where the Sun is up, the night's where it's down, crossing
   // over within ~6° of the terminator. Each pass is premultiplied by its own coverage.
   if (uLstMode > 0.5) {
-    vec4 l4 = textureLod(uSurfTemp, vec3(uv, 1.0), lodFor(uSurfTemp, mu, coslat));
+    vec4 l4 = textureLod(uSurface, vec3(uv, 1.0), lodFor(uSurface, mu, coslat));
     float sunW = uLstMode < 1.5 ? smoothstep(-0.1, 0.1, k) : uLstMode < 2.5 ? 1.0 : 0.0;
     vec3 pre = vec3(0.0);
     float a = 0.0;
@@ -445,6 +458,18 @@ void main() {
     float f = 0.85 * uLstFade;
     col = col * (1.0 - a * f) + pre * f;
     liveA += a * f * (1.0 - liveA);
+  }
+
+  // Soil moisture (SMAP L4), the top 5 cm or the root zone, over the land day and night: a
+  // model's gap-free field, so no swaths or cloud holes. Premultiplied: alpha is the land's share.
+  if (uSoilMode > 0.5) {
+    vec4 m4 = textureLod(uSurface, vec3(uv, 2.0), lodFor(uSurface, mu, coslat));
+    if (m4.a > 0.02) {
+      float m = (uSoilMode < 1.5 ? m4.r : m4.g) / m4.a * 0.75;
+      float a = 0.85 * smoothstep(0.5, 0.95, m4.a) * uSoilFade;
+      col = mix(col, toLinear(soilRamp(m)), a);
+      liveA += a * (1.0 - liveA);
+    }
   }
 
   // Satellite rain (IMERG) where no radar sees, a little fainter than radar: it's an

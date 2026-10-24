@@ -29,6 +29,8 @@ describe('layer drawer', () => {
     expect(state('shift+k')).toEqual({ on: false, tag: undefined });
     expect(state('shift+k', { lst: 'auto' })).toEqual({ on: true, tag: undefined });
     expect(state('shift+k', { lst: 'night' })).toEqual({ on: true, tag: 'NIGHT' });
+    expect(state('shift+f', { soil: 'surface' })).toEqual({ on: true, tag: undefined });
+    expect(state('shift+f', { soil: 'root' })).toEqual({ on: true, tag: 'ROOT' });
     // Ash is off by default: seven of the eight hazards.
     expect(state('shift+x')).toEqual({ on: true, tag: '7/8' });
     expect(state('shift+x', { ash: true })).toEqual({ on: true, tag: undefined });
