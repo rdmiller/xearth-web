@@ -34,6 +34,9 @@ to a moment** and **step by an amount**.
 2. The current simulated date and time and the rate, always readable on the bar.
 3. A date-and-time picker, with presets for moments worth seeing.
 4. Mouse, touch and keyboard all work, and the bar never hides that the data is "now".
+5. Fully usable on a phone, portrait or landscape, in the browser, the installed web app and
+   the Android app: thumb-sized targets, no hover needed, clear of the notch and home
+   indicator, and never covering the rest of the HUD.
 
 **Not in scope:** historical data. Clouds, imagery, quakes and the other feeds keep showing
 the present; fetching archives for a past date (GIBS has dated layers, USGS has a query API)
@@ -68,15 +71,11 @@ pauses, then goes −1×, −10×… A rewind button that first pauses, then cra
 pointer nears the bottom and when the dock is pinned (reuse `revealFor()` from
 `drawer.ts`). While the clock isn't live, the bar stays visible, so there is always a way
 back to now. A "Time" button in the dock's HUD group (Lucide `Clock`, hotkey `Shift+C`)
-pins it open too.
-
-**Phones** (`max-width: 600px`): the step buttons drop out and the date shortens to
-`10-24 14:32`; the bar sits above the dock's grip and below the toast column. Tap targets
-stay ≥ 40 px (the `pointer: coarse` rule).
+pins it open too. Touch screens have no hover, so they get their own rules (see *Mobile*).
 
 ### The picker
 
-A small glass popover above the bar:
+A small glass popover above the bar on wide screens, a bottom sheet on phones (see *Mobile*):
 
 - `<input type="date">` and `<input type="time" step="1">`, with a **UTC / Local** toggle.
   The native inputs give phones their own wheels and keep the hotkey handler out of the way
@@ -91,6 +90,109 @@ A small glass popover above the bar:
   (add it to the `backButton` chain in `main.ts`).
 - **Range:** 1900–2100. astronomy-engine is good far beyond that, but the stars' precession
   and the textures are tuned for the present, and the input needs bounds.
+
+### Mobile
+
+The bar has to work as well on a phone (browser, installed web app, and the Capacitor
+Android app) as on a desktop. The rules below are part of each phase, not a later pass.
+
+**Breakpoint.** Use the app's own `SMALL_SCREEN` query (`params.ts`:
+`(max-width: 600px), (max-height: 500px)`), so landscape phones get the compact layout too.
+Touch behaviour keys off `(pointer: coarse)` separately, because a tablet is touch but not
+small.
+
+**Compact layout (portrait phone).** One row, inset 12 px from each edge, never scrolling
+sideways:
+
+```
+ [⏪] [⏯] [⏩]   OCT 24 2026        [NOW]
+                14:32:07 · 10 MIN/S
+```
+
+- The step buttons drop out. Stepping on a phone happens in the picker (±1 h / ±1 day
+  buttons) and by press-and-hold on ⏪ / ⏩ (below).
+- The date block takes two lines in the HUD Digits face (tabular figures, so its width
+  doesn't jitter as the seconds tick), with the rate after the time. The whole block is the
+  button that opens the picker.
+- Width budget at 320 px (the narrowest phones): 3 × 44 px buttons, a 52 px NOW, 4 × 6 px
+  gaps and 2 × 12 px gutters leave about 88 px for the date block. "14:32:07" at 13 px fits.
+- **Landscape phone** (`max-height: 500px`): the same single row, the date on one line
+  (`OCT 24 14:32:07 · 10 MIN/S`). There's little height, so the bar and dock stack as
+  tightly as they can, with the toast column given what's left.
+
+**Touch targets.** Every control is at least 44 × 44 px (Apple's minimum; Android asks for
+48 dp, and 44 CSS px is about that on most phones), with at least 6 px between neighbours.
+That's larger than the dock's 40 px phone buttons on purpose: the transport buttons get
+pressed repeatedly, often one-handed.
+
+**No hover.** On `pointer: coarse`:
+
+- While live, the bar shows when the dock's grip pins the dock open (the grip is already the
+  only way into the dock on touch), and goes when it's unpinned. The Time button in the dock
+  does the same.
+- While not live, the bar stays on screen, so a phone user who fast-forwarded can always get
+  back to now with one tap.
+- Captions that appear on hover elsewhere become `aria-label`s here, and the icons carry the
+  meaning alone.
+
+**Gestures.**
+
+- The bar sits on top of the overlay canvas, whose pointer handlers drag, pinch and pick.
+  The bar stops `pointerdown` propagation and isn't a child of the canvas, so a tap on a
+  button never picks a satellite or starts a drag. A drag that starts on the globe and runs
+  over the bar keeps going (pointer capture is already on the canvas).
+- `touch-action: manipulation` on the bar: no double-tap zoom, no 300 ms tap delay.
+- **Press and hold** ⏪ / ⏩ (≥ 400 ms) steps back/forward an hour, then repeats every
+  150 ms, speeding up to a day per step after 2 s; a plain tap changes speed as usual.
+  It's built on `pointerdown` / `pointerup` / `pointercancel` / `pointerleave` with
+  `setPointerCapture`, so it stops if the finger slides off or the OS takes the gesture.
+- No long-press callout or text selection: `-webkit-touch-callout: none`,
+  `user-select: none`, and `contextmenu` cancelled on the bar (Android otherwise opens a menu
+  on a long press).
+
+**Safe areas.** The page sets `viewport-fit=cover`, so content can sit under the iPhone home
+indicator, Android's gesture bar and a landscape notch. The bar's bottom offset adds
+`env(safe-area-inset-bottom)`, and its sides add `env(safe-area-inset-left/right)`. Nothing
+in the CSS uses these yet. The dock should get the same treatment in the same PR, or the bar
+would float correctly over a dock that's half under the home indicator.
+
+**Stacking with the rest of the HUD.** The drawer already publishes its height as
+`--drawer-h` / `--dock-full` (`main.ts`), and the toast column, the pick panel and the toast
+are positioned from them. The bar sits at `bottom: calc(var(--drawer-h) + 8px +
+env(safe-area-inset-bottom))` and publishes its own height as `--transport-h` from a
+`ResizeObserver`. Those three then add `--transport-h` to their bottom offset, so on a phone
+the toast column fills exactly the room between the readout (`--readout-bottom`) and the
+bar, and nothing overlaps. Orientation changes are just another resize.
+
+**The picker as a bottom sheet.** On `SMALL_SCREEN` it opens as a full-width sheet above the
+bar instead of a popover:
+
+- Native `<input type="date">` and `<input type="time">`: iOS shows its wheels, Android
+  (Chrome, the TWA and the Capacitor WebView) its calendar and clock dialogs. No custom
+  picker to build, and no on-screen keyboard.
+- Font size ≥ 16 px in the inputs, or iOS Safari zooms the page on focus (the search box
+  already does this).
+- Presets as a two-column grid of 44 px buttons, then ±1 h / ±1 day, then Go. The sheet
+  scrolls inside itself (`overscroll-behavior: contain`) if a landscape phone is too short
+  for it, so the globe behind doesn't scroll or zoom.
+- iOS's time wheel has no seconds; that's fine. The picker sets minutes, and stepping or the
+  clock itself gets you to the second.
+- Local time is the default on phones (the native pickers are local-time dialogs); the
+  UTC/Local toggle is still there, remembered per viewer.
+- Closes on Go, Escape, a tap outside, a swipe down on its handle, and Android's back
+  button, which gets one more step in `main.ts`'s `backButton` chain: picker first, then the
+  bar (when it's only showing because it was pinned), then the existing search → satellite
+  tree → help → minimise.
+
+**Performance on phones.** In `.lite` mode (slow GPUs) the bar drops its backdrop blur like
+every other `.glass`. The date text updates only when the shown text changes: once a second
+at real time, and at most ~4 times a second at high speeds, so a mid-range phone isn't doing
+layout every frame. The bar adds no work to `frame()` beyond a string compare.
+
+**Accessibility (VoiceOver, TalkBack).** `role="toolbar"`, an `aria-label` on every button,
+`aria-pressed` on play/pause. The date button's label reads in full ("Simulated time:
+24 October 2026, 14:32 UTC. Change"). The time is not an `aria-live` region; it would talk
+every second.
 
 ### Being honest about the data
 
@@ -152,8 +254,13 @@ A class like `PerfPanel` / `Drawer`:
   touches the DOM only when the text changes (the `put()` pattern from `hudPanels.ts`),
   and formats to whole seconds, so it updates at most once a second at real time.
 - The picker's markup is built lazily on first open.
+- A `ResizeObserver` publishes `--transport-h`; press-and-hold lives here too.
+- Pure helpers, exported for tests: `compactDate(date, zone)` / `fullDate(date, zone)`, and
+  `holdStep(heldMs)` (the press-and-hold step size and repeat interval).
 - `index.html`: `<div id="transport" class="glass" role="toolbar" aria-label="Time">` next
-  to `#drawer`, plus its CSS (reduced-motion and `.lite` variants, like the rest).
+  to `#drawer`, plus its CSS: the `SMALL_SCREEN` and `pointer: coarse` rules, safe-area
+  insets, and reduced-motion and `.lite` variants, like the rest. `#toasts`, `#pick` and
+  `#toast` add `var(--transport-h, 0px)` to their bottom offsets.
 
 ### 4. Wiring in `main.ts`
 
@@ -179,8 +286,11 @@ Each is its own PR, shippable alone.
    the hotkey context; the new step and rewind/forward hotkeys. *Keyboard-only users get
    everything except the picker.*
 2. **Transport bar.** `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
-   Time button, phone layout, the DATA: NOW chip.
-3. **Picker.** Date/time inputs, UTC/Local, presets, Android back button.
+   Time button, the DATA: NOW chip, and all of *Mobile* that applies to the bar: compact and
+   landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas (dock
+   included), `--transport-h` stacking.
+3. **Picker.** Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
+   on phones.
 4. **Satellite age limit.** Hide/tag satellites far from their elements' epoch.
 
 ## Testing
@@ -190,9 +300,25 @@ Each is its own PR, shippable alone.
   times against known dates (2026-12-21 solstice, 2027-08-02 total solar eclipse);
   `hotkeys.test.ts` already checks for key collisions.
 - **Drawer test:** extend `drawer.test.ts` for the Time button.
+- **Unit, mobile helpers:** `compactDate` fits the 320 px budget (character count in the
+  tabular face) for every month name; `holdStep` gives an hour, then a day after 2 s.
 - **In the browser** (Playwright, pre-installed): load `?time=2027-08-02T10:07:00Z&speed=0`
-  and screenshot the eclipse; click ⏩ twice and check the rate chip and URL; open the picker
-  on a phone-sized viewport; confirm `T`/NOW returns to live and the chip clears.
+  and screenshot the eclipse; click ⏩ twice and check the rate chip and URL; confirm
+  `T`/NOW returns to live and the chip clears.
+- **Phones in Playwright** (device emulation with `hasTouch`: iPhone SE at 320 × 568,
+  iPhone 15, Pixel 7, and the iPhone 15 in landscape):
+  - no horizontal scroll (`scrollWidth === clientWidth`), and the bar inside the viewport;
+  - every bar control's bounding box ≥ 44 × 44;
+  - the bar doesn't overlap the dock, the grip, the toast column or the readout, with a
+    toast window open;
+  - `tap()` on ⏩ changes speed and doesn't pick or drag the globe;
+  - a held ⏩ steps the clock forward by hours, and releasing stops it;
+  - tapping the grip shows the bar while live, and it stays while not live;
+  - the picker opens as a sheet, the inputs are ≥ 16 px, and it closes on a tap outside.
+- **Real devices, before merging phases 2 and 3:** iOS Safari (home indicator, notch in
+  landscape, the time wheel, no focus zoom), Android Chrome, and the Capacitor build
+  (`pnpm android:run`: native date/time dialogs in the WebView, the back button order).
+  Playwright can't emulate safe-area insets, so they're checked by hand here.
 
 ## Open questions
 
