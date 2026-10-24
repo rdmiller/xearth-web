@@ -579,7 +579,7 @@
          the toast windows while it's open. */
       #transport.picking { z-index: 5; }
       #transport .t-picker {
-        position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 340px; box-sizing: border-box;
+        position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 380px; box-sizing: border-box;
         max-height: calc(100vh - var(--transport-top, 120px) - 16px); max-height: calc(100dvh - var(--transport-top, 120px) - 16px);
         overflow: auto; overscroll-behavior: contain; padding: 10px 12px 12px; white-space: normal;
         display: flex; flex-direction: column; gap: 10px; text-align: left; cursor: auto;
@@ -595,7 +595,8 @@
       #transport .t-zones { display: flex; border: 1px solid var(--glass-edge); border-radius: var(--r-md); overflow: hidden; }
       #transport .t-seg { min-height: 28px; min-width: 52px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--ink-3); }
       #transport .t-seg[aria-pressed="true"] { color: var(--ink-on-accent); background: var(--hud-accent); }
-      #transport .t-fields { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; }
+      /* Half each: a 12-hour time ("07:47:30 PM") needs as much room as the date, or its AM/PM is cut off. */
+      #transport .t-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       /* 16px: any smaller and iOS zooms the page when one is focused. */
       #transport .t-input {
         min-width: 0; height: 40px; box-sizing: border-box; padding: 0 8px; font: 500 16px var(--font-ui); color: var(--ink-1);
