@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HOTKEYS, MAG_MAX, formatSpeed, helpRows, matchHotkey, nextSpeed, type HotkeyContext, type KeyLike } from '../hotkeys';
+import { HOTKEYS, MAG_MAX, formatSpeed, forwardSpeed, helpRows, matchHotkey, nextSpeed, rewindSpeed, type HotkeyContext, type KeyLike } from '../hotkeys';
 import { defaults, type Settings } from '../params';
+
+const NOW = Date.parse('2026-10-24T12:00:00Z');
 
 function harness(initial: Partial<Settings> = {}) {
   let settings: Settings = { ...defaults(), lat: 20, lon: -75, ...initial };
@@ -15,6 +17,14 @@ function harness(initial: Partial<Settings> = {}) {
     viewer: () => ({ lat: 12, lon: 34 }),
     setSpeed: vi.fn((speed: number) => {
       settings = { ...settings, speed };
+    }),
+    jumpTo: vi.fn((date: Date) => {
+      settings = { ...settings, time: date };
+    }),
+    stepTime: vi.fn((ms: number) => {
+      const time = new Date((settings.time?.getTime() ?? NOW) + ms);
+      settings = { ...settings, time };
+      return time;
     }),
     goLive: vi.fn(() => {
       settings = { ...settings, speed: 1, time: null };
@@ -300,6 +310,38 @@ describe('time keys', () => {
     expect(h.s.speed).toBe(-1);
   });
 
+  it('< and > rewind and fast-forward, getting faster with each press', () => {
+    const h = harness();
+    h.press('>', { shiftKey: true });
+    expect(h.s.speed).toBe(10);
+    h.press('>', { shiftKey: true });
+    expect(h.s.speed).toBe(60);
+    expect(h.ctx.toasts.at(-1)).toBe('1 min per second');
+    h.press('<', { shiftKey: true });
+    expect(h.s.speed).toBe(-10);
+    h.press('<', { shiftKey: true });
+    expect(h.s.speed).toBe(-60);
+  });
+
+  it('; and \' step an hour, Shift a day, keeping the speed', () => {
+    const h = harness({ speed: 0 });
+    h.press(';');
+    expect(h.s.time?.toISOString()).toBe('2026-10-24T11:00:00.000Z');
+    expect(h.ctx.toasts.at(-1)).toBe('Back an hour · 2026-10-24 11:00 UTC');
+    h.press('"', { shiftKey: true });
+    expect(h.s.time?.toISOString()).toBe('2026-10-25T11:00:00.000Z');
+    expect(h.ctx.toasts.at(-1)).toBe('Forward a day · 2026-10-25 11:00 UTC');
+    h.press(':', { shiftKey: true });
+    h.press("'");
+    expect(h.s.time?.toISOString()).toBe('2026-10-24T12:00:00.000Z');
+    expect(h.s.speed).toBe(0);
+  });
+
+  it('a step repeats while held', () => {
+    expect(matchHotkey({ key: ';', repeat: true })).toBeDefined();
+    expect(matchHotkey({ key: '>', repeat: true })).toBeUndefined();
+  });
+
   it('T returns to now', () => {
     const h = harness({ speed: 600 });
     h.press('t');
@@ -313,6 +355,22 @@ describe('helpers', () => {
     expect(nextSpeed(86400, 1)).toBe(86400);
     expect(nextSpeed(-3600, -1)).toBe(-3600);
     expect(nextSpeed(30, 1)).toBe(60); // off-ladder values snap to the next rung
+  });
+
+  it('fast-forward starts at 10× from anywhere below it, then climbs and saturates', () => {
+    for (const s of [-3600, -10, -1, 0, 1, 5]) expect(forwardSpeed(s)).toBe(10);
+    expect(forwardSpeed(10)).toBe(60);
+    expect(forwardSpeed(3600)).toBe(86400);
+    expect(forwardSpeed(86400)).toBe(86400);
+    expect(forwardSpeed(100)).toBe(600); // off-ladder values snap to the next rung
+  });
+
+  it('rewind starts at −10× from anywhere above it, then climbs and saturates', () => {
+    for (const s of [86400, 10, 1, 0, -1, -5]) expect(rewindSpeed(s)).toBe(-10);
+    expect(rewindSpeed(-10)).toBe(-60);
+    expect(rewindSpeed(-600)).toBe(-3600);
+    expect(rewindSpeed(-3600)).toBe(-3600);
+    expect(rewindSpeed(-100)).toBe(-600);
   });
 
   it('formatSpeed reads naturally', () => {

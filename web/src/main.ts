@@ -196,6 +196,7 @@ import {
   type LaunchState,
 } from './launches';
 import { CloudSync, type CloudStatus } from './cloudSync';
+import { clockAt, isLive, jumpTo as jumpClock, live as liveClock, stepBy, withSpeed, type Clock } from './clock';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
   clearOverlaySprites,
@@ -297,16 +298,22 @@ function wallAt(perfNow = performance.now()): number {
 /** Wall-clock moment that `settings.time` corresponds to. */
 let clockStart = wallAt();
 
+/** The simulated clock, from the settings and its anchor. */
+const clock = (): Clock => ({ time: settings.time, speed: settings.speed, anchor: clockStart });
+
+/** Set the clock (and anything else in `patch`), re-anchored on `c`. */
+function setClock(c: Clock, patch: Partial<Settings> = {}) {
+  clockStart = c.anchor;
+  update({ ...patch, time: c.time, speed: c.speed });
+}
+
 function simTime(perfNow?: number): Date {
-  const wall = wallAt(perfNow);
-  if (!settings.time && settings.speed === 1) return new Date(wall);
-  const origin = settings.time ? settings.time.getTime() : clockStart;
-  return new Date(origin + (wall - clockStart) * settings.speed);
+  return clockAt(clock(), wallAt(perfNow));
 }
 
 /** Label suffix for a clock that isn't simply "now". */
 function clockLabel(): string | undefined {
-  if (!settings.time && settings.speed === 1) return undefined;
+  if (isLive(clock())) return undefined;
   return settings.speed === 1 ? 'fixed start time' : formatSpeed(settings.speed).toLowerCase();
 }
 
@@ -3328,14 +3335,18 @@ const hotkeyContext: HotkeyContext = {
   update,
   viewer: () => viewerLatLon(settings, simTime(), resolveTrack),
   setSpeed(speed) {
-    // Re-anchor so the displayed moment carries on from where it is.
-    const now = simTime();
-    clockStart = wallAt();
-    update({ time: now, speed });
+    setClock(withSpeed(clock(), speed, wallAt()));
+  },
+  jumpTo(date) {
+    setClock(jumpClock(clock(), date, wallAt()));
+  },
+  stepTime(ms) {
+    const c = stepBy(clock(), ms, wallAt());
+    setClock(c);
+    return clockAt(c, c.anchor);
   },
   goLive() {
-    clockStart = wallAt();
-    update({ time: null, speed: 1 });
+    setClock(liveClock(wallAt()));
   },
   previewLaunch() {
     if (!settings.launches) update({ launches: true });
@@ -3345,8 +3356,7 @@ const hotkeyContext: HotkeyContext = {
     // Prefer one with a predicted orbit: that's the one with something to watch.
     const next = upcoming.find((s) => s.deployT !== undefined) ?? upcoming[0];
     if (!next) return null;
-    clockStart = wallAt();
-    update({ time: new Date(next.t0 - 60_000), speed: 10, view: 'track', track: 'launch' });
+    setClock({ time: new Date(next.t0 - 60_000), speed: 10, anchor: wallAt() }, { view: 'track', track: 'launch' });
     return `${shortRocket(next.launch.rocket)} · ${next.launch.mission}`;
   },
   refreshClouds: () => {
@@ -3384,11 +3394,13 @@ window.addEventListener('keydown', (e) => {
   hk.run(hotkeyContext, e);
 });
 
+// Labels are text ("<" rewinds), not markup.
+const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 helpKeys.innerHTML = helpRows()
   .map(
     ({ group, rows }) =>
       `<h3>${group}</h3><table>${rows
-        .map((r) => `<tr><td><kbd>${r.label}</kbd></td><td>${r.description}</td></tr>`)
+        .map((r) => `<tr><td><kbd>${escapeHtml(r.label)}</kbd></td><td>${escapeHtml(r.description)}</td></tr>`)
         .join('')}</table>`,
   )
   .join('');

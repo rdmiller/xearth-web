@@ -26,6 +26,10 @@ export interface HotkeyContext {
   viewer(): { lat: number; lon: number };
   /** Change the clock rate, keeping the displayed moment continuous. */
   setSpeed(speed: number): void;
+  /** Show a given moment, keeping the rate. */
+  jumpTo(date: Date): void;
+  /** Move the clock `ms` forward (negative: back), keeping the rate; returns the moment now shown. */
+  stepTime(ms: number): Date;
   /** Back to the present, in real time. */
   goLive(): void;
   /** Jump the clock to just before the next launch at 10×; returns its name, or null if none. */
@@ -191,6 +195,38 @@ export function nextSpeed(current: number, dir: 1 | -1): number {
   if (dir > 0) return SPEEDS.find((s) => s > current) ?? SPEEDS[SPEEDS.length - 1];
   return [...SPEEDS].reverse().find((s) => s < current) ?? SPEEDS[0];
 }
+
+/** Rewind and fast-forward start at 10× and get faster with each press, from wherever the clock is. */
+const FAST = SPEEDS.filter((s) => s >= 10);
+const REWIND = SPEEDS.filter((s) => s <= -10).reverse();
+
+export function forwardSpeed(current: number): number {
+  return current < FAST[0] ? FAST[0] : (FAST.find((s) => s > current) ?? FAST[FAST.length - 1]);
+}
+
+export function rewindSpeed(current: number): number {
+  return current > REWIND[0] ? REWIND[0] : (REWIND.find((s) => s < current) ?? REWIND[REWIND.length - 1]);
+}
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** "2026-10-24 14:32 UTC" */
+const utcMinute = (d: Date) => `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
+/** Step the clock an hour, or a day with Shift (by the key it types, so it holds on any layout). */
+const stepKey = (keys: [string, string], dir: 1 | -1): Hotkey => ({
+  keys,
+  label: keys[0],
+  description: `${dir > 0 ? 'Forward' : 'Back'} an hour (Shift: a day)`,
+  group: 'Time',
+  repeat: true,
+  run(ctx, e) {
+    const day = e.key === keys[1];
+    const shown = ctx.stepTime(dir * (day ? DAY_MS : HOUR_MS));
+    ctx.toast(`${dir > 0 ? 'Forward' : 'Back'} ${day ? 'a day' : 'an hour'} · ${utcMinute(shown)}`);
+  },
+});
 
 export function formatSpeed(speed: number): string {
   if (speed === 0) return 'Paused';
@@ -485,7 +521,7 @@ export const HOTKEYS: readonly Hotkey[] = [
     },
   },
   {
-    keys: ['.', '>'],
+    keys: ['.'],
     label: '.',
     description: 'Faster',
     group: 'Time',
@@ -496,7 +532,7 @@ export const HOTKEYS: readonly Hotkey[] = [
     },
   },
   {
-    keys: [',', '<'],
+    keys: [','],
     label: ',',
     description: 'Slower (then backwards)',
     group: 'Time',
@@ -506,6 +542,30 @@ export const HOTKEYS: readonly Hotkey[] = [
       ctx.toast(formatSpeed(s));
     },
   },
+  {
+    keys: ['<'],
+    label: '<',
+    description: 'Rewind: backwards at 10×, then faster with each press',
+    group: 'Time',
+    run(ctx) {
+      const s = rewindSpeed(ctx.settings.speed);
+      ctx.setSpeed(s);
+      ctx.toast(formatSpeed(s));
+    },
+  },
+  {
+    keys: ['>'],
+    label: '>',
+    description: 'Fast-forward: 10×, then faster with each press',
+    group: 'Time',
+    run(ctx) {
+      const s = forwardSpeed(ctx.settings.speed);
+      ctx.setSpeed(s);
+      ctx.toast(formatSpeed(s));
+    },
+  },
+  stepKey([';', ':'], -1),
+  stepKey(["'", '"'], 1),
   {
     keys: ['k'],
     label: 'K',
