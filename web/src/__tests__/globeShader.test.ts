@@ -13,4 +13,13 @@ describe('globe fragment shader', () => {
     expect(samplers.length).toBeGreaterThan(0);
     expect(samplers.length, samplers.join('\n')).toBeLessThanOrEqual(16);
   });
+
+  it('never overloads a function that takes a sampler', () => {
+    // ANGLE's D3D11 backend (Chrome and Edge on Windows) passes samplers as indices, so
+    // lodFor(sampler2D) and lodFor(sampler2DArray) became one HLSL function: X3003
+    // redefinition, and the context was lost on the first frame. SwiftShader didn't mind.
+    const names = [...frag.matchAll(/^\s*\w+\s+(\w+)\s*\(([^)]*)\)\s*\{/gm)].filter((m) => /\bsampler\w*\b/.test(m[2])).map((m) => m[1]);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
+  });
 });

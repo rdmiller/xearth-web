@@ -159,18 +159,23 @@ vec3 drapRamp(float t) {
   return mix(b, vec3(1.0, 0.2, 0.1), smoothstep(0.55, 1.0, t));
 }
 
-// Analytic mip level: texels per screen pixel at this point. Avoids dFdx,
-// which misbehaves across the longitude seam and at the limb.
-float lodFor(sampler2D t, float mu, float coslat) {
-  float texPerRad = float(textureSize(t, 0).y) / PI;
+// Analytic mip level: texels per screen pixel at this point, for a texture `rows` texels
+// from pole to pole. Avoids dFdx, which misbehaves across the longitude seam and at the limb.
+float lodForRows(float rows, float mu, float coslat) {
+  float texPerRad = rows / PI;
   float ratio = texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
   return log2(max(ratio, 1.0));
 }
 
-float lodFor(sampler2DArray t, float mu, float coslat) {
-  float texPerRad = float(textureSize(t, 0).y) / PI;
-  float ratio = texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
-  return log2(max(ratio, 1.0));
+// Not overloads of one name: ANGLE's D3D11 backend passes samplers as indices, so a
+// sampler2D and a sampler2DArray version become the same HLSL function and the program
+// fails to compile on Windows (error X3003: redefinition), losing the context.
+float lodFor(sampler2D t, float mu, float coslat) {
+  return lodForRows(float(textureSize(t, 0).y), mu, coslat);
+}
+
+float lodForArray(sampler2DArray t, float mu, float coslat) {
+  return lodForRows(float(textureSize(t, 0).y), mu, coslat);
 }
 
 void main() {
@@ -418,7 +423,7 @@ void main() {
   // The anomaly is faint near zero and strong past ±2 °C, so El Niño's tongue and the marine
   // heatwaves stand out at a glance. The texture is premultiplied: alpha is the sea's share.
   if (uSstMode > 0.5) {
-    vec4 s4 = textureLod(uSurface, vec3(uv, 0.0), lodFor(uSurface, mu, coslat));
+    vec4 s4 = textureLod(uSurface, vec3(uv, 0.0), lodForArray(uSurface, mu, coslat));
     if (s4.a > 0.02) {
       vec2 v = s4.rg / s4.a;
       vec3 c;
@@ -441,7 +446,7 @@ void main() {
   // side its own: the afternoon's where the Sun is up, the night's where it's down, crossing
   // over within ~6° of the terminator. Each pass is premultiplied by its own coverage.
   if (uLstMode > 0.5) {
-    vec4 l4 = textureLod(uSurface, vec3(uv, 1.0), lodFor(uSurface, mu, coslat));
+    vec4 l4 = textureLod(uSurface, vec3(uv, 1.0), lodForArray(uSurface, mu, coslat));
     float sunW = uLstMode < 1.5 ? smoothstep(-0.1, 0.1, k) : uLstMode < 2.5 ? 1.0 : 0.0;
     vec3 pre = vec3(0.0);
     float a = 0.0;
@@ -463,7 +468,7 @@ void main() {
   // Soil moisture (SMAP L4), the top 5 cm or the root zone, over the land day and night: a
   // model's gap-free field, so no swaths or cloud holes. Premultiplied: alpha is the land's share.
   if (uSoilMode > 0.5) {
-    vec4 m4 = textureLod(uSurface, vec3(uv, 2.0), lodFor(uSurface, mu, coslat));
+    vec4 m4 = textureLod(uSurface, vec3(uv, 2.0), lodForArray(uSurface, mu, coslat));
     if (m4.a > 0.02) {
       float m = (uSoilMode < 1.5 ? m4.r : m4.g) / m4.a * 0.75;
       float a = 0.85 * smoothstep(0.5, 0.95, m4.a) * uSoilFade;
