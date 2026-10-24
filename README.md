@@ -58,6 +58,11 @@ global cloud layer refreshed every hour from geostationary satellites.
   - **Sea temperature** (Shift+H: temperature → anomaly → off): the GHRSST MUR analysis, a
     day behind, as a wash over the sea. The anomaly is blue–white–red and faint near zero, so El
     Niño and marine heatwaves stand out; the readout gives Niño 3.4.
+  - **Land temperature** (Shift+K: each side its own → afternoon → night → off): how hot the
+    ground itself is, from VIIRS (NOAA-20, NOAA-21, Suomi NPP) and MODIS (Aqua, Terra), today's
+    passes and yesterday's, blue below freezing to deep red past 50 °C. By default the sunlit
+    side shows the afternoon's and the dark side the night's; the readout gives the hottest
+    place and the warmest night.
   - **Snow and ice:** today's NOAA IMS snow cover and sea ice, plus Antarctic sea ice from the
     NOAA/NSIDC Sea Ice Index, laid over the month's Blue Marble.
   - **Weather radar:** RainViewer's composite of 1,200+ radars, a new frame every 10 minutes,
@@ -343,6 +348,45 @@ NASA GIBS serves it, and its anomaly from usual, as coloured PNGs with CORS.
   freed the unit SST uses; temperature and anomaly share that one texture, so switching between
   them costs nothing.
 
+### Land surface temperature
+
+The temperature of the ground itself, not the air: a desert's sand at 2 pm runs 20–30 °C above
+the air a forecast gives, and a clear night's ground falls below it. NASA LANCE retrieves it
+from each pass of VIIRS and MODIS within ~3 hours, and GIBS serves each satellite's day, by day
+and by night, as coloured PNGs with CORS (`Shift+K`, `lst=auto|day|night`).
+
+- **Five satellites, two days:** each satellite's day is its swaths, a day pass (~1:30 pm, local)
+  and a night pass (~1:30 am), and LST is clear-sky only, so one satellite alone leaves gaps
+  between swaths and under clouds (~69% of the land seen by day on 2026-10-23). They're filled in
+  priority order: VIIRS on NOAA-20, NOAA-21 and Suomi NPP, today then yesterday (UTC), then
+  MODIS on Aqua and Terra the same. The three VIIRS cross at the same local time and agree (a
+  median difference of 0 K); Aqua's and Terra's orbits have drifted, Terra's to mid-morning, and
+  read 4–7 K cooler by day, so they only fill what VIIRS missed on both days. On 2026-10-24
+  that saw 84% of the land (outside Antarctica, of all any pass saw in three days) by day with
+  VIIRS alone and 89% with MODIS, and 82% and 89% by night; what's left is cloud.
+- **Each side its own:** the default draws the afternoon's where the Sun is up and the night's
+  where it's down, crossing over within ~6° of the terminator, so the globe shows each place at
+  its time of day; `day` and `night` show one pass everywhere.
+- **Read back to values:** every MODIS and VIIRS layer uses one colour map (200–350 K in 0.6 K
+  bins), baked in and tested against the real file, and every pixel of 30 PNGs (five satellites,
+  day and night, three days) was an exact colour of it, so each is read back to °C and the globe
+  draws it in its own ramp: violet and blue below freezing, pale at 0 °C, then yellow, orange and
+  red, deep red past 50 °C.
+- **Bad pixels:** the near-real-time passes have some. The open top bin (350 K, 77 °C, or more)
+  held 1–53 a pass on 2026-10-23, all in cloudy tropics, some at night, so it's taken as no data.
+  Below it, single texels still run 15 °C or more from their neighbours (~0.8% by day), up to
+  76 °C at night in Colombia; they're drawn as they are, but the readout's hottest place is the
+  hottest median of a 3 × 3 block of texels (~80 km square, at least 7 seen): 63.3 °C in Kenya's
+  Chalbi Desert by day and 37.0 °C around Bangkok by night on 2026-10-24.
+- **At 0.25°** (1440 × 720, ~250 KB a PNG), the SST grid: ~2 MB a side for both days, ~4 MB
+  for both sides. Today's passes land through the day, so they're fetched again at each hourly
+  look (0.1–1.3 MB a side); yesterday's once they're final, 6 hours after the day ends.
+  Switching passes fetches only the side not yet held.
+- **No new texture unit:** the shader had none left (see Sea surface temperature), so the SST
+  texture became a two-layer array on the same grid: the sea's in one layer, the land's in the
+  other, its afternoon in r and night in g, each premultiplied by its own coverage (b and a), so
+  a mipmap averages only the ground that was seen.
+
 ### Winds
 
 NOAA's Global Forecast System as particles carried along by the wind (`Shift+V`, `winds=surface`
@@ -524,6 +568,7 @@ style. A test checks that every layer hotkey has a button.
 | `A` `W` `X` `Q` | aurora, tropical cyclones, fires, earthquakes on/off |
 | `Shift+I` | ionosphere: electron content → HF radio absorption → off |
 | `Shift+V` | winds at 10 m → the jet stream (250 hPa) → off |
+| `Shift+K` | land surface temperature: each side its own → the afternoon's → the night's → off |
 | `Shift+M` | meteors (last 24 h) and fireballs on/off |
 | `Shift+B` | buoys on/off (click one for its window) |
 | `Z` `Y` `I` | lightning (GOES, MTG), GDACS floods/wildfires/eruptions, snow and ice on/off |
@@ -586,6 +631,7 @@ web/        Vite + TypeScript + WebGL2 app
   src/himawariClouds.ts, src/himawariWorker.ts   Himawari live clouds: fetching, and a worker
   src/ash.ts         volcanic ash: the Ash RGB sources, their no-data mask, and the toast
   src/sst.ts         sea surface temperature: GIBS's MUR colours read back to °C, Niño 3.4
+  src/lst.ts         land surface temperature: five VIIRS and MODIS satellites, two days, filled in order
   src/flood.ts       flood extent: GIBS's flood classes to points, world and zoomed in
   src/usgsVolcanoes.ts  US volcano alert levels (USGS HANS) at the Smithsonian's positions
   src/emsc.ts        EMSC's European and Mediterranean quakes: the day, the push feed, one of each
@@ -967,6 +1013,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 | Flood extent | NASA LANCE VIIRS combined flood, 2-day (NASA GIBS WMS PNG: world 0.088°, ~640 KB; zoomed in, the view at up to 250 m) | browser, with the GDACS events | daily, refreshed every 3 h; checked hourly |
 | Winds | NOAA/NCEP GFS 0.25°: u and v at 10 m and 250 hPa from the NOMADS GRIB filter (~3 MB), the coming hour of the newest run, written at 0.5° as one PNG a level (~250 KB) | pipeline | GFS every 6 h, the forecast hour hourly; browser re-reads every 15 min (only while shown) |
 | Sea surface temperature | GHRSST MUR temperature and anomaly (NASA GIBS WMS PNG, 0.25°, ~880 KB a day) | browser, while the layer is on | daily, a day behind; checked hourly |
+| Land surface temperature | VIIRS (NOAA-20, NOAA-21, Suomi NPP) and MODIS (Aqua, Terra) LST, today's and yesterday's, day and night passes (NASA GIBS WMS PNG, 0.25°, ~250 KB each, ~2 MB a side) | browser, while the layer is on | passes land ~3 h after they're taken; today's re-fetched hourly |
 | Volcanic ash | EUMETSAT Ash RGB: Geo Ring (whole world) and MSG 0° and Indian Ocean discs (EUMETView WMS JPEG) | browser, while the layer is on | Geo Ring 3 h, discs 15 min; checked every 5 min |
 | Snow and ice | NOAA/NESDIS IMS 4 km (north); NOAA/NSIDC Sea Ice Index (south) | pipeline | daily charts, checked hourly |
 | Weather radar | RainViewer composite, 512 px Web Mercator tiles (16 at globe zoom, 64 zoomed in) | browser, only for a new frame | 10 min frames, checked every 5 min |
@@ -1497,6 +1544,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   Meteosat Second Generation's 0° and Indian Ocean services.
 - Sea surface temperature: GHRSST Level 4 MUR Global Foundation SST Analysis (JPL MUR MEaSUREs
   Project), distributed by NASA PO.DAAC, via NASA GIBS.
+- Land surface temperature: NASA LANCE near-real-time VIIRS (NOAA-20, NOAA-21, Suomi NPP) and
+  MODIS (Aqua, Terra) land surface temperature, via NASA GIBS.
 - Flood extent: NASA LANCE VIIRS (VCDWD) global flood product, NOAA-20 and NOAA-21, via NASA
   GIBS.
 - US volcano alert levels: USGS Volcano Hazards Program (HANS) and its observatories (AVO, CVO,

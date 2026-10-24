@@ -56,6 +56,15 @@ describe('parseSettings', () => {
     expect(parseSettings('?firehours=0').firehours).toBe(1);
   });
 
+  it('reads the land surface temperature mode, off by default', () => {
+    expect(parseSettings('').lst).toBe('off');
+    expect(parseSettings('?lst=night').lst).toBe('night');
+    expect(parseSettings('?lst=DAY').lst).toBe('day');
+    expect(parseSettings('?lst=1').lst).toBe('auto');
+    expect(parseSettings('?lst=0').lst).toBe('off');
+    expect(toQuery(parseSettings('?lst=auto'))).toBe('?lst=auto');
+  });
+
   it('reads the launch settings', () => {
     expect(parseSettings('?launches=0').launches).toBe(false);
     expect(parseSettings('?view=track&track=launch')).toMatchObject({ view: 'track', track: 'launch' });

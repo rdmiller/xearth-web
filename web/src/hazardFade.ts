@@ -35,6 +35,7 @@ export const FADE_TIER = {
   meteors: 'live',
   snow: 'daily',
   sst: 'daily',
+  lst: 'daily',
   /** NASA's daily flood map (shown with the events). */
   floods: 'daily',
 } as const satisfies Record<string, FadeTier>;

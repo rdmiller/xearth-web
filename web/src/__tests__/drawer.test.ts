@@ -26,6 +26,9 @@ describe('layer drawer', () => {
     expect(state('o', { sats: 'featured' })).toEqual({ on: true, tag: 'NAMED' });
     expect(state('o', { sats: 'off' })).toEqual({ on: false, tag: undefined });
     expect(state('shift+l')).toEqual({ on: true, tag: 'TRACK' });
+    expect(state('shift+k')).toEqual({ on: false, tag: undefined });
+    expect(state('shift+k', { lst: 'auto' })).toEqual({ on: true, tag: undefined });
+    expect(state('shift+k', { lst: 'night' })).toEqual({ on: true, tag: 'NIGHT' });
     // Ash is off by default: seven of the eight hazards.
     expect(state('shift+x')).toEqual({ on: true, tag: '7/8' });
     expect(state('shift+x', { ash: true })).toEqual({ on: true, tag: undefined });

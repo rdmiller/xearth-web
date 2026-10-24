@@ -74,6 +74,9 @@ export interface FrameState {
   /** Sea surface temperature: 0 off, 1 the temperature, 2 its anomaly (when set). */
   sst: number;
   sstFade: number;
+  /** Land surface temperature: 0 off, 1 each side its own, 2 the afternoon's, 3 the night's (when set). */
+  lst: number;
+  lstFade: number;
   /** GIBS night-lights detail (when one has been set). */
   nightDetail: boolean;
   /** Sun-lit terrain: the slopes' vertical exaggeration, or 0 for none (needs setRelief). */
@@ -113,8 +116,13 @@ const SAMPLER: Record<Slot, string> = { day: 'uDay', night: 'uNight' };
  * cross-fade), so both take one texture unit of the 16 WebGL promises.
  */
 const CLOUD_UNIT = 2;
-/** Sea surface temperature and its anomaly (sst.ts), in the unit the cloud array freed. */
-const SST_UNIT = 3;
+/**
+ * Surface temperature, in the unit the cloud array freed: a two-layer array on the same 0.25°
+ * grid, the sea's (sst.ts) in layer 0 and the land's (lst.ts) in layer 1.
+ */
+const SURF_TEMP_UNIT = 3;
+const SST_LAYER = 0;
+const LST_LAYER = 1;
 
 export class GlobeRenderer {
   readonly gl: WebGL2RenderingContext;
@@ -162,8 +170,10 @@ export class GlobeRenderer {
   /** The Sun's direction when each disc, and the zoomed-in live picture, was taken. */
   private readonly liveSun = new Float32Array(LIVE_LAYERS * 3);
   private readonly himTex: WebGLTexture;
-  private readonly sstTex: WebGLTexture;
+  private readonly surfTempTex: WebGLTexture;
+  private surfTempSize: [number, number] | null = null;
   private hasSst = false;
+  private hasLst = false;
   private ashTex: WebGLTexture;
   private ashSized = false;
   private readonly ashHas = new Float32Array(ASH_LAYERS);
@@ -223,7 +233,11 @@ export class GlobeRenderer {
     this.nightDetails = { main: { tex: empty(), box: null }, camera: { tex: empty(), box: null } };
     this.reliefTex = empty();
     this.himTex = empty();
-    this.sstTex = empty();
+    // As the ash array: one transparent texel per layer until the first field arrives.
+    this.surfTempTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.surfTempTex);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(8));
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     this.ashTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ashTex);
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -548,17 +562,36 @@ export class GlobeRenderer {
    * there's data and all zero where not: premultiplied, so mipmaps average only the sea.
    */
   setSst(rgba: Uint8Array, w: number, h: number) {
-    const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE0 + SST_UNIT);
-    gl.bindTexture(gl.TEXTURE_2D, this.sstTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.setSurfTemp(SST_LAYER, rgba, w, h);
     this.hasSst = true;
+  }
+
+  /**
+   * Land surface temperature on the same grid: the afternoon's (r, premultiplied by b) and the
+   * night's (g, premultiplied by a), each all zero where its passes saw nothing.
+   */
+  setLst(rgba: Uint8Array, w: number, h: number) {
+    this.setSurfTemp(LST_LAYER, rgba, w, h);
+    this.hasLst = true;
+  }
+
+  private setSurfTemp(layer: number, rgba: Uint8Array, w: number, h: number) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + SURF_TEMP_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.surfTempTex);
+    if (!this.surfTempSize || this.surfTempSize[0] !== w || this.surfTempSize[1] !== h) {
+      // Both fields share the grid; one of a new size starts the array afresh (all zero: no data).
+      gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, w, h, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      this.surfTempSize = [w, h];
+      this.hasSst = this.hasLst = false;
+    }
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, w, h, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
   get hasLive() {
@@ -813,11 +846,13 @@ export class GlobeRenderer {
     gl.uniform4fv(this.u('uAshBox'), this.ashBox);
     gl.uniform1fv(this.u('uAshSub'), this.ashSub);
     gl.uniform1fv(this.u('uAshTier'), this.ashTier);
-    gl.activeTexture(gl.TEXTURE0 + SST_UNIT);
-    gl.bindTexture(gl.TEXTURE_2D, this.sstTex);
-    gl.uniform1i(this.u('uSst'), SST_UNIT);
+    gl.activeTexture(gl.TEXTURE0 + SURF_TEMP_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.surfTempTex);
+    gl.uniform1i(this.u('uSurfTemp'), SURF_TEMP_UNIT);
     gl.uniform1f(this.u('uSstMode'), this.hasSst && f.sstFade > 0 ? f.sst : 0);
     gl.uniform1f(this.u('uSstFade'), f.sstFade);
+    gl.uniform1f(this.u('uLstMode'), this.hasLst && f.lstFade > 0 ? f.lst : 0);
+    gl.uniform1f(this.u('uLstFade'), f.lstFade);
     gl.activeTexture(gl.TEXTURE15);
     const night = this.nightDetails[f.detailSlot ?? 'main'];
     gl.bindTexture(gl.TEXTURE_2D, night.tex);

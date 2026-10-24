@@ -79,6 +79,7 @@ import { HIMAWARI_SUB_LON } from './himawariCloud';
 import { HIMAWARI_CHECK_MS, HimawariClouds } from './himawariClouds';
 import { ASH_SOURCES, AshView, ashVolcanoes, maskAshNoData } from './ash';
 import { loadSst, SST_CHECK_MS, SST_H, SST_W, sstSummary, type SstFrame } from './sst';
+import { LST_CHECK_MS, LstLoader, lstSummary, type LstFrame } from './lst';
 import { isWindManifest, loadWindField, MAX_PARTICLES, WindParticles, windSummary, type WindField, type WindManifest } from './winds';
 import { EmscPush, EmscQuakes, emscQueryUrl, isEmscFeed, mergeQuakes } from './emsc';
 import { alertRank, HANS_CHECK_MS, HANS_MONITORED, isActive, isHansList, newestNotice, noticeSections, placeVolcanoes, volcanoInfo, volcanoOverlays, volcanoSummary, type NoticeSection, type UsVolcano } from './usgsVolcanoes';
@@ -333,6 +334,7 @@ const srcOn = (key: string) => sourceOn(key, settings);
 function layerOn(k: FadedLayer): boolean {
   if (k === 'iono') return settings.iono !== 'off';
   if (k === 'sst') return settings.sst !== 'off';
+  if (k === 'lst') return settings.lst !== 'off';
   if (k === 'floods') return srcOn('events.flood');
   return settings[k];
 }
@@ -2085,6 +2087,7 @@ function layerRows(fade: Fades): ReadoutRow[] {
   if (shown('smoke', fade) && smoke) add('smoke', smokeSummary(smoke));
   if (shown('aurora', fade) && aurora) add('aurora', `peak ${aurora.peak} %`);
   if (shown('sst', fade) && sstFrame) add('sea temp', sstSummary(settings.sst, sstFrame));
+  if (settings.lst !== 'off' && shown('lst', fade) && lstFrame) add('land temp', lstSummary(settings.lst, lstFrame));
   if (settings.winds !== 'off' && windManifest && windField) add('winds', windSummary(settings.winds, windManifest));
   if (settings.iono === 'tec' && shown('iono', fade) && tecManifest) add('ionosphere', tecSummary(tecManifest));
   if (settings.iono === 'drap' && shown('iono', fade) && drap) add('ionosphere', drapSummary(drap));
@@ -2333,6 +2336,8 @@ const FEEDS: { key: string; label: string; source: string; freshMs: number; on: 
   { key: 'flood', label: 'Flood extent', source: 'NASA LANCE VIIRS', freshMs: 2 * 24 * 60 * MIN, on: () => srcOn('events.flood'), everyMs: FLOOD_CHECK_MS },
   // GIBS has a MUR day the next day: dated noon, it's ~30 hours old when it lands.
   { key: 'sst', label: 'Sea temperature', source: 'GHRSST MUR', freshMs: 3 * 24 * 60 * MIN, on: () => settings.sst !== 'off', everyMs: SST_CHECK_MS },
+  // Today's passes land in GIBS ~3 hours after they're taken, yesterday's fill the rest.
+  { key: 'lst', label: 'Land temperature', source: 'VIIRS · MODIS', freshMs: 2 * 24 * 60 * MIN, on: () => settings.lst !== 'off', everyMs: LST_CHECK_MS },
   // GFS runs every 6 hours and lands ~4–5 hours after it starts: the newest is up to ~11 hours old.
   { key: 'winds', label: 'Winds', source: 'NOAA GFS', freshMs: 12 * 60 * MIN, on: () => settings.winds !== 'off', everyMs: WIND_CHECK_MS },
   // The Geo Ring is every 3 hours and ~3 hours behind; MSG's discs every 15 minutes.
@@ -2756,6 +2761,46 @@ function syncSst() {
   if (settings.sst === 'off') return feedLog.stop('sst');
   void runSst();
   sstTimer = setInterval(() => void runSst(), SST_CHECK_MS);
+}
+
+// ---- land surface temperature (VIIRS and MODIS, via NASA GIBS) -----------------------------
+// Today's and yesterday's passes, the afternoon's and the night's as the mode needs them, in the
+// SST texture's second layer. Today's fill in as passes land, so an hourly look. See lst.ts.
+
+const lstLoader = new LstLoader();
+let lstFrame: LstFrame | undefined;
+let lstTimer: ReturnType<typeof setInterval> | undefined;
+/** Only the latest look is drawn, when a mode switch overtakes one still fetching. */
+let lstSeq = 0;
+
+function runLst(): Promise<void> {
+  const seq = ++lstSeq;
+  feedLog.begin('lst', Date.now(), LST_CHECK_MS);
+  return lstLoader
+    .load(new Date(), settings.lst)
+    .then((f) => {
+      if (seq !== lstSeq) return;
+      lstFrame = f;
+      renderer.setLst(f.rgba, SST_W, SST_H);
+      feedLog.done('lst', Date.now(), Math.min(Date.now(), Date.parse(`${f.dates[0]}T12:00:00Z`)));
+    })
+    .catch((err) => {
+      if (seq !== lstSeq) return;
+      feedLog.fail('lst', Date.now(), err);
+      console.warn('land temperature:', err);
+    })
+    .finally(requestRedraw);
+}
+
+function syncLst() {
+  clearInterval(lstTimer);
+  lstTimer = undefined;
+  if (settings.lst === 'off') {
+    lstSeq++;
+    return feedLog.stop('lst');
+  }
+  void runLst();
+  lstTimer = setInterval(() => void runLst(), LST_CHECK_MS);
 }
 
 // ---- flood extent (NASA LANCE VIIRS, via GIBS), with the GDACS events --------------------------
@@ -3247,6 +3292,8 @@ function frame(now: number) {
     ash: strength('ash'),
     sst: settings.sst === 'temp' ? 1 : settings.sst === 'anomaly' ? 2 : 0,
     sstFade: strength('sst'),
+    lst: ['off', 'auto', 'day', 'night'].indexOf(settings.lst),
+    lstFade: strength('lst'),
     floods: strength('floods'),
     nightDetail: settings.imagery !== 'painted' && !!nightDetail,
     relief: reliefStrength(),
@@ -3421,6 +3468,7 @@ function update(patch: Partial<Settings>) {
   const imageryBefore = settings.imagery;
   const ashBefore = settings.ash;
   const sstBefore = settings.sst;
+  const lstBefore = settings.lst;
   const windsBefore = settings.winds;
   const hazardsBefore = Object.fromEntries((Object.keys(HAZARDS) as HazardKey[]).map((k) => [k, settings[k]]));
   const sourcesBefore = HAZARD_LAYERS.map((k) => sourcesKey(k, settings));
@@ -3437,6 +3485,7 @@ function update(patch: Partial<Settings>) {
   if (settings.imagery !== imageryBefore || settings.clouds !== cloudsBefore) syncHimawari();
   if (settings.ash !== ashBefore) syncAsh();
   if ((settings.sst === 'off') !== (sstBefore === 'off')) syncSst();
+  if (settings.lst !== lstBefore) syncLst();
   if (sourcesChanged.has('events')) {
     syncFlood();
     syncHans();
@@ -3671,6 +3720,7 @@ syncLive();
 syncHimawari();
 syncAsh();
 syncSst();
+syncLst();
 syncFlood();
 syncHans();
 syncAlarm();

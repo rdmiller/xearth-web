@@ -92,7 +92,7 @@ const ANOMALY_COLOURS = [
 ];
 
 /** A colour map as a reader: exact colours straight from a table, others (GIBS's resampling blends) to the nearest. */
-function reader(table: readonly number[]) {
+export function reader(table: readonly number[]) {
   const n = table.length / 4;
   const cache = new Map<number, number>();
   for (let i = 0; i < n; i++) cache.set((table[i * 4] << 16) | (table[i * 4 + 1] << 8) | table[i * 4 + 2], table[i * 4 + 3]);
@@ -229,7 +229,8 @@ export function sstMapUrl(layer: string, date: string): string {
   return `${GIBS_WMS}?${q}`;
 }
 
-async function fetchField(layer: string, date: string, value: (r: number, g: number, b: number) => number): Promise<Float32Array> {
+/** A GIBS layer's day over the whole world on the 0.25° grid, read back to values. */
+export async function fetchField(layer: string, date: string, value: (r: number, g: number, b: number) => number): Promise<Float32Array> {
   const r = await fetch(sstMapUrl(layer, date));
   if (!r.ok) throw new Error(`${r.status} GIBS ${layer}`);
   const blob = await r.blob();

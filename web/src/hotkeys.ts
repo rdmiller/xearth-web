@@ -1,7 +1,7 @@
 // Keyboard controls. One table drives both the key handling and the help panel,
 // so the two can't drift apart.
 
-import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type ReadoutMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
+import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type LstMode, type ReadoutMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
 import { HAZARD_LAYERS, HAZARD_TREE, type HazardLayer } from './hazardSources';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
@@ -134,6 +134,13 @@ export const SST_LABELS: Record<SstMode, string> = {
   temp: 'Sea surface temperature (GHRSST MUR)',
   anomaly: 'Sea surface temperature anomaly: El Niño, marine heatwaves (GHRSST MUR)',
   off: 'Sea temperature off',
+};
+const NEXT_LST: Record<LstMode, LstMode> = { off: 'auto', auto: 'day', day: 'night', night: 'off' };
+export const LST_LABELS: Record<LstMode, string> = {
+  auto: 'Land surface temperature: the afternoon’s by day, the night’s by night (VIIRS, MODIS)',
+  day: 'Land surface temperature: the afternoon’s (VIIRS, MODIS)',
+  night: 'Land surface temperature: the night’s (VIIRS, MODIS)',
+  off: 'Land temperature off',
 };
 const NEXT_WINDS: Record<WindMode, WindMode> = { off: 'surface', surface: 'jet', jet: 'off' };
 export const WIND_LABELS: Record<WindMode, string> = {
@@ -330,6 +337,17 @@ export const HOTKEYS: readonly Hotkey[] = [
       const next = NEXT_SST[ctx.settings.sst];
       ctx.update({ sst: next });
       ctx.toast(SST_LABELS[next]);
+    },
+  },
+  {
+    keys: ['shift+k'],
+    label: 'Shift+K',
+    description: 'Land surface temperature: each side its own → the afternoon’s → the night’s → off (VIIRS, MODIS)',
+    group: 'Layers',
+    run(ctx) {
+      const next = NEXT_LST[ctx.settings.lst];
+      ctx.update({ lst: next });
+      ctx.toast(LST_LABELS[next]);
     },
   },
   {

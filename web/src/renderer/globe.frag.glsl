@@ -65,9 +65,12 @@ uniform float uAshHas[3];
 uniform vec4 uAshBox[3];     // as uDetailBox, per picture
 uniform float uAshSub[3];    // longitude below each satellite (radians)
 uniform float uAshTier[3];   // 0 first, 1 where 0 isn't, 2 (a whole-world mosaic) under both
-uniform sampler2D uSst;      // sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts)
+uniform sampler2DArray uSurfTemp; // layer 0: sea surface temperature −2…34 °C (r) and anomaly −4…+4 °C (g), premultiplied (sst.ts);
+                             // layer 1: land surface temperature −80…80 °C, afternoon (r, over b) and night (g, over a) (lst.ts)
 uniform float uSstMode;      // 0 off, 1 temperature, 2 anomaly
 uniform float uSstFade;
+uniform float uLstMode;      // 0 off, 1 each side its own (afternoon by day, night by night), 2 afternoon, 3 night
+uniform float uLstFade;
 uniform sampler2D uNightDetail; // NASA Black Marble nightly lights for the region on screen (zoomed in), grey
 uniform float uNightDetailOn;
 uniform vec4 uNightDetailBox;   // as uDetailBox
@@ -124,6 +127,17 @@ vec3 anomalyRamp(float s) {
   return s < 0.0 ? cold : warm;
 }
 
+// Land surface temperature, °C: violet and blue below freezing, pale at 0, then yellow, orange and
+// red, deep red past 50 °C: a weather map's cold to hot, over −40…+60.
+vec3 lstRamp(float c) {
+  float t = clamp((c + 40.0) / 100.0, 0.0, 1.0);
+  vec3 a = mix(vec3(0.32, 0.10, 0.52), vec3(0.12, 0.35, 0.85), smoothstep(0.0, 0.25, t));
+  vec3 b = mix(a, vec3(0.82, 0.93, 0.97), smoothstep(0.2, 0.4, t));
+  vec3 d = mix(b, vec3(0.98, 0.88, 0.35), smoothstep(0.4, 0.6, t));
+  vec3 e = mix(d, vec3(0.95, 0.45, 0.12), smoothstep(0.58, 0.78, t));
+  return mix(e, vec3(0.62, 0.05, 0.10), smoothstep(0.75, 1.0, t));
+}
+
 // HF absorption toward 35 MHz: violet, green, yellow, red. (SWPC's own maps start at blue, on
 // a dark background; over the ocean blue vanishes, so the quiet sunlit cap is violet here.)
 vec3 drapRamp(float t) {
@@ -135,6 +149,12 @@ vec3 drapRamp(float t) {
 // Analytic mip level: texels per screen pixel at this point. Avoids dFdx,
 // which misbehaves across the longitude seam and at the limb.
 float lodFor(sampler2D t, float mu, float coslat) {
+  float texPerRad = float(textureSize(t, 0).y) / PI;
+  float ratio = texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
+  return log2(max(ratio, 1.0));
+}
+
+float lodFor(sampler2DArray t, float mu, float coslat) {
   float texPerRad = float(textureSize(t, 0).y) / PI;
   float ratio = texPerRad / (uRadiusPx * uLodScale * max(mu, 0.08)) * inversesqrt(max(coslat, 0.05));
   return log2(max(ratio, 1.0));
@@ -385,7 +405,7 @@ void main() {
   // The anomaly is faint near zero and strong past ±2 °C, so El Niño's tongue and the marine
   // heatwaves stand out at a glance. The texture is premultiplied: alpha is the sea's share.
   if (uSstMode > 0.5) {
-    vec4 s4 = textureLod(uSst, uv, lodFor(uSst, mu, coslat));
+    vec4 s4 = textureLod(uSurfTemp, vec3(uv, 0.0), lodFor(uSurfTemp, mu, coslat));
     if (s4.a > 0.02) {
       vec2 v = s4.rg / s4.a;
       vec3 c;
@@ -402,6 +422,29 @@ void main() {
       col = mix(col, toLinear(c), a);
       liveA += a * (1.0 - liveA); // no sun glint on the data
     }
+  }
+
+  // Land surface temperature, the ground's own, where a pass saw it through clear sky. Each
+  // side its own: the afternoon's where the Sun is up, the night's where it's down, crossing
+  // over within ~6° of the terminator. Each pass is premultiplied by its own coverage.
+  if (uLstMode > 0.5) {
+    vec4 l4 = textureLod(uSurfTemp, vec3(uv, 1.0), lodFor(uSurfTemp, mu, coslat));
+    float sunW = uLstMode < 1.5 ? smoothstep(-0.1, 0.1, k) : uLstMode < 2.5 ? 1.0 : 0.0;
+    vec3 pre = vec3(0.0);
+    float a = 0.0;
+    if (sunW > 0.0 && l4.b > 0.02) {
+      float w = sunW * smoothstep(0.5, 0.95, l4.b);
+      pre += w * toLinear(lstRamp(l4.r / l4.b * 160.0 - 80.0));
+      a += w;
+    }
+    if (sunW < 1.0 && l4.a > 0.02) {
+      float w = (1.0 - sunW) * smoothstep(0.5, 0.95, l4.a);
+      pre += w * toLinear(lstRamp(l4.g / l4.a * 160.0 - 80.0));
+      a += w;
+    }
+    float f = 0.85 * uLstFade;
+    col = col * (1.0 - a * f) + pre * f;
+    liveA += a * f * (1.0 - liveA);
   }
 
   // Satellite rain (IMERG) where no radar sees, a little fainter than radar: it's an

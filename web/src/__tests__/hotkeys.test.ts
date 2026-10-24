@@ -236,6 +236,21 @@ describe('L cycles the readout', () => {
   });
 });
 
+describe('Shift+K cycles the land surface temperature', () => {
+  it('each side its own → the afternoon’s → the night’s → off', () => {
+    const h = harness();
+    const seen = [1, 2, 3, 4].map(() => (h.press('shift+k'), h.s.lst));
+    expect(seen).toEqual(['auto', 'day', 'night', 'off']);
+    expect(h.ctx.toasts[0]).toBe('Land surface temperature: the afternoon’s by day, the night’s by night (VIIRS, MODIS)');
+  });
+
+  it('leaves plain K to the launch preview', () => {
+    const h = harness();
+    h.press('k');
+    expect(h.s.lst).toBe('off');
+  });
+});
+
 describe('Shift+P cycles the imagery', () => {
   it('live → yesterday’s → painted → live', () => {
     const h = harness();
