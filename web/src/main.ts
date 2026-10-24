@@ -223,7 +223,7 @@ import {
 } from './overlay';
 import { FrameStats, GpuTimer, SlowFrames } from './perf';
 import { publishSeverity } from './tokens';
-import { DATA_BASE, firstLoad, parseSettings, SMALL_SCREEN, toQuery, type Settings } from './params';
+import { DATA_BASE, DISC_FILL, firstLoad, parseSettings, SMALL_SCREEN, toQuery, type Settings } from './params';
 import { GlobeRenderer, type FrameState } from './renderer/gl';
 import { WindLayer } from './renderer/winds';
 import type { WorkerRequest, WorkerResponse } from './satWorker';
@@ -275,7 +275,9 @@ const helpKeys = document.getElementById('help-keys') as HTMLElement;
 const toastEl = document.getElementById('toast') as HTMLElement;
 
 // A link is followed as it says; a bare visit starts from defaults that suit the screen.
-let settings: Settings = location.search ? parseSettings(location.search) : firstLoad(matchMedia(SMALL_SCREEN).matches);
+let settings: Settings = location.search
+  ? parseSettings(location.search)
+  : firstLoad({ small: matchMedia(SMALL_SCREEN).matches, w: innerWidth, h: innerHeight });
 let note: string | undefined;
 /** Every polled source's checks, for the feeds dashboard (Shift+U). */
 const feedLog = new FeedLog();
@@ -2908,7 +2910,7 @@ function bodiesFor(sky: SkyBodies, camera: Camera, radiusPx: number, w: number, 
 }
 
 function radiusCss() {
-  return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * 0.9 * settings.mag;
+  return 0.5 * Math.min(globeCanvas.clientWidth, globeCanvas.clientHeight) * DISC_FILL * settings.mag;
 }
 
 // ---- frame-rate display ----------------------------------------------------------

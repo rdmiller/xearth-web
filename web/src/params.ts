@@ -224,19 +224,32 @@ export function defaults(): Settings {
   };
 }
 
+/** At mag 1 the disc spans this much of the window's shorter side. */
+export const DISC_FILL = 0.9;
+
 /** Small screens: phones either way up (the CSS's narrow layout is max-width 600px). */
 export const SMALL_SCREEN = '(max-width: 600px), (max-height: 500px)';
 
+/** A phone starts zoomed until the disc is this much taller than the screen. */
+const PHONE_OVERFLOW = 1.1;
+
 /**
- * What a visit with no query at all starts from: the defaults, adjusted for the screen. A
- * link is still read and written against defaults() alone, so it shows the same on any
- * device; this only picks the starting point when there's no link to follow.
+ * What a visit with no query at all starts from: the defaults, adjusted for the screen (CSS
+ * px). A link is still read and written against defaults() alone, so it shows the same on
+ * any device; this only picks the starting point when there's no link to follow.
  */
-export function firstLoad(small: boolean): Settings {
+export function firstLoad(screen: { small: boolean; w: number; h: number }): Settings {
   const d = defaults();
-  if (!small) return d;
-  // A phone's readout, every row of it, covers the top of the globe: start it short.
-  return { ...d, label: 'short' };
+  if (!screen.small) return d;
+  // A whole disc in the middle of a phone is small: zoom until it just runs off the top and
+  // bottom (upright, well past the sides too), so the globe fills the screen.
+  const fill = (PHONE_OVERFLOW * screen.h) / (DISC_FILL * Math.min(screen.w, screen.h));
+  return {
+    ...d,
+    mag: screen.w > 0 && screen.h > 0 ? Math.round(fill * 100) / 100 : d.mag,
+    // A phone's readout, every row of it, covers the top of the globe: start it short.
+    label: 'short',
+  };
 }
 
 function num(q: URLSearchParams, key: string, fallback: number, min = -Infinity, max = Infinity): number {
