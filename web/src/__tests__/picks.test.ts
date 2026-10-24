@@ -98,6 +98,12 @@ describe('details', () => {
       { label: 'Inclination', value: '53.0°' },
     ]);
     expect(d.notes).toEqual(['NORAD 44713 · elements from 3 h ago']);
+    // Far from its elements: said so.
+    const far = satDetail(
+      { name: 'Starlink 44713', norad: 44713, group: 'Starlink', color: '#d1e6ff', elements, approx: true, state: { pos: [1, 0, 0], lat: 0, lon: 0, altKm: 548, speed: 7.6, sunlit: true } },
+      NOW,
+    );
+    expect(far.notes.at(-1)).toBe('Position approximate: the time shown is weeks or more from these elements');
     expect(d.followable).toBe(true);
   });
 

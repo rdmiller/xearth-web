@@ -317,6 +317,8 @@ export interface FeaturedOverlay {
   track: { t: number; pos: Vec3 | null }[];
   /** Placed from NASA's live telemetry rather than SGP4. */
   live?: boolean;
+  /** The clock is weeks or more from its elements: where it is is only roughly known (satAge.ts). */
+  approx?: boolean;
 }
 
 export interface SatelliteOverlay {
@@ -1447,7 +1449,7 @@ function drawBodies(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
 
 export function describeSat(f: FeaturedOverlay): string {
   const s = f.state;
-  return `${f.sat.name} · ${Math.round(s.altKm)} km · ${s.speed.toFixed(2)} km/s · ${s.sunlit ? 'sunlit' : 'in shadow'}`;
+  return `${f.sat.name} · ${Math.round(s.altKm)} km · ${s.speed.toFixed(2)} km/s · ${s.sunlit ? 'sunlit' : 'in shadow'}${f.approx ? ' · position approximate' : ''}`;
 }
 
 /** Past-trail fade bands: segments are batched into this many paths of one alpha each. */
@@ -1495,7 +1497,7 @@ function drawSatellites(ctx: CanvasRenderingContext2D, s: OverlayState, w: numbe
     if (!here.visible) continue;
     const tracked = sats.tracking === f.sat.key || sats.selected === f.sat.key;
     if (tracked) stamp(ctx, reticleSprite(f.sat.color, dpr), here.x, here.y, dpr);
-    const name = f.live ? `${f.sat.name} · LIVE` : f.sat.name;
+    const name = f.live ? `${f.sat.name} · LIVE` : f.approx ? `${f.sat.name} · APPROX.` : f.sat.name;
     stamp(ctx, satSprite(name, f.sat.color, f.state.sunlit, tracked ? 16 : 9, dpr), here.x, here.y, dpr);
   }
 }

@@ -142,6 +142,8 @@ export interface SatInfo {
   elements: Elements;
   /** Placed from NASA's live telemetry rather than SGP4 (the ISS). */
   live?: boolean;
+  /** The clock is weeks or more from its elements, so where it is is only roughly known. */
+  approx?: boolean;
 }
 
 export function satDetail(s: SatInfo, now: number): PickDetail {
@@ -159,7 +161,11 @@ export function satDetail(s: SatInfo, now: number): PickDetail {
       { label: 'Period', value: formatPeriod(periodMinutes(s.elements)) },
       { label: 'Inclination', value: `${s.elements[4].toFixed(1)}°` },
     ],
-    notes: [...(s.about ? [s.about] : []), `NORAD ${s.norad} · ${s.live ? 'placed by NASA telemetry' : `elements from ${ago(now - epoch)}`}`],
+    notes: [
+      ...(s.about ? [s.about] : []),
+      `NORAD ${s.norad} · ${s.live ? 'placed by NASA telemetry' : `elements from ${ago(now - epoch)}`}`,
+      ...(s.approx ? ['Position approximate: the time shown is weeks or more from these elements'] : []),
+    ],
     link: { href: `https://www.n2yo.com/satellite/?s=${s.norad}`, text: 'N2YO' },
     followable: true,
   };

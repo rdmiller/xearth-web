@@ -199,6 +199,7 @@ import { CloudSync, type CloudStatus } from './cloudSync';
 import { clockAt, isLive, jumpTo as jumpClock, live as liveClock, stepBy, withSpeed, type Clock } from './clock';
 import { ANNOUNCE_MIN_FADE, anyFaded, fadesAt, hazardFade, type FadedLayer, type Fades } from './hazardFade';
 import { Transport } from './transport';
+import { elementsAge, epochMs, hiddenNote, type ElementsAge } from './satAge';
 import { inRange, MAX_YEAR, nextMoon, nextSeason, nextSun } from './timePresets';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
@@ -627,6 +628,15 @@ function bulkSat(norad: number) {
 /** Any satellite's SGP4 record and elements by its key: a named one's (`iss`) or a NORAD number. */
 function satEntry(key: string): { rec: SatRec; elements: Elements } | undefined {
   return featuredRecs.get(key) ?? (/^\d+$/.test(key) ? bulkSat(Number(key)) : undefined);
+}
+
+/** How far the clock is from the constellations' elements (the catalog's date), satAge.ts. */
+const bulkAge = (date: Date): ElementsAge => (satManifest ? elementsAge(date.getTime(), Date.parse(satManifest.generated)) : 'ok');
+
+/** How far the clock is from one satellite's own elements. */
+function satAge(key: string, date: Date): ElementsAge {
+  const e = satEntry(key)?.elements;
+  return e ? elementsAge(date.getTime(), epochMs(e)) : 'ok';
 }
 
 function syncSatellites() {
@@ -1701,6 +1711,7 @@ const EARTH_SPIN = 7.2921159e-5;
  * axis (LVLH +x), a few degrees off its track over the ground.
  */
 function issCameraAt(date: Date, sun: Vec3): { pos: Vec3; ahead: Vec3 } | undefined {
+  if (satAge('iss', date) === 'gone') return undefined;
   const rec = featuredRecs.get('iss')?.rec;
   const now = rec && positionAt(rec, date);
   const next = rec && positionAt(rec, new Date(date.getTime() + 1000));
@@ -2062,6 +2073,8 @@ const resolveTrack: TrackResolver = (key, date) => {
     const live = issLiveState(date, sunDirection(date));
     if (live) return toLatLon(live.pos);
   }
+  // Too far from its elements to say where it is: the view stays where it was set.
+  if (satAge(key, date) === 'gone') return null;
   const rec = satEntry(key)?.rec;
   const p = rec ? positionAt(rec, date) : null;
   return p ? toLatLon(p) : null;
@@ -2080,20 +2093,31 @@ function satelliteOverlay(date: Date, sun: Vec3): SatelliteOverlay | undefined {
   const featured = shown.flatMap((sat) => {
     const entry = satEntry(sat.key);
     const live = sat.key === 'iss' ? issLiveState(date, sun) : undefined;
-    const state = live ?? (entry ? stateAt(entry.rec, date, sun) : null);
+    // Far from its elements, marked approximate; further, not shown at all.
+    const age = live ? 'ok' : satAge(sat.key, date);
+    const state = age === 'gone' ? null : (live ?? (entry ? stateAt(entry.rec, date, sun) : null));
     if (!entry || !state) return [];
     const period = periodMinutes(entry.elements);
     const track = tracks.track(sat.key, entry.rec, date, period / 2, period / 2, period / ORBIT_STEPS, state.pos);
-    return [{ sat, state, track, live: !!live }];
+    return [{ sat, state, track, live: !!live, approx: age === 'approx' }];
   });
-  // The groups shown, or with only the named ones on, their names.
-  const summary = bulkSummary(catalog, settings) || featured.map((f) => f.sat.name).join(' · ');
+  // The groups shown, or with only the named ones on, their names; and what's missing or
+  // approximate with the clock far from the elements.
+  const groups = bulkSummary(catalog, settings);
+  const bulkHidden = !!groups && bulkAge(date) !== 'ok';
+  const summary = [
+    (bulkHidden ? '' : groups) || featured.map((f) => f.sat.name).join(' · '),
+    bulkHidden ? hiddenNote(Date.parse(satManifest.generated)) : '',
+    featured.some((f) => f.approx) ? 'positions approximate' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return { featured, tracking: settings.view === 'track' ? settings.track : undefined, selected: pickedSat() || undefined, summary };
 }
 
 /** Name labels for the categories ticked for labels (a few dozen SGP4 runs a frame at most). */
 function satLabels(date: Date): SatLabelOverlay[] {
-  if (!settings.satlabels.length) return [];
+  if (!settings.satlabels.length || bulkAge(date) !== 'ok') return [];
   return BULK_LEAVES.filter((l) => l.labelable && settings.satlabels.includes(l.key) && leafOn(l, settings)).flatMap((leaf) =>
     (labelRecs.get(leaf.key) ?? []).flatMap(({ rec, name }) => {
       const pos = positionAt(rec, date);
@@ -2348,7 +2372,7 @@ function pickedThing(sats: SatelliteOverlay | undefined, launches: LaunchState[]
       const entry = satEntry(p.id);
       if (!f || !entry) return undefined;
       const named = featuredRecs.has(p.id);
-      const info = { name: f.sat.name, norad: f.sat.norad, color: f.sat.color, state: f.state, elements: entry.elements, live: f.live };
+      const info = { name: f.sat.name, norad: f.sat.norad, color: f.sat.color, state: f.state, elements: entry.elements, live: f.live, approx: f.approx };
       return { detail: satDetail(named ? { ...info, group: 'Tracked', about: f.sat.detail } : { ...info, group: f.sat.detail }, now) };
     }
     case 'launch': {
@@ -2459,7 +2483,7 @@ function targetAt(clientX: number, clientY: number): string | undefined {
   const now = Date.now();
 
   for (const f of satelliteOverlay(date, sunDirection(date))?.featured ?? []) add(f.state.pos, REACH.sat, pickKey('sat', f.sat.key));
-  if (catalog && bulkPositions && bulkVelocities && bulkPositions.length === catalog.elements.length * 3) {
+  if (catalog && bulkPositions && bulkVelocities && bulkPositions.length === catalog.elements.length * 3 && bulkAge(date) === 'ok') {
     // Where the renderer has moved each point to, from the last pass along its velocity.
     const dt = Math.max(-SAT_MAX_EXTRAPOLATE_S, Math.min(SAT_MAX_EXTRAPOLATE_S, (date.getTime() - bulkTime) / 1000));
     const active = BULK_LEAVES.map((l) => leafOn(l, settings));
@@ -3058,7 +3082,8 @@ function frame(now: number) {
   const sunDir = fromLatLon(sun.lat, sun.lon);
 
   const active = BULK_LEAVES.map((l) => leafOn(l, settings));
-  const showBulk = bulkCount > 0 && active.some(Boolean);
+  // The point clouds go with the clock far from their elements (satAge.ts).
+  const showBulk = bulkCount > 0 && active.some(Boolean) && bulkAge(date) === 'ok';
   // A category just switched on has no positions yet: propagate again now.
   if (active.join() !== activeKey) {
     activeKey = active.join();
