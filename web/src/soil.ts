@@ -12,8 +12,8 @@
 // brown when dry to blue when wet. The open top (0.70 or more) is real: the peat of the boreal
 // forests and the Amazon's and Congo's wetlands, where the soil is mostly water.
 //
-// There's no ice sheet, open water or frozen ground in it: GIBS leaves them transparent, so
-// Antarctica, Greenland and the sea stay as they are.
+// GIBS leaves the ice sheets and open water transparent, so Antarctica, Greenland and the sea
+// stay as they are.
 
 import { GIBS_BASE, newestDate } from './gibs';
 import { fetchField, reader, SST_H, SST_W } from './sst';
