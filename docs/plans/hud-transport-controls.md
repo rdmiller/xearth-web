@@ -224,12 +224,16 @@ sparklines and timestamps) behave as they do today, whatever the clock.
 
 **What fading means, layer by layer:**
 
-- **Globe shader** (aurora, iono, snow/ice, radar, smoke, ash, SST, floods): the `u…On`
+- **Globe shader** (aurora, iono, snow/ice, radar + IMERG, smoke, ash, SST): the `u…On`
   flags become strengths. Each `if (uXOn > 0.5)` becomes `> 0.0`, and that layer's blend
-  is multiplied by the strength. No new uniforms or textures, so the 16-texture-unit test
-  still holds.
-- **Overlay canvas** (quakes, storms, events, tsunami, severe, fires, lightning,
-  meteors): each hazard group draws under `ctx.globalAlpha = fade`. Below 0.3, a layer's
+  is multiplied by the strength. Iono and SST carry a mode in theirs, so they get a plain
+  float each (`uIonoFade`, `uSstFade`). No new textures, so the 16-texture-unit test still
+  holds.
+- **Point layers** (fires, lightning, the flood map): a `uOpacity` on the layer.
+- **Overlay canvas** (quakes, storms, events and volcano alerts, tsunami, severe,
+  meteors): the draw functions set their own `globalAlpha`, so each run of hazards is drawn
+  to a scratch canvas and composited at the fade, keeping the stacking order (buoys stay
+  between them, unfaded). Fully shown, they draw directly as before. Below 0.3, a layer's
   labels drop out of the label placement (`overlay.ts`'s priority list), so faded symbols
   don't take label space from cities and launches.
 - **At 0** a layer is skipped entirely: no drawing, no label requests, and no hit-testing
@@ -328,13 +332,15 @@ export function fades(offsetMs: number): Record<HazardLayer, number>;  // every 
 
 `frame()` computes `fades(date − Date.now())` once and passes it on:
 
-- `FrameState` (renderer): `aurora`, `iono`, `snowIce`, `radar`, `imerg`, `smoke`, `ash`,
-  `sst`, `floods` become strengths, `settings.x ? fade.x : 0`. `gl.ts` sets the uniforms
-  from them unchanged; `globe.frag.glsl` multiplies each layer's blend by its strength.
-- The overlay state: a `fade` per hazard group. `overlay.ts` sets `globalAlpha` around each
-  group, and leaves out a group's label requests below 0.3 and the whole group at 0.
-- `pickAt`, the hover hit-test, `pickedThing`, the readout rows and the alert toasts check
-  `fade.x > 0` (or `≥ 0.5` for toasts) alongside `settings.x`.
+- `FrameState` (renderer): `aurora`, `snowIce`, `radar`, `imerg`, `smoke`, `ash`, `floods`
+  become strengths, `ionoFade` and `sstFade` join the modes, and `fires` / `lightning` gain
+  an `opacity`. `globe.frag.glsl` multiplies each layer's blend by its strength.
+- The overlay state: `hazardAlpha` (every overlay hazard is on the live tier).
+  `overlay.ts` composites the hazard runs at it (`drawFaded`) and fades or drops their
+  labels (`fadeRequests`). At 0, `main.ts` doesn't pass the layers at all.
+- `main.ts`: `shown(k, fade)` (on and not faded away) gates the overlay data, `targetAt`
+  (clicks and hover), `pickedThing` and the readout rows. Alert toasts go through
+  `announcing(k)` (`≥ 0.5`), and the frame catches them up when the clock comes back.
 
 ### 5. Wiring in `main.ts`
 
@@ -359,7 +365,7 @@ Each is its own PR, shippable alone.
 1. **Clock model** (done). `clock.ts` + tests; `main.ts` delegates to it; `jumpTo`/`stepTime` in
    the hotkey context; the new step and rewind/forward hotkeys. *Keyboard-only users get
    everything except the picker.*
-2. **Hazard fade.** `hazardFade.ts` + tests; shader strengths; overlay alpha, labels and
+2. **Hazard fade** (done). `hazardFade.ts` + tests; shader strengths; overlay alpha, labels and
    hit-testing; readout row; toast suppression. Worth having before the bar: the `,` / `.`
    keys can already take the clock far from now today.
 3. **Transport bar.** `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
