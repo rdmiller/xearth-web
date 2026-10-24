@@ -125,9 +125,12 @@ export interface ImergMap {
   wet: number;
 }
 
-async function tileBitmap(url: string): Promise<ImageBitmap | null> {
-  const r = await fetch(url);
-  if (r.status === 404) return null;
+/** One tile, or null when GIBS doesn't have it (yet). */
+export async function tileBitmap(url: string): Promise<ImageBitmap | null> {
+  // GIBS sends its 404s without CORS headers, so a missing tile reaches the page as a
+  // network error (and a CORS error in the console), not a readable 404: both mean missing.
+  const r = await fetch(url).catch(() => null);
+  if (!r || r.status === 404) return null;
   if (!r.ok) throw new Error(`${r.status} GIBS IMERG tile`);
   // Data colours, matched to a table: no colour management.
   return createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
@@ -162,7 +165,7 @@ export async function loadImerg(table: RateTable, now = new Date()): Promise<Ime
     ctx.putImageData(img, 0, 0);
     return { time, image: canvas, wet };
   }
-  throw new Error(`IMERG ${newest} and the hour before it aren't in GIBS yet`);
+  throw new Error(`IMERG ${newest} and the hour before it aren't in GIBS yet (or its tiles can't be reached)`);
 }
 
 /** In place: GIBS colours → Universal Blue, everything else transparent. Returns the wet share. */

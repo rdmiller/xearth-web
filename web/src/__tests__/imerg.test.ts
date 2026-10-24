@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import colormapXml from './fixtures/gpm-colormap-2026-10-23.xml?raw';
-import { dbz, IMERG_HEIGHT, IMERG_WIDTH, newestTime, parseColormap, recolour, recolourPixels, tileUrl, timesUrl, universalBlue } from '../imerg';
+import { dbz, IMERG_HEIGHT, IMERG_WIDTH, newestTime, parseColormap, recolour, recolourPixels, tileBitmap, tileUrl, timesUrl, universalBlue } from '../imerg';
 import { coverageUrls } from '../radar';
 import { HOTKEYS } from '../hotkeys';
 import { defaults, type Settings } from '../params';
@@ -61,6 +61,23 @@ describe('IMERG from GIBS', () => {
     expect(recolourPixels(table, px)).toBeCloseTo(1 / 3);
     expect(Array.from(px.slice(0, 8))).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
     expect(px[11]).toBe(255);
+  });
+
+  describe('a tile GIBS doesn’t have', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const url = tileUrl('2026-10-24T04:00:00Z', 0, 0);
+
+    it('is missing, not an error, when its CORS-less 404 arrives as a network error', async () => {
+      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
+      await expect(tileBitmap(url)).resolves.toBeNull();
+    });
+
+    it('is missing on a readable 404, and a server error still throws', async () => {
+      vi.stubGlobal('fetch', () => Promise.resolve(new Response('', { status: 404 })));
+      await expect(tileBitmap(url)).resolves.toBeNull();
+      vi.stubGlobal('fetch', () => Promise.resolve(new Response('', { status: 503 })));
+      await expect(tileBitmap(url)).rejects.toThrow('503 GIBS IMERG tile');
+    });
   });
 });
 
