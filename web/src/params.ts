@@ -230,8 +230,8 @@ export const DISC_FILL = 0.9;
 /** Small screens: phones either way up (the CSS's narrow layout is max-width 600px). */
 export const SMALL_SCREEN = '(max-width: 600px), (max-height: 500px)';
 
-/** A phone starts zoomed until the disc is this much taller than the screen. */
-const PHONE_OVERFLOW = 1.03;
+/** A phone starts zoomed until the disc is this much of the screen's height. */
+const PHONE_HEIGHT = 0.9;
 
 /**
  * What a visit with no query at all starts from: the defaults, adjusted for the screen (CSS
@@ -241,9 +241,9 @@ const PHONE_OVERFLOW = 1.03;
 export function firstLoad(screen: { small: boolean; w: number; h: number }): Settings {
   const d = defaults();
   if (!screen.small) return d;
-  // A whole disc in the middle of a phone is small: zoom until it just runs off the top and
-  // bottom (upright, well past the sides too), so the globe fills the screen.
-  const fill = (PHONE_OVERFLOW * screen.h) / (DISC_FILL * Math.min(screen.w, screen.h));
+  // Upright, a whole disc is only as wide as the phone: zoom until it nearly fills the
+  // height, running well off the sides. On its side that's about the usual size.
+  const fill = (PHONE_HEIGHT * screen.h) / (DISC_FILL * Math.min(screen.w, screen.h));
   return {
     ...d,
     mag: screen.w > 0 && screen.h > 0 ? Math.round(fill * 100) / 100 : d.mag,

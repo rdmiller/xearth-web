@@ -741,9 +741,9 @@ docker compose down                 # stop (the data volume is kept)
 A link is read against the defaults below on any device, so it shows the same everywhere. A
 visit with no query at all starts from defaults that suit the screen (`firstLoad` in
 `params.ts`): on a small one (narrower than 600 px, or shorter than 500 px: a phone either way
-up) the readout starts short, and the globe starts zoomed until it runs a little off the top
-and bottom (upright, well off the sides). Changing anything writes the difference into the URL
-as usual.
+up) the readout starts short, and the globe starts zoomed until it nearly fills the screen's
+height (upright, running well off the sides). Changing anything writes the difference into the
+URL as usual.
 
 | Parameter | Meaning | Default |
 |---|---|---|
@@ -774,7 +774,7 @@ as usual.
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |
-| `mag`, `rot` | size, rotation (° counter-clockwise) | 1 (on a phone's first visit, the disc 1.03× the screen's height), 0 |
+| `mag`, `rot` | size, rotation (° counter-clockwise) | 1 (on a phone's first visit, the disc 0.9× the screen's height), 0 |
 | `wait` | seconds between redraws | 60 |
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
 | `clouds`, `lights`, `grid`, `markers` | `0` / `1` | 1,1,0,1 |
