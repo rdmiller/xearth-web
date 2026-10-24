@@ -180,8 +180,13 @@ export function launchState(l: Launch, date: Date): LaunchState {
   };
 }
 
+/** The drawn route runs this far past deployment; later, the path is this much of the orbit either side of now. */
+const ORBIT_WINDOW_S = 25 * 60;
+
+type Sample = { t: number; p: Vec3 };
+
 /** Route samples per prediction: they only change when the prediction does. */
-const routeCache = new WeakMap<PrelaunchVariant, { key: string; samples: { t: number; p: Vec3 }[]; deploy?: Vec3 }>();
+const routeCache = new WeakMap<PrelaunchVariant, { key: string; samples: Sample[]; deploy?: Vec3 }>();
 
 /**
  * The predicted route, sampled once per prediction: dense through the ascent
@@ -191,7 +196,7 @@ function route(v: PrelaunchVariant, t0: number, pad: Vec3, deployT: number, step
   const key = `${t0}|${pad.join(',')}|${steps}`;
   const hit = routeCache.get(v);
   if (hit?.key === key) return hit;
-  const end = deployT + 25 * 60;
+  const end = deployT + ORBIT_WINDOW_S;
   const times: number[] = [];
   for (let i = 0; i <= 30; i++) times.push((ASCENT_S * i) / 30);
   for (let i = 1; i <= steps; i++) times.push(ASCENT_S + ((end - ASCENT_S) * i) / steps);
@@ -204,20 +209,44 @@ function route(v: PrelaunchVariant, t0: number, pad: Vec3, deployT: number, step
   return entry;
 }
 
+/** Orbit samples around now, per prediction: resampled once a minute. */
+const orbitCache = new WeakMap<PrelaunchVariant, { key: string; samples: Sample[] }>();
+
+/** The deployed satellite's predicted orbit, ±ORBIT_WINDOW_S around tSec, on a whole-minute grid. */
+function orbitAround(v: PrelaunchVariant, t0: number, pad: Vec3, tSec: number): Sample[] {
+  const m = Math.floor(tSec / 60);
+  const key = `${t0}|${m}`;
+  const hit = orbitCache.get(v);
+  if (hit?.key === key) return hit.samples;
+  const w = ORBIT_WINDOW_S / 60;
+  const samples: Sample[] = [];
+  for (let i = m - w; i <= m + w + 1; i++) {
+    const p = vehicleAt(v, t0, i * 60, pad);
+    if (p) samples.push({ t: i * 60, p });
+  }
+  orbitCache.set(v, { key, samples });
+  return samples;
+}
+
 /**
- * The flight path for drawing: the ascent arc and coast up to deployment (or,
- * once deployed, the next ~quarter orbit), split at "now" into flown and ahead.
- * Built from cached samples, so a frame only does the split.
+ * The flight path for drawing: the ascent arc and coast up to deployment, then
+ * 25 min past it; once the satellite is beyond that, its orbit 25 min either
+ * side of now. Split at "now" into flown and ahead. Built from cached samples,
+ * so a frame only does the split.
  */
 export function flightPath(s: LaunchState, steps = 90): { flown: Vec3[]; ahead: Vec3[]; deploy?: Vec3 } {
   const v = pickVariant(s.launch);
   if (!v || s.deployT === undefined) return { flown: [], ahead: [] };
   const r = route(v, s.t0, s.pad, s.deployT, steps);
-  // Before deployment, stop the drawn route at deployment; after, run 25 min past it.
+  // Past the route's end, follow the satellite on its own orbit: joining the
+  // route's end to it would draw a straight chord across the globe.
+  const following = s.phase === 'deployed' && s.t > s.deployT + ORBIT_WINDOW_S;
+  const samples = following ? orbitAround(v, s.t0, s.pad, s.t) : r.samples;
+  // Before deployment, stop the drawn route at deployment; after, run to the samples' end.
   const end = s.phase === 'deployed' ? Infinity : Math.max(s.deployT, s.t);
   const flown: Vec3[] = [];
   const ahead: Vec3[] = [];
-  for (const { t, p } of r.samples) {
+  for (const { t, p } of samples) {
     if (t > end) break;
     (t <= s.t ? flown : ahead).push(p);
   }

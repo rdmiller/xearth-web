@@ -11,7 +11,7 @@ import {
   type Launch,
 } from '../launches';
 import { EARTH_RADIUS_KM } from '../satellites';
-import { dot, fromLatLon, normalize, toLatLon } from '../vec';
+import { dot, fromLatLon, normalize, toLatLon, type Vec3 } from '../vec';
 // The pipeline's launches/latest.json from 2026-10-21, pinned (the live file is generated and gitignored).
 import manifest from './fixtures/launches-2026-10-21.json';
 
@@ -107,6 +107,20 @@ describe('flightPath', () => {
     expect(p.flown.length).toBeGreaterThan(10);
     expect(p.ahead.length).toBeGreaterThan(50);
     expect(p.deploy).toBeDefined();
+  });
+
+  it('follows the deployed satellite on its orbit, with no chord from the route to it', () => {
+    const deployT = (Date.parse('2026-10-22T00:04:56.560Z') - T0) / 1000;
+    const angle = (a: Vec3, b: Vec3) => Math.acos(Math.min(1, dot(normalize(a), normalize(b))));
+    // Just past the route's end, and hours later (a 61° jump over the pole on 2026-10-23).
+    for (const sec of [deployT + 26 * 60, deployT + 29 * 60, deployT + 3 * 3600]) {
+      const s = launchState(g1515, at(sec));
+      const p = flightPath(s);
+      expect(p.flown.length).toBeGreaterThan(20);
+      expect(p.ahead.length).toBeGreaterThan(20);
+      const line = [...p.flown, ...p.ahead.slice(1)];
+      for (let i = 1; i < line.length; i++) expect(angle(line[i - 1], line[i])).toBeLessThan(0.1); // a minute of orbit is ~4°
+    }
   });
 });
 
