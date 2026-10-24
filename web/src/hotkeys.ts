@@ -43,6 +43,8 @@ export interface HotkeyContext {
   toggleDrawer(): void;
   /** Keep the time controls on screen, or let them come and go with the dock; returns pinned. */
   toggleTransport(): boolean;
+  /** Open the time picker (or close it), with the keyboard in it. */
+  openTimePicker(): void;
   /** The place search box. */
   openSearch(): void;
   toast(message: string): void;
@@ -597,6 +599,13 @@ export const HOTKEYS: readonly Hotkey[] = [
       ctx.goLive();
       ctx.toast('Now');
     },
+  },
+  {
+    keys: ['shift+g'],
+    label: 'Shift+G',
+    description: 'Go to a date and time',
+    group: 'Time',
+    run: (ctx) => ctx.openTimePicker(),
   },
   {
     keys: ['shift+c'],

@@ -36,6 +36,7 @@ function harness(initial: Partial<Settings> = {}) {
     toggleSatTree: vi.fn(),
     toggleDrawer: vi.fn(),
     toggleTransport: vi.fn(() => true),
+    openTimePicker: vi.fn(),
     openSearch: vi.fn(),
     toast(m) {
       this.toasts.push(m);
@@ -63,7 +64,7 @@ describe('matchHotkey', () => {
     expect(matchHotkey({ key: 'R', shiftKey: true })?.description).toMatch(/^Rain: radar/);
     expect(matchHotkey({ key: 'S', shiftKey: true })?.description).toBe('Smoke plumes (NOAA HMS)');
     expect(matchHotkey({ key: 'r' })?.description).toBe('Check for new clouds now');
-    expect(matchHotkey({ key: 'G', shiftKey: true })?.description).toBe('Grid');
+    expect(matchHotkey({ key: 'N', shiftKey: true })?.description).toBe('City lights');
     expect(matchHotkey({ key: '?', shiftKey: true })?.description).toBe('This help');
     expect(matchHotkey({ key: 'T', shiftKey: true })?.description).toBe('Tsunami alerts (NOAA)');
   });
@@ -341,6 +342,12 @@ describe('time keys', () => {
   it('a step repeats while held', () => {
     expect(matchHotkey({ key: ';', repeat: true })).toBeDefined();
     expect(matchHotkey({ key: '>', repeat: true })).toBeUndefined();
+  });
+
+  it('Shift+G opens the time picker', () => {
+    const h = harness();
+    h.press('G', { shiftKey: true });
+    expect(h.ctx.openTimePicker).toHaveBeenCalled();
   });
 
   it('Shift+C keeps the time controls on screen', () => {

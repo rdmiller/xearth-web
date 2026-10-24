@@ -511,14 +511,16 @@
       #transport .t-play[aria-pressed="true"] { color: var(--hud-accent); }
       #transport .t-tag { display: none; }
       #transport .t-sep { width: 1px; height: 20px; margin: 0 5px; background: var(--glass-rule); }
-      /* Wide: "2026-10-24 14:32:07 UTC" then the rate chip, all on one line. */
-      #transport .t-when { display: flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 13px; color: var(--ink-1); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+      /* Wide: "2026-10-24 14:32:07 UTC" (the button that opens the picker), then the rate chip. */
+      #transport .t-when {
+        display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border-radius: var(--r-md);
+        font-size: 13px; color: var(--ink-1); font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+      }
+      #transport .t-when:hover, #transport .t-when[aria-expanded="true"] { background: var(--glass-hover); }
       #transport .t-day, #transport .t-clock { display: contents; }
-      #transport .t-date { order: 1; }
-      #transport .t-time { order: 3; }
-      #transport .t-zone { order: 4; font-size: 11px; color: var(--ink-4); }
+      #transport .t-zone { font-size: 11px; color: var(--ink-4); }
       #transport .t-rate {
-        order: 5; margin-left: 4px; padding: 3px 7px; border-radius: var(--r-sm); border: 1px solid var(--glass-edge);
+        margin-left: 2px; padding: 3px 7px; border-radius: var(--r-sm); border: 1px solid var(--glass-edge);
         font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--hud-accent);
       }
       #transport .t-rate:not(:disabled):hover { border-color: var(--glass-edge-hi); background: var(--glass-hover); }
@@ -533,7 +535,7 @@
       /* Touch: every control at least 44 px, for a thumb. */
       @media (pointer: coarse) {
         #transport .t-btn { width: 44px; height: 44px; }
-        #transport .t-now { height: 44px; }
+        #transport .t-now, #transport .t-when { height: 44px; }
         #transport .t-rate { padding-block: 13px; }
       }
       /* Phones (main.ts's SMALL_SCREEN): one row edge to edge, no step buttons (hold ⏪ / ⏩), the
@@ -551,12 +553,14 @@
           pointer-events: none; text-shadow: 0 0 3px #000, 0 0 6px #000;
         }
         #transport .t-btn { width: 44px; height: 44px; }
-        #transport .t-when { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 2px; }
+        #transport .t-when { flex: 1; min-width: 0; height: 44px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 0 4px; }
         #transport .t-day, #transport .t-clock { display: flex; align-items: center; gap: 5px; max-width: 100%; }
         #transport .t-day { font-size: 10px; letter-spacing: 0.08em; color: var(--ink-3); }
         #transport .t-clock { font-size: 15px; }
         #transport .t-now { height: 44px; min-width: 52px; padding: 0 8px; }
       }
+      /* Room for the zone beside the time from ~375 px. */
+      @media (min-width: 375px) and (max-width: 600px) { #transport .t-zone { display: inline; font-size: 10px; } }
       /* The narrowest phones (~320 px): a little tighter, so the time keeps its line. */
       @media (max-width: 340px) {
         #transport { gap: 3px; padding: 2px 3px; }
@@ -569,6 +573,73 @@
         #transport.shown { transform: translateX(-50%); }
         #transport .t-when { flex: none; flex-direction: row; align-items: center; gap: 8px; }
         #transport .t-day { font-size: 11px; }
+        #transport .t-zone { display: inline; font-size: 10px; }
+      }
+      /* The time picker: a popover above the bar; on a phone, a sheet the bar's width. In front of
+         the toast windows while it's open. */
+      #transport.picking { z-index: 5; }
+      #transport .t-picker {
+        position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 340px; box-sizing: border-box;
+        max-height: calc(100vh - var(--transport-top, 120px) - 16px); max-height: calc(100dvh - var(--transport-top, 120px) - 16px);
+        overflow: auto; overscroll-behavior: contain; padding: 10px 12px 12px; white-space: normal;
+        display: flex; flex-direction: column; gap: 10px; text-align: left; cursor: auto;
+        /* Opaque: inside the bar's frosted glass a blur of its own has nothing behind it to blur,
+           and a nearly opaque fill there still lets the readout show through. */
+        background: rgb(var(--glass-rgb)); -webkit-backdrop-filter: none; backdrop-filter: none;
+      }
+      #transport .t-handle { display: none; }
+      /* The sheet scrolls when it's short, rather than squashing its rows. */
+      #transport .t-picker > * { flex-shrink: 0; }
+      #transport .t-head { display: flex; align-items: center; justify-content: space-between; }
+      #transport .t-title { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent); }
+      #transport .t-zones { display: flex; border: 1px solid var(--glass-edge); border-radius: var(--r-md); overflow: hidden; }
+      #transport .t-seg { min-height: 28px; min-width: 52px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--ink-3); }
+      #transport .t-seg[aria-pressed="true"] { color: var(--ink-on-accent); background: var(--hud-accent); }
+      #transport .t-fields { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; }
+      /* 16px: any smaller and iOS zooms the page when one is focused. */
+      #transport .t-input {
+        min-width: 0; height: 40px; box-sizing: border-box; padding: 0 8px; font: 500 16px var(--font-ui); color: var(--ink-1);
+        background: rgb(var(--glass-rgb) / 0.6); border: 1px solid var(--glass-edge); border-radius: var(--r-md); color-scheme: dark;
+      }
+      #transport .t-input[aria-invalid="true"] { border-color: var(--bad); }
+      #transport .t-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      #transport .t-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      #transport .t-preset, #transport .t-stepbtn {
+        min-height: 34px; padding: 0 8px; border: 1px solid var(--glass-edge); border-radius: var(--r-md);
+        font-size: 12px; letter-spacing: 0.04em; color: var(--ink-2); text-align: center;
+      }
+      #transport .t-preset:hover, #transport .t-stepbtn:hover { border-color: var(--glass-edge-hi); background: var(--glass-hover); color: var(--ink-1); }
+      #transport .t-stepbtn { font-variant-numeric: tabular-nums; color: var(--hud-accent-soft); }
+      #transport .t-foot { display: flex; align-items: center; gap: 10px; }
+      #transport .t-note { flex: 1; min-width: 0; margin: 0; font-size: 12px; color: var(--ink-3); }
+      #transport .t-go {
+        min-width: 72px; min-height: 36px; padding: 0 14px; border-radius: var(--r-md); font-size: 12px; font-weight: 600; letter-spacing: 0.14em;
+        color: var(--ink-on-accent); background: var(--hud-accent);
+      }
+      #transport .t-go:disabled { color: var(--ink-4); background: var(--glass-track); }
+      @media (pointer: coarse) {
+        #transport .t-preset, #transport .t-stepbtn, #transport .t-seg, #transport .t-go { min-height: 44px; }
+        #transport .t-input { height: 44px; }
+      }
+      /* Narrow phones: the date and the time (with its seconds) each need the sheet's width. */
+      @media (max-width: 400px) { #transport .t-fields { grid-template-columns: 1fr; } }
+      /* Landscape phones are short: presets three across, and no handle (a tap outside closes it). */
+      @media (max-height: 500px) and (min-width: 601px) {
+        #transport .t-presets { grid-template-columns: repeat(3, 1fr); }
+        #transport .t-picker { padding-top: 10px; }
+        #transport .t-picker .t-handle { display: none; }
+      }
+      @media (max-width: 600px), (max-height: 500px) {
+        #transport .t-picker { left: 0; right: 0; width: auto; transform: none; padding-top: 4px; }
+        /* 44 px to grab, drawn as a short bar; the negative margins keep the sheet's spacing. */
+        #transport .t-handle { display: grid; place-items: center; height: 44px; margin: -8px auto -14px; width: 96px; }
+        #transport .t-handle::before { content: ""; width: 44px; height: 4px; border-radius: var(--r-xs); background: var(--glass-edge-hi); }
+        /* Go (and what a preset found) at the top, under the handle: in sight even when the sheet
+           is too short for the screen and scrolls. */
+        #transport .t-picker .t-handle { order: -2; }
+        #transport .t-picker .t-foot { order: -1; }
+        #transport .t-preset, #transport .t-stepbtn, #transport .t-seg, #transport .t-go { min-height: 44px; }
+        #transport .t-input { height: 44px; }
       }
       @media (prefers-reduced-motion: reduce) { #transport { transition: opacity var(--dur-ui) linear; } }
       /* Feeds dashboard (feedBoard.ts): a row per data source on screen. The ring drains to the

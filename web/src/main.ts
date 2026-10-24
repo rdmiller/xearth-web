@@ -199,6 +199,7 @@ import { CloudSync, type CloudStatus } from './cloudSync';
 import { clockAt, isLive, jumpTo as jumpClock, live as liveClock, stepBy, withSpeed, type Clock } from './clock';
 import { ANNOUNCE_MIN_FADE, anyFaded, fadesAt, hazardFade, type FadedLayer, type Fades } from './hazardFade';
 import { Transport } from './transport';
+import { inRange, MAX_YEAR, nextMoon, nextSeason, nextSun } from './timePresets';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
   clearOverlaySprites,
@@ -2133,6 +2134,26 @@ const transport = new Transport(
       hotkeyContext.setSpeed(1);
       toast(formatSpeed(1));
     },
+    jumpTo: (date) => hotkeyContext.jumpTo(date),
+    preset(key) {
+      if (key === 'now') {
+        hotkeyContext.goLive();
+        return { date: simTime(), name: 'Now' };
+      }
+      // Each the next after the moment shown, so pressing again goes on to the one after.
+      const from = simTime();
+      const here = hotkeyContext.viewer();
+      const m =
+        key === 'sunrise' || key === 'sunset'
+          ? nextSun(from, here.lat, here.lon, key === 'sunrise')
+          : key === 'season'
+            ? nextSeason(from)
+            : nextMoon(from, key === 'full');
+      if (!m) return `No ${key} here in the next two days`;
+      if (!inRange(m.date)) return `${m.name}: after ${MAX_YEAR}`;
+      hotkeyContext.jumpTo(m.date);
+      return m;
+    },
     resized(top, full, reserved) {
       // The status toast sits above the bar; panels above where it is with the dock up.
       document.documentElement.style.setProperty('--transport-top', `${top}px`);
@@ -3459,6 +3480,9 @@ const hotkeyContext: HotkeyContext = {
   toggleSatTree(open) {
     satTree.toggle(open);
   },
+  openTimePicker() {
+    transport.togglePicker(true);
+  },
   toggleTransport() {
     const pinned = transport.toggle();
     drawer.refresh(settings, drawerUi());
@@ -3526,7 +3550,8 @@ if (settings.buoy) void ensureBuoys().then(syncBuoyPanel, syncBuoyPanel);
 if (Capacitor.isNativePlatform()) {
   void import('@capacitor/app').then(({ App }) =>
     App.addListener('backButton', () => {
-      if (search.open) search.toggle(false);
+      if (transport.pickerOpen) transport.togglePicker(false, false);
+      else if (search.open) search.toggle(false);
       else if (satTree.open) satTree.toggle(false);
       else if (!help.hidden) help.hidden = true;
       else if (transport.pinned) {
