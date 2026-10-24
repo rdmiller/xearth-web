@@ -2,6 +2,7 @@
 // so the two can't drift apart.
 
 import { defaults, type ImageryMode, type IonoMode, type IssLiveMode, type ReadoutMode, type SatMode, type Settings, type SstMode, type StarMode, type WindMode } from './params';
+import { HAZARD_LAYERS, HAZARD_TREE, type HazardLayer } from './hazardSources';
 import { FEATURED, featuredByKey } from './satellites';
 import { ALL_LEAVES } from './satcategories';
 import { wrapLon } from './vec';
@@ -39,6 +40,8 @@ export interface HotkeyContext {
   toggleHelp(open?: boolean): void;
   /** The satellite tree panel. */
   toggleSatTree(open?: boolean): void;
+  /** The hazards panel. */
+  toggleHazardTree(open?: boolean): void;
   /** Pin or unpin the layer dock along the bottom. */
   toggleDrawer(): void;
   /** Keep the time controls on screen, or let them come and go with the dock; returns pinned. */
@@ -253,6 +256,18 @@ export function formatSpeed(speed: number): string {
 
 let pausedFrom = 1;
 
+/** The hazard layers that were on when Shift+X switched them all off, to bring back. */
+let hazardsWere: HazardLayer[] = [];
+
+/** Every hazard off, or the ones that were on back (the default ones if none were). */
+export function toggleHazards(ctx: HotkeyContext) {
+  const on = HAZARD_LAYERS.filter((k) => ctx.settings[k]);
+  if (on.length) hazardsWere = on;
+  const back = hazardsWere.length ? hazardsWere : HAZARD_LAYERS.filter((k) => defaults()[k]);
+  ctx.update(Object.fromEntries(HAZARD_LAYERS.map((k) => [k, !on.length && back.includes(k)])));
+  ctx.toast(on.length ? 'Hazards off' : `Hazards: ${HAZARD_TREE.filter((n) => back.includes(n.key)).map((n) => n.label).join(', ')}`);
+}
+
 const panKey = (key: string, arrow: string, dLat: number, dLon: number): Hotkey => ({
   keys: [key],
   label: arrow,
@@ -370,6 +385,14 @@ export const HOTKEYS: readonly Hotkey[] = [
     description: 'Satellite categories panel',
     group: 'Layers',
     run: (ctx) => ctx.toggleSatTree(),
+  },
+  { keys: ['shift+x'], label: 'Shift+X', description: 'Hazards: all off → back on', group: 'Layers', run: toggleHazards },
+  {
+    keys: ['shift+z'],
+    label: 'Shift+Z',
+    description: 'Hazards panel: each hazard and its sources',
+    group: 'Layers',
+    run: (ctx) => ctx.toggleHazardTree(),
   },
   {
     keys: ['shift+l'],
@@ -635,11 +658,12 @@ export const HOTKEYS: readonly Hotkey[] = [
   {
     keys: ['escape'],
     label: 'Esc',
-    description: 'Close help, the satellite panel and the feeds dashboard',
+    description: 'Close help, the satellite and hazard panels and the feeds dashboard',
     group: 'App',
     run: (ctx) => {
       ctx.toggleHelp(false);
       ctx.toggleSatTree(false);
+      ctx.toggleHazardTree(false);
       if (ctx.settings.feeds) ctx.update({ feeds: false });
     },
   },

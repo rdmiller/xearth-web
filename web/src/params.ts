@@ -1,6 +1,7 @@
 // Settings ⇄ URL query string. Every setting is shareable as a link, the way
 // xearth's behaviour was set entirely by command-line flags.
 
+import { ALL_HAZARD_SOURCES } from './hazardSources';
 import { ALL_LEAVES, DEFAULT_LABELS } from './satcategories';
 import type { ViewMode, ViewSettings } from './view';
 import type { IonoMode } from './ionosphere';
@@ -81,6 +82,8 @@ export interface Settings extends ViewSettings {
   meteors: boolean;
   /** Volcanic ash: EUMETSAT's Ash RGB over the globe, and GDACS's eruptions in a toast; off by default. */
   ash: boolean;
+  /** Hazard sources unticked in the hazards panel (`layer.source` keys, hazardSources.ts). */
+  hazoff: string[];
   /** Buoys (NOAA OSMC, NDBC) as dots; off by default. */
   buoys: boolean;
   /** The buoy whose window is open (its id), or '' for none. */
@@ -193,6 +196,7 @@ export function defaults(): Settings {
     severe: true,
     meteors: false,
     ash: false,
+    hazoff: [],
     buoys: false,
     buoy: '',
     pick: '',
@@ -328,12 +332,12 @@ function readoutMode(q: URLSearchParams, fallback: ReadoutMode): ReadoutMode {
   return FALSY.includes(raw) ? 'off' : 'on';
 }
 
-/** A comma list of satellite category keys; unknown keys are dropped, `none` is empty. */
-function keyList(q: URLSearchParams, key: string, fallback: string[]): string[] {
+/** A comma list of satellite category (or hazard source) keys; unknown keys are dropped, `none` is empty. */
+function keyList(q: URLSearchParams, key: string, fallback: string[], known: readonly string[] = ALL_LEAVES): string[] {
   const raw = q.get(key);
   if (raw === null) return fallback;
   const wanted = new Set(raw.toLowerCase().split(',').map((k) => k.trim()));
-  return ALL_LEAVES.filter((k) => wanted.has(k));
+  return known.filter((k) => wanted.has(k));
 }
 
 export function parseSettings(search: string, base: Settings = defaults()): Settings {
@@ -381,6 +385,7 @@ export function parseSettings(search: string, base: Settings = defaults()): Sett
     severe: bool(q, 'severe', base.severe),
     meteors: bool(q, 'meteors', base.meteors),
     ash: bool(q, 'ash', base.ash),
+    hazoff: keyList(q, 'hazoff', base.hazoff, ALL_HAZARD_SOURCES),
     buoys: bool(q, 'buoys', base.buoys),
     buoy: q.get('buoy')?.trim() ?? base.buoy,
     pick: q.get('pick')?.trim() ?? base.pick,

@@ -34,6 +34,7 @@ function harness(initial: Partial<Settings> = {}) {
     toggleFullscreen: vi.fn(),
     toggleHelp: vi.fn(),
     toggleSatTree: vi.fn(),
+    toggleHazardTree: vi.fn(),
     toggleDrawer: vi.fn(),
     toggleTransport: vi.fn(() => true),
     openTimePicker: vi.fn(),
@@ -76,6 +77,24 @@ describe('matchHotkey', () => {
     h.press('Escape');
     expect(h.ctx.toggleSatTree).toHaveBeenLastCalledWith(false);
     expect(h.ctx.toggleHelp).toHaveBeenLastCalledWith(false);
+  });
+
+  it('Shift+Z opens the hazards panel; Esc closes it', () => {
+    const h = harness();
+    h.press('Z', { shiftKey: true });
+    expect(h.ctx.toggleHazardTree).toHaveBeenCalledWith();
+    h.press('Escape');
+    expect(h.ctx.toggleHazardTree).toHaveBeenLastCalledWith(false);
+  });
+
+  it('Shift+X switches every hazard off, then back the ones that were on', () => {
+    const h = harness({ quakes: true, fires: false, storms: true, severe: false, lightning: false, events: false, ash: false, tsunami: false });
+    h.press('X', { shiftKey: true });
+    expect([h.s.quakes, h.s.storms]).toEqual([false, false]);
+    expect(h.ctx.toasts.at(-1)).toBe('Hazards off');
+    h.press('X', { shiftKey: true });
+    expect([h.s.quakes, h.s.storms, h.s.fires]).toEqual([true, true, false]);
+    expect(h.ctx.toasts.at(-1)).toBe('Hazards: Cyclones, Earthquakes');
   });
 
   it('O back on with nothing ticked in the tree ticks everything', () => {

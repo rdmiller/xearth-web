@@ -83,7 +83,7 @@
          text steps up to 11px. */
       @media (pointer: coarse) {
         .hud-rows dt, :is(#iss, #buoy, #pick, #ash) .iss-label, :is(#iss, #buoy, #pick, #ash) .iss-delta, :is(#iss, #buoy, #pick, #ash) .iss-note, :is(#iss, #buoy, #pick, #ash) .iss-chip, #feeds .src, #feeds .ring-text,
-        #sat-tree .labels, #credits, #radar-credit { font-size: 11px; }
+        .tree-panel .labels, #credits, #radar-credit { font-size: 11px; }
       }
       /* Glass: the one surface every panel uses (toast windows, help, satellites, search, the
          status toast). A --rail panel carries a 2px stripe in its --accent down the left. Its
@@ -348,49 +348,50 @@
       #place-card .buoy button:hover { background: rgb(var(--hud-cyan-rgb) / 0.12); }
       #place-card .credit { margin-left: auto; color: var(--ink-4); text-decoration: none; }
       #place-card .credit:hover { color: var(--hud-accent); text-decoration: underline; }
-      /* Satellite tree: a glass panel of tri-state checkboxes. */
-      #sat-tree {
+      /* Satellite and hazard trees: glass panels of tri-state checkboxes (checkTree.ts). */
+      .tree-panel {
         position: fixed; left: 12px; bottom: calc(max(var(--dock-full, 0px), var(--transport-full, 0px)) + 12px); z-index: 3; width: min(320px, calc(100vw - 24px));
         max-height: calc(100vh - max(var(--dock-full, 0px), var(--transport-full, 0px)) - 120px); overflow: auto; padding: 12px 12px 10px 10px; font-size: 13px;
       }
-      #sat-tree header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
-      #sat-tree h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent); }
-      #sat-tree .close { padding: 2px 6px; font: 600 15px/1 var(--font-ui); color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
-      #sat-tree ul { list-style: none; margin: 0; padding: 0; }
-      #sat-tree ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid var(--glass-track); }
-      #sat-tree li.collapsed > ul { display: none; }
-      #sat-tree .row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
-      #sat-tree .caret { flex: none; width: 16px; height: 16px; padding: 0; font-size: 10px; color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
-      #sat-tree .caret::before { content: '▾'; }
-      #sat-tree li.collapsed > .row .caret::before { content: '▸'; }
-      #sat-tree .caret:disabled { cursor: default; }
-      #sat-tree .caret:disabled::before { content: ''; }
-      #sat-tree label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
-      #sat-tree input {
+      .tree-panel header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px 4px; }
+      .tree-panel h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-accent); }
+      .tree-panel .close { padding: 2px 6px; font: 600 15px/1 var(--font-ui); color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
+      .tree-panel ul { list-style: none; margin: 0; padding: 0; }
+      .tree-panel ul ul { margin-left: 15px; padding-left: 6px; border-left: 1px solid var(--glass-track); }
+      .tree-panel li.collapsed > ul { display: none; }
+      .tree-panel .row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+      .tree-panel .caret { flex: none; width: 16px; height: 16px; padding: 0; font-size: 10px; color: var(--hud-accent-soft); background: none; border: 0; cursor: pointer; }
+      .tree-panel .caret::before { content: '▾'; }
+      .tree-panel li.collapsed > .row .caret::before { content: '▸'; }
+      .tree-panel .caret:disabled { cursor: default; }
+      .tree-panel .caret:disabled::before { content: ''; }
+      .tree-panel label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+      .tree-panel input {
         flex: none; display: grid; place-items: center; width: 14px; height: 14px; margin: 0; appearance: none; cursor: pointer;
         background: rgb(var(--hud-cyan-rgb) / 0.06); border: 1px solid var(--glass-edge-hi); border-radius: var(--r-sm);
         transition: background var(--dur-ui), border-color var(--dur-ui);
       }
-      #sat-tree input:hover { border-color: var(--hud-accent); }
-      #sat-tree input:checked, #sat-tree input:indeterminate { background: var(--hud-accent); border-color: var(--hud-accent); }
+      .tree-panel input:hover { border-color: var(--hud-accent); }
+      .tree-panel input:checked, .tree-panel input:indeterminate { background: var(--hud-accent); border-color: var(--hud-accent); }
       /* The tick and the dash: thin dark strokes on the lit box. */
-      #sat-tree input:checked::before {
+      .tree-panel input:checked::before {
         content: ''; width: 7px; height: 4px; margin-top: -2px; rotate: -45deg;
         border: solid var(--ink-on-accent); border-width: 0 0 1.6px 1.6px;
       }
-      #sat-tree input:indeterminate::before { content: ''; width: 8px; height: 1.6px; background: var(--ink-on-accent); }
-      #sat-tree .swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
-      #sat-tree .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #sat-tree li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent-soft); }
-      #sat-tree .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-4); }
-      #sat-tree .labels, #sat-tree .labels-spacer { flex: none; width: 28px; }
-      #sat-tree .labels {
+      .tree-panel input:indeterminate::before { content: ''; width: 8px; height: 1.6px; background: var(--ink-on-accent); }
+      .tree-panel .icon { flex: none; color: var(--hud-accent-soft); }
+      .tree-panel .swatch { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+      .tree-panel .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tree-panel li[aria-level="1"] > .row .name { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-accent-soft); }
+      .tree-panel .count { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-4); }
+      .tree-panel .labels, .tree-panel .labels-spacer { flex: none; width: 28px; }
+      .tree-panel .labels {
         padding: 1px 0; font: 600 10px var(--font-ui); letter-spacing: 0.04em;
         color: var(--ink-3); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.22); border-radius: var(--r-md); cursor: pointer;
       }
-      #sat-tree .labels[aria-pressed="true"] { color: var(--ink-on-accent); background: var(--hud-accent); border-color: var(--hud-accent); }
-      #sat-tree footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: var(--ink-4); }
-      #sat-tree kbd { font: 600 11px var(--font-ui); color: var(--hud-accent); }
+      .tree-panel .labels[aria-pressed="true"] { color: var(--ink-on-accent); background: var(--hud-accent); border-color: var(--hud-accent); }
+      .tree-panel footer { margin: 8px 0 0 4px; font-size: 11px; letter-spacing: 0.04em; color: var(--ink-4); }
+      .tree-panel kbd { font: 600 11px var(--font-ui); color: var(--hud-accent); }
       /* Layer dock: floating glass buttons that rise in as the mouse nears the bottom; a grip pins them. */
       #drawer {
         position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2; transform: translateX(-50%);
@@ -738,10 +739,15 @@
       <footer><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close · double-click the globe to centre there</footer>
     </div>
     <div id="toasts" role="region" aria-label="Panels"></div>
-    <aside id="sat-tree" class="glass glass--rail" aria-label="Satellite categories" hidden>
+    <aside id="sat-tree" class="tree-panel glass glass--rail" aria-label="Satellite categories" hidden>
       <header><h2>Satellites</h2><button class="close" type="button" aria-label="Close">×</button></header>
       <ul role="tree" aria-label="Satellite categories"></ul>
       <footer><kbd>Aa</kbd> labels · <kbd>O</kbd> all → named → off · <kbd>Shift+O</kbd> this panel</footer>
+    </aside>
+    <aside id="hazard-tree" class="tree-panel glass glass--rail" aria-label="Hazards" hidden>
+      <header><h2>Hazards</h2><button class="close" type="button" aria-label="Close">×</button></header>
+      <ul role="tree" aria-label="Hazards and their sources"></ul>
+      <footer><kbd>Shift+X</kbd> all off → back on · <kbd>Shift+Z</kbd> this panel</footer>
     </aside>
     <a id="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener" hidden>Weather data by RainViewer</a>
     <footer id="credits"><span class="sources">Data: NASA · NOAA · EUMETSAT · USGS · GDACS · CelesTrak · The Space Devs · Open-Meteo · </span><button type="button" aria-controls="help">All credits</button></footer>

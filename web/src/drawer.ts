@@ -1,7 +1,8 @@
 // The layer dock: floating buttons along the bottom, one per layer, grouped
 // Earth / Sky / Hazards / Space / HUD. Each button runs the same hotkey as
 // its key, so behaviour, toasts and multi-state cycles (stars, satellites,
-// ISS telemetry) can't drift apart. Icons are Lucide's (ISC); aurora has no
+// ISS telemetry) can't drift apart. The hazards are one button, with their
+// layers and sources in a panel (hazardTree.ts), as the satellites' categories are. Icons are Lucide's (ISC); aurora has no
 // Lucide glyph, so it gets initials drawn in the same style.
 //
 // No panel: the buttons rise into view as the mouse nears the bottom of the
@@ -11,13 +12,10 @@
 // inside the dock also keeps it shown.
 
 import {
-  Activity,
   AlignLeft,
   Clock,
   Cloud,
-  CloudFog,
   createElement,
-  Flame,
   Gauge,
   Grid3x3,
   Haze,
@@ -31,6 +29,7 @@ import {
   Satellite,
   Search,
   SatelliteDish,
+  ShieldAlert,
   Snowflake,
   Sparkles,
   Sparkle,
@@ -39,14 +38,10 @@ import {
   SunMoon,
   Thermometer,
   Timer,
-  Tornado,
-  TriangleAlert,
-  CloudLightning,
-  Waves,
   Wind,
-  Zap,
   type IconNode,
 } from 'lucide';
+import { HAZARD_LAYERS, hazardsOn } from './hazardSources';
 import type { Settings } from './params';
 
 export interface DrawerItem {
@@ -57,11 +52,19 @@ export interface DrawerItem {
   icon: IconNode | string;
   /** On, plus a small tag for the in-between states of cycling layers. */
   state(s: Settings, ui?: DrawerUi): { on: boolean; tag?: string };
-  /** A second, smaller button beside it (the satellite categories panel). */
-  extra?: { icon: IconNode; label: string; action: 'satTree' };
+  /** A second, smaller button beside it: a panel of what the layer shows. */
+  extra?: { icon: IconNode; label: string; action: TreePanel };
   /** An action, not a layer: no on/off state. */
   momentary?: boolean;
 }
+
+export type TreePanel = 'satTree' | 'hazardTree';
+
+/** Each panel's element and the hotkey that opens it. */
+const PANELS: Record<TreePanel, { id: string; key: string }> = {
+  satTree: { id: 'sat-tree', key: 'shift+o' },
+  hazardTree: { id: 'hazard-tree', key: 'shift+z' },
+};
 
 /** State that isn't a setting: the time controls kept on screen. */
 export interface DrawerUi {
@@ -117,14 +120,16 @@ export const DRAWER: DrawerGroup[] = [
   {
     title: 'Hazards',
     items: [
-      { key: 'w', label: 'Cyclones', icon: Tornado, state: flag('storms') },
-      { key: 'shift+w', label: 'Severe', icon: CloudLightning, state: flag('severe') },
-      { key: 'x', label: 'Fires', icon: Flame, state: flag('fires') },
-      { key: 'q', label: 'Quakes', icon: Activity, state: flag('quakes') },
-      { key: 'z', label: 'Lightning', icon: Zap, state: flag('lightning') },
-      { key: 'y', label: 'Alerts', icon: TriangleAlert, state: flag('events') },
-      { key: 'shift+a', label: 'Ash', icon: CloudFog, state: flag('ash') },
-      { key: 'shift+t', label: 'Tsunami', icon: Waves, state: flag('tsunami') },
+      {
+        key: 'shift+x',
+        label: 'Hazards',
+        icon: ShieldAlert,
+        state: (s) => {
+          const n = hazardsOn(s);
+          return { on: n > 0, tag: n && n < HAZARD_LAYERS.length ? `${n}/${HAZARD_LAYERS.length}` : undefined };
+        },
+        extra: { icon: ListTree, label: 'Hazard layers', action: 'hazardTree' },
+      },
     ],
   },
   {
@@ -192,7 +197,7 @@ interface Button {
 export interface DrawerHandlers {
   /** Run the hotkey bound to `key`. */
   run(key: string): void;
-  openSatTree(): void;
+  openPanel(panel: TreePanel): void;
   /** Describe a key for tooltips ("Shift+R"). */
   keyLabel(key: string): string;
   /**
@@ -216,8 +221,8 @@ export class Drawer {
   private frame = 0;
   /** Elements above the dock that keep it shown while the pointer or keyboard focus is on them. */
   private readonly holds: HTMLElement[] = [];
-  /** The satellite categories button, for the panel's aria-expanded. */
-  satTreeButton: HTMLButtonElement | undefined;
+  /** Each panel's button, for its aria-expanded. */
+  readonly panelButtons: Partial<Record<TreePanel, HTMLButtonElement>> = {};
 
   constructor(
     private readonly root: HTMLElement,
@@ -295,14 +300,15 @@ export class Drawer {
         const extra = document.createElement('button');
         extra.type = 'button';
         extra.className = 'dock-extra';
-        extra.title = `${item.extra.label} (Shift+O)`;
+        const { action } = item.extra;
+        extra.title = `${item.extra.label} (${this.handlers.keyLabel(PANELS[action].key)})`;
         extra.setAttribute('aria-label', item.extra.label);
-        extra.setAttribute('aria-controls', 'sat-tree');
+        extra.setAttribute('aria-controls', PANELS[action].id);
         extra.setAttribute('aria-expanded', 'false');
         extra.append(icon(item.extra.icon, 12));
-        extra.addEventListener('click', () => this.handlers.openSatTree());
+        extra.addEventListener('click', () => this.handlers.openPanel(action));
         cell.append(extra);
-        this.satTreeButton = extra;
+        this.panelButtons[action] = extra;
       }
       box.append(cell);
       this.buttons.push({ item, el, tag });
