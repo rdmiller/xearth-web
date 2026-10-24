@@ -440,8 +440,14 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
 - **Place card:** a search also opens a card at the bottom right, as does a click on a city
   marker (the view stays put). It closes itself after
   20 s (30 s with alerts), stays open while the pointer or focus is on it, and closes with
-  × or Esc. Each part fills in as it arrives, and each request gives up after 12 s:
+  × or Esc. A city's card (clicked, or a search that matches a city) has no timer: it stays
+  until the next click on the globe, a search, × or Esc. Each part fills in as it arrives,
+  and each request gives up after 12 s:
   - Local time and UTC offset.
+  - The weather drawn: an icon for the conditions (day or night), the temperature large with
+    feels-like and the day's high and low, chips for wind (an arrow the way it blows),
+    humidity and UV (coloured by WHO band), and the sun's day as an arc over the horizon,
+    the part travelled lit and the sun where it is now, sunrise and sunset at its ends.
   - For a city (clicked, or searched and matched by name within 25 km): its region and
     country, whether it's a national or regional capital, and its metro population
     (Natural Earth, baked into `cityFacts.ts`, a chunk loaded on the first city card); then
