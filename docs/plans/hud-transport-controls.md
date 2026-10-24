@@ -77,19 +77,25 @@ pins it open too. Touch screens have no hover, so they get their own rules (see 
 
 ### The picker
 
-A small glass popover above the bar on wide screens, a bottom sheet on phones (see *Mobile*):
+Opened by the date on the bar, or **Shift+G** ("go to"; Shift+C stayed with pinning the
+bar, which phase 3 gave it). A popover above the bar on wide screens, a bottom sheet on
+phones (see *Mobile*). It lives inside the bar, so the bar stays while it's open.
 
-- `<input type="date">` and `<input type="time" step="1">`, with a **UTC / Local** toggle.
-  The native inputs give phones their own wheels and keep the hotkey handler out of the way
+- `<input type="date">` and `<input type="time" step="1">`, with a **UTC / Local** toggle,
+  which also sets the zone of the bar's own date and time (the readout stays UTC). The
+  native inputs give phones their own wheels and keep the hotkey handler out of the way
   (it already ignores events from `input`).
-- **Presets:** Now · −24 h · +24 h · Next sunrise here (at the view's centre) · Next
-  equinox or solstice · Next solar eclipse · Next lunar eclipse. All come from
-  astronomy-engine, which the app already ships (`Seasons`, `SearchRiseSet`,
-  `SearchGlobalSolarEclipse`, `SearchLunarEclipse`). For a solar eclipse, also centre the
-  view on the greatest-eclipse point: that one's the show.
+- **Presets** (`timePresets.ts`, all from astronomy-engine): Now · Equinox / solstice ·
+  Sunrise here · Sunset here (at the view's centre) · Full moon · New moon. Each is the next
+  one after the moment shown, so pressing again goes on to the one after. What it found
+  shows on a line in the picker ("Full moon · 2026-10-26 04:12 UTC"), not a toast, which
+  would sit behind it. Then −1 d · −1 h · +1 h · +1 d, which replace the plan's ±24 h
+  presets.
+- **No eclipses** (decided in phase 4): the globe isn't drawn with the Moon's shadow on it,
+  nor the Moon with the Earth's, so an eclipse would look like any other day. They're in
+  *Later*, with the shadows.
 - **Go** jumps there, keeping the current speed (paused stays paused, real time plays on
-  from the new moment). Escape or a click outside closes it; so does Android's back button
-  (add it to the `backButton` chain in `main.ts`).
+  from the new moment). Escape, a press outside it, or Android's back button closes it.
 - **Range:** 1900–2100. astronomy-engine is good far beyond that, but the stars' precession
   and the textures are tuned for the present, and the input needs bounds.
 
@@ -299,7 +305,8 @@ No behaviour change in this step.
   | --- | --- |
   | `;` / `'` | Step back / forward 1 hour (Shift: 1 day), repeating |
   | `Shift+,` / `Shift+.` | Rewind / fast-forward (media ladder) |
-  | `Shift+C` | Show the transport bar and open the picker (phase 4) |
+  | `Shift+C` | Keep the time controls on screen |
+  | `Shift+G` | Open the time picker (phase 4) |
 
   `<` and `>` are bound today as aliases of `,` and `.`; they move to rewind and
   fast-forward. On layouts where Shift+`,` isn't `<`, the buttons still work.
@@ -376,7 +383,7 @@ Each is its own PR, shippable alone.
    Time button, and all of *Mobile* that applies to the bar:
    compact and landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas
    (dock included), `--transport-h` stacking.
-4. **Picker.** Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
+4. **Picker** (done). Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
    on phones.
 5. **Satellite age limit.** Hide/tag satellites far from their elements' epoch.
 
@@ -384,7 +391,8 @@ Each is its own PR, shippable alone.
 
 - **Unit (vitest, node):** `clock.ts` (continuity across `withSpeed`/`jumpTo`/`stepBy`,
   negative speeds, live detection); the rewind/forward ladders; `shortSpeed`; the presets'
-  times against known dates (2026-12-21 solstice, 2027-08-02 total solar eclipse);
+  times against almanac dates (the 2024 December solstice, January 2024's full and new moon,
+  Greenwich's midsummer sunrise and sunset, none in the midnight sun);
   `hotkeys.test.ts` already checks for key collisions.
 - **Drawer test:** extend `drawer.test.ts` for the Time button.
 - **Unit, hazard fade:** `hazardFade` is 1 within 30 min and 0 beyond 2 h on the live
@@ -394,9 +402,11 @@ Each is its own PR, shippable alone.
   test still passes with the strengths.
 - **Unit, mobile helpers:** `compactDate` fits the 320 px budget (character count in the
   tabular face) for every month name; `holdStep` gives an hour, then a day after 2 s.
-- **In the browser** (Playwright, pre-installed): load `?time=2027-08-02T10:07:00Z&speed=0`
-  and screenshot the eclipse; click ⏩ twice and check the rate chip and URL; confirm
-  `T`/NOW returns to live.
+- **In the browser** (Playwright, pre-installed): click ⏩ twice and check the rate chip and
+  URL; confirm `T`/NOW returns to live. In the picker: Go keeps the speed, presets chain,
+  Local shows the browser's zone, 1850 is refused, Escape, Shift+G and a click outside.
+  On phones: the sheet in view, 16 px inputs, 44 px targets, Go in sight without scrolling,
+  closed by its handle or a tap outside, which picks nothing.
 - **Hazard fade in the browser:** with quakes, radar and severe on, load `?time=` 3 h ago:
   the quake rings and radar are gone, the readout says so, and a click where a
   quake was picks nothing. Load 1 h ago: they're partly faded. Press NOW: they're back in
@@ -428,3 +438,6 @@ Each is its own PR, shippable alone.
   centre and upcoming launches.
 - Dated data for the past: GIBS layers by date for imagery, USGS/EMSC queries for quakes,
   archived cloud maps from the pipeline.
+- Eclipses: the Moon's shadow on the globe and the Earth's on the Moon, then "next solar
+  eclipse" (centring the view on the greatest eclipse) and "next lunar eclipse" presets
+  (astronomy-engine's `SearchGlobalSolarEclipse`, `SearchLunarEclipse`).
