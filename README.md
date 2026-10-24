@@ -437,10 +437,17 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
 - **Labels:** a place picked from the search keeps a pink, city-style label on the globe
   (shown even with city labels off). The most recent dozen are kept in the browser and
   listed in the search before anything is typed. "Remove label" on the place card drops one.
-- **Place card:** a search also opens a card at the bottom right. It closes itself after
+- **Place card:** a search also opens a card at the bottom right, as does a click on a city
+  marker (the view stays put). It closes itself after
   20 s (30 s with alerts), stays open while the pointer or focus is on it, and closes with
   × or Esc. Each part fills in as it arrives, and each request gives up after 12 s:
   - Local time and UTC offset.
+  - For a city (clicked, or searched and matched by name within 25 km): its region and
+    country, whether it's a national or regional capital, and its metro population
+    (Natural Earth, baked into `cityFacts.ts`, a chunk loaded on the first city card); then
+    the opening of its Wikipedia article, from the Wikidata item Natural Earth links (Wikidata
+    API for the English title, Wikipedia's REST summary; both CORS-enabled, no key), with a
+    link to the article.
   - Current weather, today's high and low, UV, and sunrise, sunset and daylight, or polar
     night or midnight sun (Open-Meteo forecast, CC BY 4.0, no key).
   - Alerts:
@@ -458,7 +465,8 @@ the 2016 Black Marble composite, down to 488 m a pixel. (`painted` keeps the 201
 A click (a press that moves under 5 px, not part of a pinch) on a marker opens its window
 under the others on the right, and puts a reticle on it. The nearest marker of every layer
 shown wins, within about its drawn size (8 px for a bulk satellite's dot, 14 for a named
-satellite, a launch, a cyclone or a tsunami bulletin, a quake's ring plus 3 px). A click on
+satellite, a launch, a cyclone or a tsunami bulletin, a quake's ring plus 3 px). Then a city
+or searched place's marker, within 10 px, opens the place card (see Going to a place). A click on
 nothing marked falls through to the severe-weather warning under the pointer, if any, the
 one drawn on top (a US warning, else the worst MeteoAlarm region). Clicking empty space does nothing; × closes the window. With a mouse, the
 cursor turns from the grab hand to the pointing hand over anything a click would open,
@@ -1320,6 +1328,16 @@ into the webcast. So launch mode is built from what *is* published, and says whi
 - Tsunami, severe weather, launch, storm, quake and GDACS labels share one placement pass (in that order). Labels keep
   on screen and clear of the status readout; a GDACS label with no free spot is dropped (its
   marker stays) rather than overlap another. City labels avoid all of them.
+- **Cities as the view zooms:** zoomed out, the 47 hand-picked cities in `cities.ts` are the
+  whole set. Zooming in, more fill in from Natural Earth's populated places (6,540 at its label
+  zoom 7 or less, baked into `worldCities.ts`, loaded as a chunk of its own, ~95 KB gzipped,
+  once city markers are on). Each baked city carries how far it is from the nearest city
+  drawn before it (the hand-picked ones, then the more important baked ones), and shows once
+  that gap is 110 px on screen, but not before 1.5× the scale Natural Earth would label it at
+  on a web map, and not until the disc is 1.15× the whole-disc view. So zooming in only ever
+  adds cities: the ones shown stay put as anchors, no two are closer than the gap, and the
+  count on screen stays near the zoomed-out globe's (25–45 at 1568×741). Each fades in over
+  its last 25% of zoom, and is drawn only where its label fits: no bare diamonds.
 
 ## Data feeds
 
@@ -1344,13 +1362,14 @@ The dashboard ticks once a second while open, and not at all while closed or hid
 
 ## Baked data: re-running by hand
 
-Three datasets change too rarely to fetch each hour, so they're baked into the repo by a
+Four datasets change too rarely to fetch each hour, so they're baked into the repo by a
 script run by hand. None runs in the pipeline or the deploy; nothing reminds you when
 they go stale, so check them now and then (a few times a year is plenty).
 
 | What | Script | Writes | When to re-run | How to tell |
 |---|---|---|---|---|
 | MeteoAlarm's warning regions | `python -I pipeline/scripts/bake_meteoalarm_regions.py` | `pipeline/xearth_clouds/meteoalarm_regions.json.gz` | MeteoAlarm publishes a new `MeteoAlarm_Geocodes_<date>.json` in [its documents repository](https://gitlab.com/meteoalarm-pm-group/documents) (it was `2026_07_31` when baked): update `GEOCODES_FILE` in the script first | `unplaced` in `meteoalarm/latest.json` isn't empty (areas with no outline aren't drawn), or the job's log ends "N areas unplaced" |
+| Cities that fill in as the view zooms, and their facts | `python -I web/scripts/bake-cities.py web/src` (or add a path to `ne_10m_populated_places.geojson` already downloaded) | `web/src/worldCities.ts`, `web/src/cityFacts.ts` | After editing the hand-picked list in `cities.ts` (each baked city's gap is measured from those), or when Natural Earth releases new populated places | The script prints how many hand-picked cities found no Natural Earth place within 25 km (their cards then have no facts); `cities.test.ts` fails if any are missing |
 | US volcanoes' positions | `python -I web/scripts/bake-volcanoes.py web/src/usVolcanoes.ts` | `web/src/usVolcanoes.ts` | The Smithsonian adds or renumbers a US volcano | A volcano HANS monitors is missing from the globe (one it can't place is dropped without a message): on 2026-10-23 HANS listed 69 and 67 were placed, the other two being regions with no volcano number |
 | The ISS camera's model | `node web/scripts/bake-iss-model.mjs <tools folder> "International Space Station (ISS) (B).glb" web/public/models/iss.glb` (install the tools first, as the script's header says) | `web/public/models/iss.glb` | NASA updates the model on [NASA 3D Resources](https://science.nasa.gov/3d-resources/international-space-station-iss-b/) | Its parts move apart under the camera, or colours land on the wrong parts: `issModel.ts` cuts and colours it by measured positions (truss line, masts) and material names, so a remodel needs those re-measured |
 
@@ -1409,7 +1428,8 @@ scheduled.
   one new SGP4 sample instead of ~480.
 - **Glows are cached as sprites.** Canvas `shadowBlur` is rasterised after our code returns,
   so it never shows in JS timings, but ~40 glowing city labels cost ~15 ms a frame. City,
-  satellite and reticle glows are drawn once into offscreen canvases and stamped.
+  satellite and reticle glows are drawn once into offscreen canvases and stamped. The cache
+  keeps the 600 most recently used, since thousands of city names pass by while zooming around.
 
 Measured at ×600 in Chrome (1568×741, this machine): **32–40 fps, worst frame 66.6 ms → a
 locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5 ms; simulation
@@ -1473,6 +1493,8 @@ locked 59–60 fps, worst 16.8 ms, 0 slow frames**. Main-thread time 4.2 → 2.5
   (tsunami.gov); NOAA National Weather Service alerts.
 - Severe weather: NOAA National Weather Service alerts (api.weather.gov) and the NOAA Storm
   Prediction Center's day-1 convective outlook.
+- Cities: Natural Earth populated places (public domain). City summaries: Wikipedia (CC BY-SA
+  4.0), linked on each card, found through Wikidata (CC0).
 - European weather warnings: MeteoAlarm, data provided by EUMETNET members (CC BY 4.0); region
   outlines from MeteoAlarm's geocodes, and Croatia's counties from Natural Earth (public domain).
 - ISS telemetry: NASA ISSLive public telemetry, streamed by Lightstreamer

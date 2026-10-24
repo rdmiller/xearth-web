@@ -67,6 +67,12 @@ export function fold(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
+/** Two names for one place: "Washington" ≈ "Washington, D.C.", "Bogotá" ≈ "Bogota". */
+export function sameName(a: string, b: string): boolean {
+  const [x, y] = [fold(a), fold(b)];
+  return !!x && !!y && (x.startsWith(y) || y.startsWith(x));
+}
+
 /** The app's own cities that start with (then contain) the text. */
 export function searchCities(text: string, max = 5): Place[] {
   const q = fold(text);

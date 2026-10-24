@@ -2,9 +2,9 @@
 // Styled as a spacecraft HUD: Chakra Petch (bundled via @fontsource), small
 // letter-spaced caps, cyan hairlines with a soft glow.
 
-import { CITIES } from './cities';
+import { CITIES, CITY_MIN_FILL, type WorldCity } from './cities';
 import type { CloudStatus } from './cloudSync';
-import type { ReadoutMode } from './params';
+import { DISC_FILL, type ReadoutMode } from './params';
 import type { FeaturedSat, SatState } from './satellites';
 import { edgePoint } from './bodies';
 import { tok } from './tokens';
@@ -103,21 +103,40 @@ const smoothstep = (a: number, b: number, v: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/** A city or place marker drawn this frame: what a click on it opens. */
+export interface CityHit {
+  name: string;
+  lat: number;
+  lon: number;
+  x: number;
+  y: number;
+  /** A place gone to from the search (pink), not one of the app's cities. */
+  place: boolean;
+  /** Its row in the baked list, when it came from there. */
+  row?: number;
+}
+
+let hits: CityHit[] = [];
+
+/** The city and place markers on screen at the last draw, most important first. */
+export const cityHits = (): readonly CityHit[] => hits;
+
+const markerRect = (x: number, y: number): Rect => ({ x: x - 5, y: y - 5, w: 10, h: 10 });
+
 function drawCities(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number, reserved: Rect[] = []) {
-  const at = (name: string, lat: number, lon: number, look: LabelLook) => {
-    const p = fromLatLon(lat, lon);
+  hits = [];
+  const at = (name: string, lat: number, lon: number, look: LabelLook, p = fromLatLon(lat, lon)) => {
     const q = project(s.camera, p);
     // Fade out toward the limb, where labels would crowd a foreshortened sliver.
     const alpha = q.visible ? smoothstep(0.08, 0.35, facing(s.camera, p)) : 0;
-    return alpha > 0.02 ? [{ name: name.toUpperCase(), x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, alpha, look }] : [];
+    return alpha > 0.02 ? [{ name, label: name.toUpperCase(), lat, lon, x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, alpha, look }] : [];
   };
   // The viewer's own places first, so they get the first pick of label room; a city they
   // went to is drawn as their place, not twice.
   const places = s.places ?? [];
+  const isPlace = (lat: number, lon: number) => places.some((p) => Math.abs(p.lat - lat) < 0.3 && Math.abs(p.lon - lon) < 0.3);
   const mine = places.flatMap((p) => at(p.name, p.lat, p.lon, PLACE_LOOK));
-  const cities = s.markers
-    ? CITIES.filter(([, lat, lon]) => !places.some((p) => Math.abs(p.lat - lat) < 0.3 && Math.abs(p.lon - lon) < 0.3)).flatMap(([name, lat, lon]) => at(name, lat, lon, CITY_LOOK))
-    : [];
+  const cities = s.markers ? CITIES.filter(([, lat, lon]) => !isPlace(lat, lon)).flatMap(([name, lat, lon]) => at(name, lat, lon, CITY_LOOK)) : [];
   const visible = [...mine, ...cities];
 
   ctx.font = `500 11px ${UI_FONT}`;
@@ -125,14 +144,38 @@ function drawCities(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h
   ctx.textBaseline = 'alphabetic';
   // Reserve every marker first so no label lands on another city's diamond —
   // and anything more important (launch labels) passed in as `reserved`.
-  const taken: Rect[] = [...reserved, ...visible.map((c) => ({ x: c.x - 5, y: c.y - 5, w: 10, h: 10 }))];
+  const taken: Rect[] = [...reserved, ...visible.map((c) => markerRect(c.x, c.y))];
 
   for (const c of visible) {
-    const textW = ctx.measureText(c.name).width;
+    const textW = ctx.measureText(c.label).width;
     const side = placeCallout(c.x, c.y, textW, taken, { w, h });
-    const sp = citySprite(c.name, textW, side, dpr, c.look);
+    const sp = citySprite(c.label, textW, side, dpr, c.look);
     ctx.globalAlpha = c.alpha;
     stamp(ctx, sp, c.x, c.y, dpr);
+    hits.push({ name: c.name, lat: c.lat, lon: c.lon, x: c.x, y: c.y, place: c.look === PLACE_LOOK });
+  }
+
+  // Zoomed in, the baked cities whose gap to every city before them is wide enough now, most
+  // important first, each fading in as it crosses its threshold. Only where its label fits:
+  // a bare diamond would be clutter, not an anchor.
+  const fill = s.radiusPx / (0.5 * Math.min(w, h) * DISC_FILL);
+  const fillAlpha = smoothstep(CITY_MIN_FILL, CITY_MIN_FILL + 0.15, fill);
+  if (s.markers && s.worldCities && fillAlpha > 0) {
+    for (const wc of s.worldCities) {
+      if (wc.revealPx > s.radiusPx || isPlace(wc.lat, wc.lon)) continue;
+      const [c] = at(wc.name, wc.lat, wc.lon, CITY_LOOK, wc.pos);
+      if (!c || c.x < 0 || c.y < 0 || c.x > w || c.y > h) continue;
+      const alpha = c.alpha * fillAlpha * smoothstep(wc.revealPx, wc.revealPx * 1.25, s.radiusPx);
+      const marker = markerRect(c.x, c.y);
+      if (alpha <= 0.02 || taken.some((t) => overlaps(t, marker))) continue;
+      const textW = ctx.measureText(c.label).width;
+      const side = placeCallout(c.x, c.y, textW, taken, { w, h });
+      if (!side) continue;
+      taken.push(marker);
+      ctx.globalAlpha = alpha;
+      stamp(ctx, citySprite(c.label, textW, side, dpr), c.x, c.y, dpr);
+      hits.push({ name: c.name, lat: c.lat, lon: c.lon, x: c.x, y: c.y, place: false, row: wc.row });
+    }
   }
   ctx.globalAlpha = 1;
   ctx.letterSpacing = '0px';
@@ -155,6 +198,8 @@ interface Sprite {
 }
 
 const GLOW_MARGIN = 10;
+/** Thousands of city names pass by while zooming around: keep the most recently used. */
+const MAX_SPRITES = 600;
 const sprites = new Map<string, Sprite>();
 let spriteDpr = 0;
 
@@ -170,7 +215,12 @@ function sprite(key: string, dpr: number, bounds: Rect, draw: (c: CanvasRenderin
     spriteDpr = dpr;
   }
   let s = sprites.get(key);
-  if (!s) {
+  if (s) {
+    // Most recently used last, so the oldest goes first.
+    sprites.delete(key);
+    sprites.set(key, s);
+  } else {
+    if (sprites.size >= MAX_SPRITES) sprites.delete(sprites.keys().next().value!);
     const w = Math.ceil(bounds.w + 2 * GLOW_MARGIN);
     const h = Math.ceil(bounds.h + 2 * GLOW_MARGIN);
     const canvas = document.createElement('canvas');
@@ -375,6 +425,8 @@ export interface OverlayState {
   picked?: { pos: Vec3; color: string };
   /** Places gone to from the search: labelled like cities, in pink, even with cities off. */
   places?: { name: string; lat: number; lon: number }[];
+  /** The baked cities that fill in as the view zooms (once loaded). */
+  worldCities?: readonly WorldCity[];
   /** The readout's rows for the launch and data layers on, in order. */
   rows?: ReadoutRow[];
   note?: string;

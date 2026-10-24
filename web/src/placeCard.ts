@@ -4,6 +4,7 @@
 // with Escape.
 
 import { createElement, Sunrise, type IconNode } from 'lucide';
+import type { CityAbout } from './cities';
 import { IMPACT_COLOR, IMPACT_WORD } from './hazards';
 import { formatCoordinates, type Place } from './places';
 import { conditionsLine, detailLine, localClock, offsetLabel, sortAlerts, sunLine, type LocalAlert, type LocalWeather } from './locale';
@@ -22,6 +23,10 @@ export interface PlaceReport {
   checked?: string[];
   /** The nearest buoy's readings, and opening its window; null when none is near. */
   buoy?: { text: string; open: () => void } | null;
+  /** A city's facts (Natural Earth): its region and country, and lines like "Capital of Japan". */
+  facts?: { where: string; lines: string[] };
+  /** A city's Wikipedia summary; null when there's none. */
+  about?: CityAbout | null;
 }
 
 export interface PlaceCardHandlers {
@@ -138,10 +143,11 @@ export class PlaceCard {
     if (place !== this.place || !this.shown) return;
     const report = (this.report = { ...this.report, ...part });
     const w = report.weather;
-    const where = place.detail || formatCoordinates(place.lat, place.lon);
+    const where = report.facts?.where || place.detail || formatCoordinates(place.lat, place.lon);
     this.sub.textContent = w ? `${where} · ${localClock(now, w.utcOffsetS)} local (${w.tzAbbr && !/^GMT[+-]/.test(w.tzAbbr) ? w.tzAbbr : offsetLabel(w.utcOffsetS)})` : where;
 
     const rows: HTMLElement[] = [];
+    if (report.facts?.lines.length) rows.push(el('p', 'facts', report.facts.lines.join(' · ')));
     if (w) {
       rows.push(el('p', 'conditions', conditionsLine(w, imperial)));
       const detail = detailLine(w, imperial);
@@ -156,6 +162,18 @@ export class PlaceCard {
       rows.push(el('p', 'detail', 'Weather unavailable right now.'));
     } else {
       rows.push(el('p', 'loading', 'Checking the weather…'));
+    }
+
+    if (report.about) {
+      const about = el('p', 'about');
+      if (report.about.description) about.append(el('strong', '', `${report.about.description}. `));
+      about.append(document.createTextNode(report.about.extract));
+      // Outside the clamped paragraph, so it always shows (and credits the text, CC BY-SA).
+      const more = el('a', 'wiki', 'More on Wikipedia');
+      more.href = report.about.url;
+      more.target = '_blank';
+      more.rel = 'noopener';
+      rows.push(about, more);
     }
 
     if (report.buoy) {

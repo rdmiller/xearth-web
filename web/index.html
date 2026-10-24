@@ -346,6 +346,12 @@
       #place-card .buoy button { flex: none; padding: 1px 7px; font: 600 10px var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
         color: var(--hud-accent); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.45); border-radius: var(--r-md); cursor: pointer; }
       #place-card .buoy button:hover { background: rgb(var(--hud-cyan-rgb) / 0.12); }
+      #place-card .facts { margin: -4px 0 8px; font-size: 12px; color: var(--ink-2); }
+      #place-card .about { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--ink-3);
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; line-clamp: 5; overflow: hidden; }
+      #place-card .about strong { font-weight: 600; color: var(--ink-2); }
+      #place-card .wiki { display: inline-block; margin-top: 3px; font-size: 11px; color: var(--hud-accent); text-decoration: none; }
+      #place-card .wiki:hover { text-decoration: underline; }
       #place-card .credit { margin-left: auto; color: var(--ink-4); text-decoration: none; }
       #place-card .credit:hover { color: var(--hud-accent); text-decoration: underline; }
       /* Satellite tree: a glass panel of tri-state checkboxes. */
@@ -619,6 +625,7 @@
         <li><b>ISS telemetry</b> NASA ISSLive</li>
         <li><b>ISS model</b> NASA / Michael D. Carbajal (NASA 3D Resources)</li>
         <li><b>Places</b> GeoNames via Open-Meteo</li>
+        <li><b>Cities</b> Natural Earth; summaries from Wikipedia (CC BY-SA), via Wikidata</li>
       </ul>
       <h3>URL parameters</h3>
       <table>

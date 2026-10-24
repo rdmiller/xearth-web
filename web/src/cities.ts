@@ -1,4 +1,9 @@
 // Marker set, in the spirit of xearth's built-in city list. [name, lat, lon]
+// Zoomed in, more fill in from Natural Earth's places (worldCities.ts), and a city's card
+// has its facts (cityFacts.ts) and Wikipedia's summary.
+
+import type { WorldCityRow } from './worldCities';
+import { fromLatLon, type Vec3 } from './vec';
 
 export const CITIES: readonly (readonly [string, number, number])[] = [
   ['Anchorage', 61.22, -149.9],
@@ -49,3 +54,156 @@ export const CITIES: readonly (readonly [string, number, number])[] = [
   ['Auckland', -36.85, 174.76],
   ['McMurdo', -77.85, 166.67],
 ];
+
+// ---- cities that fill in as the view zooms ---------------------------------------------------
+// Each baked city knows how far it is from the nearest city drawn before it (the list above,
+// then the more important ones), and shows once that gap is wide enough on screen. Zooming in
+// only ever adds cities, the ones already shown stay put, and no two are closer than the gap.
+
+/** On-screen gap, CSS px, a city needs from every city drawn before it. */
+export const CITY_GAP_PX = 110;
+/**
+ * Nor before 1.5× the scale Natural Earth would label it at on a web map (zoom z: 256·2^z px
+ * around the equator), so the far-flung ones fill in by importance, not all at once.
+ */
+const ZOOM_PX = (1.5 * 256) / (2 * Math.PI);
+/** Nor until the disc is this much larger than the whole-disc view: zoomed out, the list above is the look. */
+export const CITY_MIN_FILL = 1.15;
+const EARTH_KM = 6371;
+/** A hand-picked city lends its facts from within this distance. */
+const NEAR_KM = 25;
+
+export interface WorldCity {
+  /** Its row in worldCities.ts and cityFacts.ts. */
+  row: number;
+  name: string;
+  lat: number;
+  lon: number;
+  pos: Vec3;
+  /** Globe radius, CSS px, it shows from; Infinity for a hand-picked city's facts. */
+  revealPx: number;
+}
+
+export function revealPx(gapKm: number, zoom: number): number {
+  return gapKm > 0 ? Math.max((CITY_GAP_PX * EARTH_KM) / gapKm, ZOOM_PX * 2 ** zoom) : Infinity;
+}
+
+export function worldCities(rows: readonly WorldCityRow[]): WorldCity[] {
+  return rows.map(([name, lat, lon, zoom, gap], row) => ({ row, name, lat, lon, pos: fromLatLon(lat, lon), revealPx: revealPx(gap, zoom) }));
+}
+
+let worldLoad: Promise<readonly WorldCity[]> | undefined;
+
+/** The baked cities (a separate chunk, ~100 KB gzipped), loaded once. */
+export function loadWorldCities(): Promise<readonly WorldCity[]> {
+  worldLoad ??= import('./worldCities').then(
+    (m) => worldCities(m.WORLD_CITIES),
+    (err) => {
+      worldLoad = undefined; // try again next time
+      throw err;
+    },
+  );
+  return worldLoad;
+}
+
+/** Great-circle distance, km. */
+export const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const a = fromLatLon(lat1, lon1);
+  const b = fromLatLon(lat2, lon2);
+  return EARTH_KM * Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
+};
+
+/** The baked city nearest (lat, lon) within 25 km that `same` accepts. */
+export function cityNear(list: readonly WorldCity[], lat: number, lon: number, same: (c: WorldCity) => boolean): WorldCity | undefined {
+  let best: WorldCity | undefined;
+  let bestKm = NEAR_KM;
+  for (const c of list) {
+    if (Math.abs(c.lat - lat) > 0.5) continue;
+    const km = distanceKm(lat, lon, c.lat, c.lon);
+    if (km < bestKm && same(c)) [best, bestKm] = [c, km];
+  }
+  return best;
+}
+
+// ---- facts -------------------------------------------------------------------------------
+
+export type CityKind = 'place' | 'capital' | 'regional capital' | 'station';
+const KINDS: readonly CityKind[] = ['place', 'capital', 'regional capital', 'station'];
+
+export interface CityFacts {
+  /** Natural Earth's metro estimate; 0 when it has none. */
+  population: number;
+  country: string;
+  region: string;
+  kind: CityKind;
+  /** "Q1490", or null. */
+  wikidata: string | null;
+}
+
+let factsLoad: Promise<(row: number) => CityFacts | undefined> | undefined;
+
+/** A baked city's facts (another chunk, loaded the first time a city's card opens). */
+export function loadCityFacts(): Promise<(row: number) => CityFacts | undefined> {
+  factsLoad ??= import('./cityFacts').then(
+    ({ CITY_FACTS, COUNTRIES, REGIONS }) =>
+      (row) => {
+        const f = CITY_FACTS[row];
+        if (!f) return undefined;
+        const [population, country, region, kind, qid] = f;
+        return { population, country: COUNTRIES[country] ?? '', region: REGIONS[region] ?? '', kind: KINDS[kind] ?? 'place', wikidata: qid ? `Q${qid}` : null };
+      },
+    (err) => {
+      factsLoad = undefined;
+      throw err;
+    },
+  );
+  return factsLoad;
+}
+
+/** "35.7 million", "412,000", "8,500" */
+export function populationText(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '')} million`;
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/** The card's subtitle: "Illinois, United States of America". */
+export const cityWhere = (f: CityFacts) => [f.region, f.country].filter(Boolean).join(', ');
+
+/** The card's facts: "Capital of Japan", "Metro population 35.7 million". */
+export function factLines(f: CityFacts): string[] {
+  const lines: string[] = [];
+  if (f.kind === 'capital' && f.country) lines.push(`Capital of ${f.country}`);
+  else if (f.kind === 'regional capital' && f.region) lines.push(`Capital of ${f.region}`);
+  else if (f.kind === 'station') lines.push('Research station');
+  if (f.population > 0) lines.push(`${f.kind === 'station' ? 'Population' : 'Metro population'} ${populationText(f.population)}`);
+  return lines;
+}
+
+// ---- Wikipedia ---------------------------------------------------------------------------
+// The Wikidata item Natural Earth links → its English Wikipedia article (Wikidata's API, CC0)
+// → the article's summary (Wikipedia's REST API, CC BY-SA). Both CORS-enabled, no key.
+
+export const wikidataTitleUrl = (qid: string) =>
+  `https://www.wikidata.org/w/api.php?${new URLSearchParams({ action: 'wbgetentities', ids: qid, props: 'sitelinks', sitefilter: 'enwiki', format: 'json', origin: '*' })}`;
+
+export function decodeWikidataTitle(json: unknown, qid: string): string | null {
+  const title = (json as { entities?: Record<string, { sitelinks?: { enwiki?: { title?: unknown } } }> } | null)?.entities?.[qid]?.sitelinks?.enwiki?.title;
+  return typeof title === 'string' && title ? title : null;
+}
+
+export const wikipediaSummaryUrl = (title: string) => `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+
+export interface CityAbout {
+  /** "Capital and most populous city in Japan" */
+  description: string;
+  /** The article's opening paragraph, plain text. */
+  extract: string;
+  url: string;
+}
+
+export function decodeWikipediaSummary(json: unknown): CityAbout | null {
+  const j = json as { type?: unknown; description?: unknown; extract?: unknown; content_urls?: { desktop?: { page?: unknown } } } | null;
+  const url = j?.content_urls?.desktop?.page;
+  if (!j || j.type === 'disambiguation' || typeof j.extract !== 'string' || !j.extract || typeof url !== 'string') return null;
+  return { description: typeof j.description === 'string' ? j.description : '', extract: j.extract, url };
+}

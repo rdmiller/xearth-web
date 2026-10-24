@@ -33,7 +33,20 @@ import {
 } from './satcategories';
 import { SatTree } from './satTree';
 import { Drawer } from './drawer';
-import { addLabelled, decodeLabelled, formatCoordinates, glideAt, glideMs, isLabelled, LABELLED_KEY, removeLabelled, type Place } from './places';
+import { addLabelled, decodeLabelled, formatCoordinates, glideAt, glideMs, isLabelled, LABELLED_KEY, removeLabelled, sameName, type Place } from './places';
+import {
+  cityNear,
+  cityWhere,
+  decodeWikidataTitle,
+  decodeWikipediaSummary,
+  factLines,
+  loadCityFacts,
+  loadWorldCities,
+  wikidataTitleUrl,
+  wikipediaSummaryUrl,
+  type CityAbout,
+  type WorldCity,
+} from './cities';
 import { PlaceCard, type PlaceReport } from './placeCard';
 import {
   airQualityUrl,
@@ -198,14 +211,15 @@ import {
 import { CloudSync, type CloudStatus } from './cloudSync';
 import { formatSpeed, helpRows, hotkeyByKey, MAG_MAX, MAG_MIN, matchHotkey, type HotkeyContext } from './hotkeys';
 import {
+  cityHits,
   clearOverlaySprites,
   drawOverlay,
   FIREBALL_COLOR,
   LAUNCH_COLOR,
-  PLACE_COLOR,
   UI_FONT,
   inRect,
   type BodyMarker,
+  type CityHit,
   type EventOverlay,
   type BuoyOverlay,
   type MeteorOverlay,
@@ -2318,6 +2332,11 @@ const satName = (key: string) => featuredByKey(key)?.name ?? (/^\d+$/.test(key) 
 /** Open a pick's window (or a buoy's), following it if it moves. */
 function select(key: string) {
   if (key.startsWith('buoy:')) return update({ buoy: key.slice(5) });
+  if (key.startsWith('city:')) {
+    const c = cityHits()[Number(key.slice(5))];
+    if (c) openCity(c);
+    return;
+  }
   const p = parsePick(key);
   if (!p) return;
   const patch: Partial<Settings> = { pick: key };
@@ -2335,11 +2354,12 @@ function select(key: string) {
 }
 
 /** Reach of a marker, CSS px: about its drawn size, and never under a fingertip's worth. */
-const REACH = { sat: 14, bulk: 8, launch: 14, storm: 14, tsunami: 14, fireball: 10, buoy: 12 };
+const REACH = { sat: 14, bulk: 8, launch: 14, storm: 14, tsunami: 14, fireball: 10, buoy: 12, city: 10 };
 
 /**
- * What a click here would pick: the nearest marker within reach, of every layer shown, or else
- * the severe-weather warning under the pointer. Its key (`buoy:` for a buoy), or undefined.
+ * What a click here would pick: the nearest marker within reach, of every layer shown, then a
+ * city or place, or else the severe-weather warning under the pointer. Its key (`buoy:` for a
+ * buoy, `city:` and its place in the overlay's last draw for a city), or undefined.
  */
 function targetAt(clientX: number, clientY: number): string | undefined {
   const rect = overlayCanvas.getBoundingClientRect();
@@ -2388,6 +2408,12 @@ function targetAt(clientX: number, clientY: number): string | undefined {
 
   const hit = nearestTarget(hits, x, y);
   if (hit) return hit.key;
+  const city = nearestTarget(
+    cityHits().map((c, i) => ({ x: c.x, y: c.y, reach: REACH.city, key: `city:${i}` })),
+    x,
+    y,
+  );
+  if (city) return city.key;
   if (!settings.severe || (!severeWarnings.length && !alarmManifest)) return undefined;
   const ground = unproject(camera, (x - cx) / r, -(y - cy) / r);
   if (!ground) return undefined;
@@ -2676,7 +2702,6 @@ const placeToast = toasts.add({
   id: 'place-card',
   title: 'Place',
   order: 3,
-  accent: PLACE_COLOR,
   shrink: 0,
   maxShare: 0.5,
   onClose: () => placeCard.hide(),
@@ -2821,18 +2846,77 @@ async function placeBuoy(place: Place): Promise<Pick<PlaceReport, 'buoy'>> {
   return { buoy: { text: buoyLine(near.buoy, near.km, near.bearing, imperial), open: () => update({ buoy: near.buoy.id }) } };
 }
 
-/** A place picked in the search: go there, label it, and show what it's like there. */
-function goToSearched(place: Place) {
-  setLabelled(addLabelled(labelled, place));
-  goTo(place, '');
+// ---- cities: more as the view zooms in, and a card for one clicked -------------------------
+
+let worldCityList: readonly WorldCity[] | undefined;
+let worldCitiesAsked = false;
+
+/** The baked cities, loaded (a chunk of their own) once city markers are first on. */
+function wantWorldCities() {
+  if (worldCitiesAsked) return;
+  worldCitiesAsked = true;
+  loadWorldCities().then(
+    (list) => {
+      worldCityList = list;
+      requestRedraw();
+    },
+    (err) => console.warn('cities:', err),
+  );
+}
+
+const wikipediaCache = new Map<string, Promise<CityAbout | null>>();
+
+/** A Wikidata item's English Wikipedia summary (null when it has no article). */
+function wikipediaAbout(qid: string): Promise<CityAbout | null> {
+  let about = wikipediaCache.get(qid);
+  if (!about) {
+    about = getJson(wikidataTitleUrl(qid))
+      .then((j) => decodeWikidataTitle(j, qid))
+      .then(async (title) => (title ? decodeWikipediaSummary(await getJson(wikipediaSummaryUrl(title))) : null));
+    about.catch(() => wikipediaCache.delete(qid));
+    wikipediaCache.set(qid, about);
+  }
+  return about;
+}
+
+/** The city a place is, if it's one of the baked ones: its facts, then Wikipedia's summary. */
+async function placeCity(place: Place, find: (list: readonly WorldCity[]) => WorldCity | undefined) {
+  const city = find(await loadWorldCities());
+  const facts = city && (await loadCityFacts())(city.row);
+  if (!facts) return;
+  placeCard.fill(place, { facts: { where: cityWhere(facts), lines: factLines(facts) } }, imperial);
+  if (facts.wikidata) placeCard.fill(place, { about: await wikipediaAbout(facts.wikidata) }, imperial);
+}
+
+/** Open the place card on a place and fill in what it's like there as each part arrives. */
+function showPlace(place: Place, find: (list: readonly WorldCity[]) => WorldCity | undefined) {
   placeCard.show(place, isLabelled(labelled, place));
-  // Weather and alerts fill in as each arrives.
   getJson(forecastUrl(place.lat, place.lon))
     .then(decodeForecast)
     .catch((err) => (console.warn('place card:', err), null))
     .then((weather) => placeCard.fill(place, { weather }, imperial));
   void placeAlerts(place).then((part) => placeCard.fill(place, part, imperial));
   void placeBuoy(place).then((part) => placeCard.fill(place, part, imperial));
+  placeCity(place, find).catch((err) => console.warn('place card:', err));
+}
+
+/** The baked city with this place's name, near it. */
+const namedCity = (place: Place) => (list: readonly WorldCity[]) => cityNear(list, place.lat, place.lon, (c) => sameName(c.name, place.name));
+
+/** A city or place clicked on the globe: its card (the view stays put). */
+function openCity(c: CityHit) {
+  const mine = c.place ? labelled.find((p) => p.name === c.name && p.lat === c.lat && p.lon === c.lon) : undefined;
+  if (mine) return showPlace(mine, namedCity(mine));
+  const place: Place = { name: c.name, detail: '', lat: c.lat, lon: c.lon };
+  // A baked city is its own row; a hand-picked one has the facts baked beside it.
+  showPlace(place, (list) => (c.row !== undefined ? list[c.row] : cityNear(list, c.lat, c.lon, (w) => w.revealPx === Infinity)));
+}
+
+/** A place picked in the search: go there, label it, and show what it's like there. */
+function goToSearched(place: Place) {
+  setLabelled(addLabelled(labelled, place));
+  goTo(place, '');
+  showPlace(place, namedCity(place));
 }
 
 const search = new PlaceSearch(document.getElementById('search') as HTMLElement, { go: goToSearched, recent: () => labelled, toast });
@@ -3089,6 +3173,7 @@ function frame(now: number) {
     target: target && target.until > Date.now() ? target : undefined,
     picked: pickedMark,
     places: placeLabels,
+    worldCities: settings.markers ? (wantWorldCities(), worldCityList) : undefined,
     rows: [...(launch.row ? [launch.row] : []), ...layerRows()],
     sun,
     markers: settings.markers,
