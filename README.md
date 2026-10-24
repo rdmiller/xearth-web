@@ -774,7 +774,7 @@ as usual.
 | `lat`, `lon` | viewer position (`fixed`) or offset from the subsolar point (`sunrel`) | 20, your time zone's meridian |
 | `period`, `inc` | orbit period (h) and inclination (°) | 1.5, 51.6 |
 | `dist` | viewer distance in Earth radii; 0 = orthographic | 0 |
-| `mag`, `rot` | size, rotation (° counter-clockwise) | 1 (on a phone's first visit, the disc 1.1× the screen's height), 0 |
+| `mag`, `rot` | size, rotation (° counter-clockwise) | 1 (on a phone's first visit, the disc 1.03× the screen's height), 0 |
 | `wait` | seconds between redraws | 60 |
 | `time`, `speed` | ISO start time; clock multiplier | now, 1 |
 | `clouds`, `lights`, `grid`, `markers` | `0` / `1` | 1,1,0,1 |

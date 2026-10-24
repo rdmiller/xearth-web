@@ -145,18 +145,18 @@ describe('firstLoad', () => {
 
   it('starts a phone zoomed in and its readout short, and says so in a link', () => {
     const s = firstLoad({ small: true, w: 390, h: 844 });
-    expect(s).toEqual({ ...defaults(), mag: 2.65, label: 'short' });
+    expect(s).toEqual({ ...defaults(), mag: 2.48, label: 'short' });
     // Links are written against the plain defaults, so one made on a phone opens the same anywhere.
-    expect(toQuery(s)).toBe('?mag=2.65&label=short');
+    expect(toQuery(s)).toBe('?mag=2.48&label=short');
   });
 
   it('zooms until the disc just overflows the height, either way up', () => {
     const disc = (w: number, h: number) => 0.9 * Math.min(w, h) * firstLoad({ small: true, w, h }).mag;
     // Upright: past the top and bottom by a little, past the sides by much more.
-    expect(disc(390, 844) / 844).toBeCloseTo(1.1, 2);
+    expect(disc(390, 844) / 844).toBeCloseTo(1.03, 2);
     expect(disc(390, 844) - 390).toBeGreaterThan(5 * (disc(390, 844) - 844));
     // On its side: clipped top and bottom only.
-    expect(disc(844, 390) / 390).toBeCloseTo(1.1, 2);
+    expect(disc(844, 390) / 390).toBeCloseTo(1.03, 2);
     expect(disc(844, 390)).toBeLessThan(844);
   });
 });

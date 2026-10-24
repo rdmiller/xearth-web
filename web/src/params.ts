@@ -231,7 +231,7 @@ export const DISC_FILL = 0.9;
 export const SMALL_SCREEN = '(max-width: 600px), (max-height: 500px)';
 
 /** A phone starts zoomed until the disc is this much taller than the screen. */
-const PHONE_OVERFLOW = 1.1;
+const PHONE_OVERFLOW = 1.03;
 
 /**
  * What a visit with no query at all starts from: the defaults, adjusted for the screen (CSS
