@@ -805,7 +805,11 @@ export interface BuoyOverlay {
   selected?: { pos: Vec3; color: string; track?: Vec3[] };
 }
 
-/** Dots batched one path per colour; the selected buoy's track, then its reticle, on top. */
+/**
+ * Dots batched one path per colour; the selected buoy's track, then its reticle, on top. There
+ * are ~6,000 of them, so with the whole globe in view they're small and faint (a click still
+ * reaches 12 px); zoomed in, where they spread out, they grow and firm up.
+ */
 function drawBuoys(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h: number, dpr: number) {
   const b = s.buoys;
   if (!b) return;
@@ -813,17 +817,20 @@ function drawBuoys(ctx: CanvasRenderingContext2D, s: OverlayState, w: number, h:
     const q = project(s.camera, p);
     return { x: w / 2 + q.x * s.radiusPx, y: h / 2 - q.y * s.radiusPx, visible: q.visible };
   };
+  // 0 with the whole globe on a laptop screen, 1 from about four times closer.
+  const zoom = Math.max(0, Math.min(1, (s.radiusPx - 350) / 1050));
+  const r = 1 + 0.75 * zoom;
   const paths = new Map<string, Path2D>();
   for (const d of b.dots) {
     const q = toScreen(d.pos);
     if (!q.visible) continue;
     let path = paths.get(d.color);
     if (!path) paths.set(d.color, (path = new Path2D()));
-    path.moveTo(q.x + 2, q.y);
-    path.arc(q.x, q.y, 2, 0, Math.PI * 2);
+    path.moveTo(q.x + r, q.y);
+    path.arc(q.x, q.y, r, 0, Math.PI * 2);
   }
   ctx.save();
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = 0.55 + 0.25 * zoom;
   for (const [color, path] of paths) {
     ctx.fillStyle = color;
     ctx.fill(path);
