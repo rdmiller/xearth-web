@@ -88,16 +88,14 @@ export function placeVolcanoes(list: readonly HansVolcano[]): { placed: UsVolcan
   return { placed, unplaced };
 }
 
-/** "Great Sitkin WATCH · Shishaldin, Kilauea, Ahyi Seamount ADVISORY · 63 normal". */
+/** "Great Sitkin WATCH · Shishaldin, Kilauea, Ahyi Seamount ADVISORY"; "all normal" when none is raised. */
 export function volcanoSummary(placed: readonly UsVolcano[]): string {
   const parts: string[] = [];
   for (const level of ['WARNING', 'WATCH', 'ADVISORY']) {
     const names = placed.filter((v) => v.hans.alert_level.toUpperCase() === level).map((v) => v.name);
     if (names.length) parts.push(`${names.join(', ')} ${level}`);
   }
-  const normal = placed.filter((v) => alertRank(v.hans.alert_level) === 0).length;
-  parts.push(`${normal} normal`);
-  return parts.join(' · ');
+  return parts.join(' · ') || 'all normal';
 }
 
 /** Showing activity: an alert level above NORMAL, or an aviation code above GREEN. */

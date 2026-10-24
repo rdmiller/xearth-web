@@ -2616,7 +2616,7 @@ function wantFloodDetail(view: { lat0: number; lat1: number; lon0: number; lon1:
 
 // ---- US volcano alert levels (USGS HANS), with the GDACS events ------------------------------
 // HANS's monitored volcanoes, placed at the Smithsonian's positions (usgsVolcanoes.ts); only
-// those showing activity are drawn and pickable, the quiet ones just counted. A volcano's
+// those showing activity are drawn, pickable and named in the summary. A volcano's
 // latest notice is fetched when its window opens, once per notice.
 
 let usVolcanoes: UsVolcano[] = [];

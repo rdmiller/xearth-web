@@ -29,7 +29,8 @@ describe('placing HANS’s volcanoes at the Smithsonian’s positions', () => {
 
   it('puts the most serious first, and says who’s raised', () => {
     expect(placed.slice(0, 4).map((v) => v.name)).toEqual(['Great Sitkin', 'Ahyi Seamount', 'Kilauea', 'Shishaldin']);
-    expect(volcanoSummary(placed)).toBe('Great Sitkin WATCH · Ahyi Seamount, Kilauea, Shishaldin ADVISORY · 63 normal');
+    expect(volcanoSummary(placed)).toBe('Great Sitkin WATCH · Ahyi Seamount, Kilauea, Shishaldin ADVISORY');
+    expect(volcanoSummary(placed.filter((v) => alertRank(v.hans.alert_level) === 0))).toBe('all normal');
   });
 });
 
