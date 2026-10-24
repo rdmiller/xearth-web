@@ -11,7 +11,7 @@
 // (sunrise and sunset here, the next equinox or solstice, full and new moon), steps, and Go.
 // A popover above the bar; on a phone, a sheet the bar's width.
 
-import { createElement, FastForward, Pause, Play, Rewind, StepBack, StepForward, type IconNode } from 'lucide';
+import { createElement, FastForward, Pause, Play, Rewind, StepBack, StepForward, Sunrise, Sunset, type IconNode } from 'lucide';
 import { shortSpeed } from './hotkeys';
 import { fromInputs, MAX_YEAR, MIN_YEAR, toInputs, type Moment } from './timePresets';
 
@@ -58,16 +58,20 @@ export function spokenTime(d: Date, zone: Zone = 'utc'): string {
   return `Simulated time: ${day} ${LONG_MONTHS[mo]} ${y}, ${barTime(d, zone)} ${zoneName(d, zone)}`;
 }
 
-/** The picker's presets, in its grid's order. */
+/** The picker's presets in words: what they are, and the full name for screen readers and tooltips. */
 export const PRESETS = [
   ['now', 'Now'],
   ['season', 'Equinox / solstice'],
-  ['sunrise', 'Sunrise here'],
-  ['sunset', 'Sunset here'],
-  ['full', 'Full moon'],
-  ['new', 'New moon'],
 ] as const;
-export type PresetKey = (typeof PRESETS)[number][0];
+
+/** The sky's presets as icons, each with a word under it. */
+export const SKY_PRESETS = [
+  ['sunrise', 'Rise', 'Sunrise here'],
+  ['sunset', 'Set', 'Sunset here'],
+  ['full', 'Full', 'Full moon'],
+  ['new', 'New', 'New moon'],
+] as const;
+export type PresetKey = (typeof PRESETS)[number][0] | (typeof SKY_PRESETS)[number][0];
 
 /** The gap between the bar and the dock (or the dock's grip) below it, CSS px. */
 const GAP_PX = 8;
@@ -106,6 +110,17 @@ function icon(node: IconNode, size = 18): SVGElement {
   svg.setAttribute('height', String(size));
   svg.setAttribute('stroke-width', '1.8');
   svg.setAttribute('aria-hidden', 'true');
+  return svg;
+}
+
+/** The Moon full (a disc) or new (its outline): Lucide's only moon is a crescent. */
+function moonIcon(full: boolean, size = 20): SVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  for (const [k, v] of Object.entries({ width: size, height: size, viewBox: '0 0 24 24', 'aria-hidden': 'true' })) svg.setAttribute(k, String(v));
+  const c = document.createElementNS(ns, 'circle');
+  for (const [k, v] of Object.entries({ cx: 12, cy: 12, r: 8, stroke: 'currentColor', 'stroke-width': 1.8, fill: full ? 'currentColor' : 'none' })) c.setAttribute(k, String(v));
+  svg.append(c);
   return svg;
 }
 
@@ -461,16 +476,22 @@ class Picker {
     }
     fields.append(this.date, this.time);
 
+    const go = (key: PresetKey) => () => {
+      const m = handlers.preset(key);
+      if (typeof m === 'string') return this.say(m);
+      this.fill();
+      this.say(describe(m, this.z.zone()));
+    };
     const presets = el('div', 't-presets');
-    for (const [key, label] of PRESETS) {
-      presets.append(
-        btn('t-preset', label, () => {
-          const m = handlers.preset(key);
-          if (typeof m === 'string') return this.say(m);
-          this.fill();
-          this.say(describe(m, this.z.zone()));
-        }),
-      );
+    for (const [key, label] of PRESETS) presets.append(btn('t-preset', label, go(key)));
+    // Sunrise, sunset, full and new moon: an icon and a word each, one row.
+    const sky = el('div', 't-sky');
+    for (const [key, word, label] of SKY_PRESETS) {
+      const b = btn('t-skybtn', '', go(key), label);
+      b.title = label;
+      const glyph = key === 'sunrise' ? icon(Sunrise, 20) : key === 'sunset' ? icon(Sunset, 20) : moonIcon(key === 'full');
+      b.append(glyph, el('span', 't-skyword', word));
+      sky.append(b);
     }
 
     // Steps, keeping the picker open: the inputs follow.
@@ -496,7 +517,7 @@ class Picker {
     const foot = el('div', 't-foot');
     foot.append(this.note, this.go);
 
-    this.root.append(handle, head, fields, presets, steps, foot);
+    this.root.append(handle, head, fields, presets, sky, steps, foot);
     bar.append(this.root);
 
     // A press anywhere else closes it (the date block toggles it itself).

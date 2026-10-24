@@ -85,8 +85,10 @@ phones (see *Mobile*). It lives inside the bar, so the bar stays while it's open
   which also sets the zone of the bar's own date and time (the readout stays UTC). The
   native inputs give phones their own wheels and keep the hotkey handler out of the way
   (it already ignores events from `input`).
-- **Presets** (`timePresets.ts`, all from astronomy-engine): Now · Equinox / solstice ·
-  Sunrise here · Sunset here (at the view's centre) · Full moon · New moon. Each is the next
+- **Presets** (`timePresets.ts`, all from astronomy-engine): Now · Equinox / solstice in
+  words, then sunrise and sunset here (at the view's centre), full and new moon as one row
+  of icons with a word each (RISE, SET, FULL, NEW; the full names for screen readers and
+  tooltips). Lucide's only moon is a crescent, so the moons are a disc and an outline. Each is the next
   one after the moment shown, so pressing again goes on to the one after. What it found
   shows on a line in the picker ("Full moon · 2026-10-26 04:12 UTC"), not a toast, which
   would sit behind it. Then −1 d · −1 h · +1 h · +1 d, which replace the plan's ±24 h

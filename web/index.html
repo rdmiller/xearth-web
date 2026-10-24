@@ -605,7 +605,13 @@
       }
       #transport .t-input[aria-invalid="true"] { border-color: var(--bad); }
       #transport .t-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-      #transport .t-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      #transport .t-steps, #transport .t-sky { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      #transport .t-skybtn {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 48px;
+        border: 1px solid var(--glass-edge); border-radius: var(--r-md); color: var(--hud-accent-soft);
+      }
+      #transport .t-skybtn:hover { border-color: var(--glass-edge-hi); background: var(--glass-hover); color: var(--hud-accent); }
+      #transport .t-skyword { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
       #transport .t-preset, #transport .t-stepbtn {
         min-height: 34px; padding: 0 8px; border: 1px solid var(--glass-edge); border-radius: var(--r-md);
         font-size: 12px; letter-spacing: 0.04em; color: var(--ink-2); text-align: center;
@@ -625,9 +631,9 @@
       }
       /* Narrow phones: the date and the time (with its seconds) each need the sheet's width. */
       @media (max-width: 400px) { #transport .t-fields { grid-template-columns: 1fr; } }
-      /* Landscape phones are short: presets three across, and no handle (a tap outside closes it). */
+      /* Landscape phones are short: the sky's presets beside the others, and no handle (a tap
+         outside closes it). */
       @media (max-height: 500px) and (min-width: 601px) {
-        #transport .t-presets { grid-template-columns: repeat(3, 1fr); }
         #transport .t-picker { padding-top: 10px; }
         #transport .t-picker .t-handle { display: none; }
       }
