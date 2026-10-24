@@ -2133,7 +2133,6 @@ const transport = new Transport(
       hotkeyContext.setSpeed(1);
       toast(formatSpeed(1));
     },
-    explainHazards: () => toast('Hazards are live data: hidden away from now'),
     resized(top, full, reserved) {
       // The status toast sits above the bar; panels above where it is with the dock up.
       document.documentElement.style.setProperty('--transport-top', `${top}px`);
@@ -3027,7 +3026,7 @@ function frame(now: number) {
     announceAlarms();
   }
   alertsWere = alerts;
-  transport.refresh({ speed: settings.speed, live: isLive(clock()), hazardsFaded: anyFaded(fade, layerOn) });
+  transport.refresh({ speed: settings.speed, live: isLive(clock()) });
 
   if (renderer.cloudMix < 1) {
     renderer.cloudMix = Math.min(1, (performance.now() - fadeStart) / FADE_MS);

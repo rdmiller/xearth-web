@@ -109,14 +109,13 @@ sideways:
 ```
        10 MIN/S
  [⏪]   [⏯]   [⏩]   OCT 24 2026      [NOW]
-                    ⚠ 14:32:07
+                    14:32:07
 ```
 
 - The step buttons drop out. Stepping on a phone happens in the picker (±1 h / ±1 day
   buttons) and by press-and-hold on ⏪ / ⏩ (below).
 - The date block takes two lines in the HUD Digits face (tabular figures, so its width
-  doesn't jitter as the seconds tick): the date, then the time, with the amber ⚠ before it
-  while hazards are hidden. In phase 4 the whole block becomes the button that opens the
+  doesn't jitter as the seconds tick): the date, then the time. In phase 4 the whole block becomes the button that opens the
   picker.
 - The rate is a small tag over ⏯ (as the dock tags its buttons: LIVE, TRACK), not on the
   date's line: "OCT 24 2026 · 10 MIN/S" didn't fit at 360 px, the commonest Android width.
@@ -223,7 +222,7 @@ today's forecast, not what happened.
 
 **What stays.** Clouds, the live-imagery fallback (already handled by `liveShown`), winds,
 buoys, the Blue Marble's month, and the ISS telemetry window. Clouds aren't a hazard, and
-without them the globe would be bare; the bar's chip (below) says they're current. Buoys
+without them the globe would be bare. Buoys
 are observations, not hazards: their dots, picks and windows (with their own 24-hour
 sparklines and timestamps) behave as they do today, whatever the clock.
 
@@ -257,9 +256,9 @@ sparklines and timestamps) behave as they do today, whatever the clock.
   feeds are small. Pausing them while faded would save a little mobile data at the cost of a
   blank return, so it's not worth it.
 
-**The chip.** While any layer is faded below 1, the bar shows an amber **HAZARDS HIDDEN**
-chip (compact on phones: a warning icon). Tapping it shows a toast: "Hazard data shows the
-present, so it's hidden away from now. Clouds are current too. NOW to go back."
+**No chip on the bar.** The time controls don't flag hidden hazards (decided after
+phase 3: it wasn't needed). The readout's `hazards` row is the one note that they're fading
+or hidden.
 
 ### Satellites far from now
 
@@ -350,7 +349,7 @@ export function fades(offsetMs: number): Record<HazardLayer, number>;  // every 
 ### 5. Wiring in `main.ts`
 
 - Construct the transport after the drawer; call `transport.refresh(...)` in `frame()` next
-  to `perfPanel.update`, passing whether any hazard is faded (for the chip).
+  to `perfPanel.update`.
 - Add `jumpTo`/`stepTime` to `hotkeyContext`.
 - Add the satellite age limit where `satelliteOverlay` and the bulk propagation run.
 - A jump of any size clears and re-requests what depends on the time: `liveShown()` already
@@ -374,7 +373,7 @@ Each is its own PR, shippable alone.
    hit-testing; readout row; toast suppression. Worth having before the bar: the `,` / `.`
    keys can already take the clock far from now today.
 3. **Transport bar** (done; UTC only until the picker's toggle). `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
-   Time button, the HAZARDS HIDDEN chip, and all of *Mobile* that applies to the bar:
+   Time button, and all of *Mobile* that applies to the bar:
    compact and landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas
    (dock included), `--transport-h` stacking.
 4. **Picker.** Date/time inputs, UTC/Local, presets, Android back button; the bottom sheet
@@ -397,9 +396,9 @@ Each is its own PR, shippable alone.
   tabular face) for every month name; `holdStep` gives an hour, then a day after 2 s.
 - **In the browser** (Playwright, pre-installed): load `?time=2027-08-02T10:07:00Z&speed=0`
   and screenshot the eclipse; click ⏩ twice and check the rate chip and URL; confirm
-  `T`/NOW returns to live and the chip clears.
+  `T`/NOW returns to live.
 - **Hazard fade in the browser:** with quakes, radar and severe on, load `?time=` 3 h ago:
-  the quake rings and radar are gone, the HAZARDS HIDDEN chip shows, and a click where a
+  the quake rings and radar are gone, the readout says so, and a click where a
   quake was picks nothing. Load 1 h ago: they're partly faded. Press NOW: they're back in
   full, and `quakes=1` was in the URL throughout.
 - **Phones in Playwright** (device emulation with `hasTouch`: iPhone SE at 320 × 568,

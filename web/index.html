@@ -515,7 +515,6 @@
       #transport .t-when { display: flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 13px; color: var(--ink-1); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
       #transport .t-day, #transport .t-clock { display: contents; }
       #transport .t-date { order: 1; }
-      #transport .t-warn { order: 2; display: none; }
       #transport .t-time { order: 3; }
       #transport .t-zone { order: 4; font-size: 11px; color: var(--ink-4); }
       #transport .t-rate {
@@ -524,11 +523,6 @@
       }
       #transport .t-rate:not(:disabled):hover { border-color: var(--glass-edge-hi); background: var(--glass-hover); }
       #transport .t-rate:disabled { color: var(--ink-3); border-color: var(--glass-rule); }
-      #transport .t-hazard {
-        display: flex; align-items: center; gap: 5px; height: 26px; margin-right: 4px; padding: 0 8px; border-radius: var(--r-sm);
-        border: 1px solid rgb(255 200 87 / 0.45); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--warn);
-      }
-      #transport .t-hazard:hover { background: rgb(255 200 87 / 0.1); }
       #transport .t-now {
         display: flex; align-items: center; justify-content: center; gap: 6px; height: 28px; min-width: 64px; padding: 0 10px; border-radius: var(--r-md);
         font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-on-accent); background: var(--hud-accent);
@@ -539,7 +533,7 @@
       /* Touch: every control at least 44 px, for a thumb. */
       @media (pointer: coarse) {
         #transport .t-btn { width: 44px; height: 44px; }
-        #transport .t-now, #transport .t-hazard { height: 44px; }
+        #transport .t-now { height: 44px; }
         #transport .t-rate { padding-block: 13px; }
       }
       /* Phones (main.ts's SMALL_SCREEN): one row edge to edge, no step buttons (hold ⏪ / ⏩), the
@@ -550,7 +544,7 @@
           max-width: none; transform: translateY(6px); gap: 6px; padding: 3px 4px;
         }
         #transport.shown { transform: none; }
-        #transport .t-step, #transport .t-sep, #transport .t-zone, #transport .t-hazard, #transport .t-rate { display: none; }
+        #transport .t-step, #transport .t-sep, #transport .t-zone, #transport .t-rate { display: none; }
         #transport .t-tag:not(:empty) {
           display: block; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
           font-size: 9px; font-weight: 600; letter-spacing: 0.06em; color: var(--hud-accent); white-space: nowrap;
@@ -561,7 +555,6 @@
         #transport .t-day, #transport .t-clock { display: flex; align-items: center; gap: 5px; max-width: 100%; }
         #transport .t-day { font-size: 10px; letter-spacing: 0.08em; color: var(--ink-3); }
         #transport .t-clock { font-size: 15px; }
-        #transport .t-warn { display: inline-flex; color: var(--warn); }
         #transport .t-now { height: 44px; min-width: 52px; padding: 0 8px; }
       }
       /* The narrowest phones (~320 px): a little tighter, so the time keeps its line. */

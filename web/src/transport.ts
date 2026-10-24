@@ -7,7 +7,7 @@
 // in the dock) keeps it on screen. Phones get a compact row: no step buttons (hold ⏪ / ⏩
 // to step instead), and the date over the time.
 
-import { createElement, FastForward, Pause, Play, Rewind, StepBack, StepForward, TriangleAlert, type IconNode } from 'lucide';
+import { createElement, FastForward, Pause, Play, Rewind, StepBack, StepForward, type IconNode } from 'lucide';
 import { shortSpeed } from './hotkeys';
 
 /** A hold on ⏪ / ⏩ turns into stepping after this long, then steps this often. */
@@ -45,8 +45,6 @@ export interface TransportHandlers {
   now(): Date;
   /** The rate chip: real time from the moment shown. */
   realTime(): void;
-  /** The hazards chip: why they're gone. */
-  explainHazards(): void;
   /**
    * The bar's footprint changed. `top`: CSS px from the bottom to its top while it's shown, else
    * 0 (for the status toast); `full`: its top with the dock fully shown, whether or not it is
@@ -59,8 +57,6 @@ export interface TransportHandlers {
 export interface TransportState {
   speed: number;
   live: boolean;
-  /** A hazard layer that's on is faded (hazardFade.ts). */
-  hazardsFaded: boolean;
 }
 
 const PIN_KEY = 'xearth.transport.pinned';
@@ -91,11 +87,9 @@ export class Transport {
   private readonly rate: HTMLButtonElement;
   /** The rate again, as a tag over ⏯ on a phone, where the chip doesn't fit. */
   private readonly tag: HTMLElement;
-  private readonly warn: HTMLElement;
-  private readonly hazard: HTMLButtonElement;
   private readonly nowBtn: HTMLButtonElement;
   private readonly nowText: HTMLElement;
-  private state: TransportState = { speed: 1, live: true, hazardsFaded: false };
+  private state: TransportState = { speed: 1, live: true };
   private pinnedOpen = false;
   private dock = { shown: 0, grip: 0, full: 0 };
   private visible = false;
@@ -142,24 +136,19 @@ export class Transport {
     this.when.setAttribute('role', 'group');
     this.date = el('span', 't-date');
     this.time = el('span', 't-time');
-    this.warn = el('span', 't-warn');
-    this.warn.append(icon(TriangleAlert, 12));
-    this.warn.hidden = true;
     this.rate = button('t-rate', 'Real time', [], () => handlers.realTime());
     const day = el('span', 't-day');
     day.append(this.date, this.rate);
     const clock = el('span', 't-clock');
-    clock.append(this.warn, this.time, el('span', 't-zone', 'UTC'));
+    clock.append(this.time, el('span', 't-zone', 'UTC'));
     this.when.append(day, clock);
 
-    this.hazard = button('t-hazard', 'Hazards hidden: their data shows now', [icon(TriangleAlert, 14), el('span', '', 'HAZARDS HIDDEN')], () => handlers.explainHazards());
-    this.hazard.hidden = true;
     this.nowText = el('span', '', 'LIVE');
     this.nowBtn = button('t-now live', 'Live: showing now', [el('span', 'dot'), this.nowText], () => {
       if (!this.state.live) handlers.run('t');
     });
 
-    root.append(back, rewind, this.play, forward, fwd, el('span', 't-sep'), this.when, el('span', 't-sep'), this.hazard, this.nowBtn);
+    root.append(back, rewind, this.play, forward, fwd, el('span', 't-sep'), this.when, el('span', 't-sep'), this.nowBtn);
     // A long press would otherwise open Android's menu over the button.
     root.addEventListener('contextmenu', (e) => e.preventDefault());
     root.addEventListener('focusin', () => this.apply());
@@ -240,10 +229,10 @@ export class Transport {
     this.apply();
   }
 
-  /** The clock's rate and whether it's live, and whether hazards are faded. Cheap to call every frame. */
+  /** The clock's rate and whether it's live. Cheap to call every frame. */
   refresh(next: TransportState) {
     const s = this.state;
-    if (s.speed === next.speed && s.live === next.live && s.hazardsFaded === next.hazardsFaded) return;
+    if (s.speed === next.speed && s.live === next.live) return;
     this.state = next;
     const paused = next.speed === 0;
     this.play.replaceChildren(paused ? this.playIcons.play : this.playIcons.pause, this.tag);
@@ -257,8 +246,6 @@ export class Transport {
     this.nowBtn.title = nowLabel;
     this.nowBtn.setAttribute('aria-label', nowLabel);
     put(this.nowText, next.live ? 'LIVE' : 'NOW');
-    this.hazard.hidden = !next.hazardsFaded;
-    this.warn.hidden = !next.hazardsFaded;
     this.apply();
     this.schedule();
   }
