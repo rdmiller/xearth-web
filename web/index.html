@@ -529,7 +529,8 @@
         display: flex; align-items: center; justify-content: center; gap: 6px; height: 28px; min-width: 64px; padding: 0 10px; border-radius: var(--r-md);
         font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-on-accent); background: var(--hud-accent);
       }
-      #transport .t-now .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+      /* Lifted to the capitals' middle: with no descenders, NOW and LIVE sit 0.125em above their line's. */
+      #transport .t-now .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; transform: translateY(-0.125em); }
       #transport .t-now.live { color: var(--ink-3); background: none; }
       #transport .t-now.live .dot { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
       /* Touch: every control at least 44 px, for a thumb. */
