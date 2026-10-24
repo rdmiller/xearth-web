@@ -208,7 +208,7 @@ smoothstep on `|simTime − now|`, in two tiers:
 
 | Tier | Layers | Fully shown within | Gone by |
 | --- | --- | --- | --- |
-| **Live** (minutes to hours old) | aurora, ionosphere, lightning, radar + IMERG, quakes, fires, storms, severe weather + MeteoAlarm, tsunami, GDACS events and US volcano alerts, smoke, ash, meteors, buoys | 30 min (`LIVE_MAX_SKEW_MS`, the same as live imagery) | 2 h |
+| **Live** (minutes to hours old) | aurora, ionosphere, lightning, radar + IMERG, quakes, fires, storms, severe weather + MeteoAlarm, tsunami, GDACS events and US volcano alerts, smoke, ash, meteors | 30 min (`LIVE_MAX_SKEW_MS`, the same as live imagery) | 2 h |
 | **Daily** (a day's product) | snow and sea ice, sea temperature, the VIIRS flood map | 12 h | 36 h |
 
 At real time a fade takes over an hour; at 1 h/s it takes about 1.5 s, which reads as a
@@ -217,8 +217,10 @@ case of hazard data that's about the future, but it still fades on the live tier
 today's forecast, not what happened.
 
 **What stays.** Clouds, the live-imagery fallback (already handled by `liveShown`), winds,
-the Blue Marble's month, and the ISS telemetry window. Clouds aren't a hazard, and without
-them the globe would be bare; the bar's chip (below) says they're current.
+buoys, the Blue Marble's month, and the ISS telemetry window. Clouds aren't a hazard, and
+without them the globe would be bare; the bar's chip (below) says they're current. Buoys
+are observations, not hazards: their dots, picks and windows (with their own 24-hour
+sparklines and timestamps) behave as they do today, whatever the clock.
 
 **What fading means, layer by layer:**
 
@@ -226,8 +228,8 @@ them the globe would be bare; the bar's chip (below) says they're current.
   flags become strengths. Each `if (uXOn > 0.5)` becomes `> 0.0`, and that layer's blend
   is multiplied by the strength. No new uniforms or textures, so the 16-texture-unit test
   still holds.
-- **Overlay canvas** (quakes, storms, events, tsunami, severe, fires, lightning, meteors,
-  buoys): each hazard group draws under `ctx.globalAlpha = fade`. Below 0.3, a layer's
+- **Overlay canvas** (quakes, storms, events, tsunami, severe, fires, lightning,
+  meteors): each hazard group draws under `ctx.globalAlpha = fade`. Below 0.3, a layer's
   labels drop out of the label placement (`overlay.ts`'s priority list), so faded symbols
   don't take label space from cities and launches.
 - **At 0** a layer is skipped entirely: no drawing, no label requests, and no hit-testing
@@ -376,7 +378,8 @@ Each is its own PR, shippable alone.
 - **Drawer test:** extend `drawer.test.ts` for the Time button.
 - **Unit, hazard fade:** `hazardFade` is 1 within 30 min and 0 beyond 2 h on the live
   tier (12 h / 36 h daily), the same for past and future offsets, and never rises as the
-  offset grows; every `HazardKey` plus ash, SST, iono and floods has a tier; the shader
+  offset grows; every `HazardKey` except `buoys`, plus ash, SST, iono and floods, has a tier, and
+  `buoys` has none; the shader
   test still passes with the strengths.
 - **Unit, mobile helpers:** `compactDate` fits the 320 px budget (character count in the
   tabular face) for every month name; `holdStep` gives an hour, then a day after 2 s.
