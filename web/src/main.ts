@@ -2436,6 +2436,8 @@ function targetAt(clientX: number, clientY: number): string | undefined {
 /** A click (a press that didn't move) opens the window of what's under it. */
 function pickAt(clientX: number, clientY: number) {
   const key = targetAt(clientX, clientY);
+  // A city's card stays until the viewer moves on: a click on anything else (or nothing) closes it.
+  if (placeCard.city && !key?.startsWith('city:')) placeCard.hide();
   if (key) select(key);
 }
 
@@ -2889,8 +2891,8 @@ async function placeCity(place: Place, find: (list: readonly WorldCity[]) => Wor
 }
 
 /** Open the place card on a place and fill in what it's like there as each part arrives. */
-function showPlace(place: Place, find: (list: readonly WorldCity[]) => WorldCity | undefined) {
-  placeCard.show(place, isLabelled(labelled, place));
+function showPlace(place: Place, find: (list: readonly WorldCity[]) => WorldCity | undefined, city = false) {
+  placeCard.show(place, isLabelled(labelled, place), city);
   getJson(forecastUrl(place.lat, place.lon))
     .then(decodeForecast)
     .catch((err) => (console.warn('place card:', err), null))
@@ -2906,10 +2908,10 @@ const namedCity = (place: Place) => (list: readonly WorldCity[]) => cityNear(lis
 /** A city or place clicked on the globe: its card (the view stays put). */
 function openCity(c: CityHit) {
   const mine = c.place ? labelled.find((p) => p.name === c.name && p.lat === c.lat && p.lon === c.lon) : undefined;
-  if (mine) return showPlace(mine, namedCity(mine));
+  if (mine) return showPlace(mine, namedCity(mine), true);
   const place: Place = { name: c.name, detail: '', lat: c.lat, lon: c.lon };
   // A baked city is its own row; a hand-picked one has the facts baked beside it.
-  showPlace(place, (list) => (c.row !== undefined ? list[c.row] : cityNear(list, c.lat, c.lon, (w) => w.revealPx === Infinity)));
+  showPlace(place, (list) => (c.row !== undefined ? list[c.row] : cityNear(list, c.lat, c.lon, (w) => w.revealPx === Infinity)), true);
 }
 
 /** A place picked in the search: go there, label it, and show what it's like there. */

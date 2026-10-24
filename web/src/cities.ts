@@ -2,6 +2,7 @@
 // Zoomed in, more fill in from Natural Earth's places (worldCities.ts), and a city's card
 // has its facts (cityFacts.ts) and Wikipedia's summary.
 
+import { distanceKm } from './locale';
 import type { WorldCityRow } from './worldCities';
 import { fromLatLon, type Vec3 } from './vec';
 
@@ -106,20 +107,13 @@ export function loadWorldCities(): Promise<readonly WorldCity[]> {
   return worldLoad;
 }
 
-/** Great-circle distance, km. */
-export const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const a = fromLatLon(lat1, lon1);
-  const b = fromLatLon(lat2, lon2);
-  return EARTH_KM * Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
-};
-
 /** The baked city nearest (lat, lon) within 25 km that `same` accepts. */
 export function cityNear(list: readonly WorldCity[], lat: number, lon: number, same: (c: WorldCity) => boolean): WorldCity | undefined {
   let best: WorldCity | undefined;
   let bestKm = NEAR_KM;
   for (const c of list) {
     if (Math.abs(c.lat - lat) > 0.5) continue;
-    const km = distanceKm(lat, lon, c.lat, c.lon);
+    const { km } = distanceKm(lat, lon, c.lat, c.lon);
     if (km < bestKm && same(c)) [best, bestKm] = [c, km];
   }
   return best;

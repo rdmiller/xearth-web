@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   aqiAlert,
+  clockMinutes,
   compass,
   conditionsLine,
+  dayProgress,
+  daylightText,
   decodeForecast,
   decodeNwsPointAlerts,
   detailLine,
@@ -15,6 +18,8 @@ import {
   sortAlerts,
   sunLine,
   titleCase,
+  uvBand,
+  weatherIcon,
   weatherWord,
 } from '../locale';
 import type { EventManifest, FireManifest, LightningManifest, Quake, StormManifest } from '../hazards';
@@ -46,6 +51,36 @@ const LONDON = {
     uv_index_max: [1.3],
   },
 };
+
+describe('the weather, drawn', () => {
+  it('picks a picture for the weather code, by day and night', () => {
+    expect(weatherIcon(0, true)).toBe('clear');
+    expect(weatherIcon(1, false)).toBe('clear-night');
+    expect(weatherIcon(2, false)).toBe('partly-night');
+    expect(weatherIcon(45)).toBe('fog');
+    expect(weatherIcon(53)).toBe('drizzle');
+    expect(weatherIcon(81)).toBe('rain');
+    expect(weatherIcon(86)).toBe('snow');
+    expect(weatherIcon(95)).toBe('thunder');
+    expect(weatherIcon(99)).toBe('hail');
+    expect(weatherIcon(1234)).toBe('cloudy');
+  });
+
+  it('finds how far through its day the sun is', () => {
+    const w = decodeForecast(LONDON)!; // up 07:36, down 17:52, UTC+1
+    expect(clockMinutes('07:36')).toBe(456);
+    expect(clockMinutes(null)).toBeNull();
+    expect(dayProgress(w, Date.parse('2026-10-22T06:36Z'))).toBe(0); // 07:36 there
+    expect(dayProgress(w, Date.parse('2026-10-22T12:15Z'))).toBeCloseTo(339 / 616, 6);
+    expect(dayProgress(w, Date.parse('2026-10-22T20:00Z'))).toBeGreaterThan(1);
+    expect(dayProgress({ ...w, sunrise: null }, 0)).toBeNull();
+  });
+
+  it('bands the UV index and reads the daylight', () => {
+    expect([1.3, 3, 7.9, 10, 11].map(uvBand)).toEqual(['low', 'moderate', 'high', 'very high', 'extreme']);
+    expect(daylightText(36988)).toBe('10 h 16 min');
+  });
+});
 
 describe('decodeForecast', () => {
   it('reads the current weather and the day', () => {

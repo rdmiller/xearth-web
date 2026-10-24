@@ -156,11 +156,53 @@ export function sunLine(w: LocalWeather): string {
   const parts: string[] = [];
   if (w.sunrise) parts.push(`Sunrise ${w.sunrise}`);
   if (w.sunset) parts.push(`Sunset ${w.sunset}`);
-  if (w.daylightS !== null) {
-    const m = Math.round(w.daylightS / 60);
-    parts.push(`${Math.floor(m / 60)} h ${m % 60} min of daylight`);
-  }
+  if (w.daylightS !== null) parts.push(`${daylightText(w.daylightS)} of daylight`);
   return parts.join(' · ');
+}
+
+/** "10 h 16 min" */
+export function daylightText(s: number): string {
+  const m = Math.round(s / 60);
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** The picture for a WMO weather code, by day or night. */
+export type WeatherIcon = 'clear' | 'clear-night' | 'partly' | 'partly-night' | 'cloudy' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'thunder' | 'hail';
+
+export function weatherIcon(code: number, isDay = true): WeatherIcon {
+  if (code === 0 || code === 1) return isDay ? 'clear' : 'clear-night';
+  if (code === 2) return isDay ? 'partly' : 'partly-night';
+  if (code === 3) return 'cloudy';
+  if (code === 45 || code === 48) return 'fog';
+  if ((code >= 51 && code <= 57) || code === 66) return 'drizzle';
+  if ((code >= 61 && code <= 65) || code === 67 || (code >= 80 && code <= 82)) return 'rain';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  if (code === 95) return 'thunder';
+  if (code === 96 || code === 99) return 'hail';
+  return 'cloudy';
+}
+
+/** Minutes after midnight of a "07:36" clock, or null. */
+export function clockMinutes(hhmm: string | null): number | null {
+  const m = hhmm?.match(/^(\d\d):(\d\d)$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/**
+ * How far through today's daylight the place is now: 0 at sunrise, 1 at sunset (below 0
+ * before, above 1 after), or null without both times (polar night, midnight sun).
+ */
+export function dayProgress(w: LocalWeather, now: number): number | null {
+  const rise = clockMinutes(w.sunrise);
+  const set = clockMinutes(w.sunset);
+  if (rise === null || set === null || set <= rise) return null;
+  const local = clockMinutes(localClock(now, w.utcOffsetS))!;
+  return (local - rise) / (set - rise);
+}
+
+/** The WHO's UV index bands. */
+export function uvBand(uv: number): 'low' | 'moderate' | 'high' | 'very high' | 'extreme' {
+  return uv < 3 ? 'low' : uv < 6 ? 'moderate' : uv < 8 ? 'high' : uv < 11 ? 'very high' : 'extreme';
 }
 
 /** The place's wall-clock time now, "14:05", from its UTC offset. */

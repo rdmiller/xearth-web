@@ -1,13 +1,49 @@
-// The card shown after going to a place from the search: its local time, weather, sunrise
-// and sunset, and any alerts there. A toast window (toasts.ts) that stays a while — it
-// closes itself after a read (held open while the pointer or focus is on it), with ×, or
-// with Escape.
+// The card shown after going to a place from the search, or clicking a city: its local time,
+// weather, sunrise and sunset, a city's facts, and any alerts there. A toast window
+// (toasts.ts) that stays a while — it closes itself after a read (held open while the pointer
+// or focus is on it), with ×, or with Escape. A city's card has no timer: it stays until the
+// viewer moves on to something else.
 
-import { createElement, Sunrise, type IconNode } from 'lucide';
+import {
+  CloudDrizzle,
+  CloudFog,
+  CloudHail,
+  CloudLightning,
+  CloudMoon,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  Cloudy,
+  createElement,
+  Droplets,
+  Moon,
+  Navigation2,
+  Sun,
+  Sunrise,
+  Sunset,
+  Wind,
+  type IconNode,
+} from 'lucide';
 import type { CityAbout } from './cities';
 import { IMPACT_COLOR, IMPACT_WORD } from './hazards';
 import { formatCoordinates, type Place } from './places';
-import { conditionsLine, detailLine, localClock, offsetLabel, sortAlerts, sunLine, type LocalAlert, type LocalWeather } from './locale';
+import {
+  compass,
+  dayProgress,
+  daylightText,
+  localClock,
+  offsetLabel,
+  sortAlerts,
+  speed,
+  sunLine,
+  temp,
+  uvBand,
+  weatherIcon,
+  weatherWord,
+  type LocalAlert,
+  type LocalWeather,
+  type WeatherIcon,
+} from './locale';
 import type { Toast } from './toasts';
 
 const SHOW_MS = 20_000;
@@ -73,11 +109,127 @@ export function impactMeter(level: number): SVGSVGElement {
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = '') =>
   Object.assign(document.createElement(tag), { className, textContent: text });
 
+// ---- the weather, drawn ------------------------------------------------------------------
+
+const WEATHER_ICONS: Record<WeatherIcon, IconNode> = {
+  clear: Sun,
+  'clear-night': Moon,
+  partly: CloudSun,
+  'partly-night': CloudMoon,
+  cloudy: Cloudy,
+  fog: CloudFog,
+  drizzle: CloudDrizzle,
+  rain: CloudRain,
+  snow: CloudSnow,
+  thunder: CloudLightning,
+  hail: CloudHail,
+};
+
+/** The weather now: its picture, the temperature, what it's like, and the day's high and low. */
+function nowBlock(w: LocalWeather, imperial: boolean): HTMLElement {
+  const kind = weatherIcon(w.code, w.isDay);
+  const box = el('div', `now wx-${kind}`);
+  const pic = icon(WEATHER_ICONS[kind], 40);
+  pic.setAttribute('stroke-width', '1.4');
+  const main = el('div', 'now-main');
+  main.append(el('span', 'now-temp', temp(w.tempC, imperial)), el('span', 'now-word', weatherWord(w.code, w.isDay)));
+  const side = el('div', 'now-side');
+  if (Math.abs(w.feelsC - w.tempC) >= 2) side.append(el('span', '', `Feels ${temp(w.feelsC, imperial)}`));
+  if (w.hiC !== null && w.loC !== null) {
+    const hilo = el('span', 'hilo');
+    hilo.append(el('b', 'hi', `↑${temp(w.hiC, imperial).slice(0, -1)}`), el('b', 'lo', `↓${temp(w.loC, imperial).slice(0, -1)}`));
+    hilo.title = 'Today’s high and low';
+    side.append(hilo);
+  }
+  box.append(pic, main, side);
+  return box;
+}
+
+/** Wind (an arrow the way it blows), humidity and the day's peak UV, as chips. */
+function weatherChips(w: LocalWeather, imperial: boolean): HTMLElement {
+  const row = el('div', 'chips');
+  const chip = (node: IconNode, text: string, title: string, className = '') => {
+    const c = el('span', `chip ${className}`);
+    c.title = title;
+    const svg = icon(node, 13);
+    c.append(svg, document.createTextNode(text));
+    row.append(c);
+    return svg;
+  };
+  if (Number.isFinite(w.windKmh)) {
+    const gust = Number.isFinite(w.gustKmh) && w.gustKmh >= w.windKmh + 10 ? `, gusts ${speed(w.gustKmh, imperial).split(' ')[0]}` : '';
+    if (w.windKmh < 2) chip(Wind, 'Calm', 'Wind');
+    else if (!Number.isFinite(w.windDir)) chip(Wind, `${speed(w.windKmh, imperial)}${gust}`, 'Wind');
+    else {
+      // Reported as where it blows from; the arrow points where it's going.
+      const arrow = chip(Navigation2, `${compass(w.windDir)} ${speed(w.windKmh, imperial)}${gust}`, `Wind from the ${compass(w.windDir)}`, 'wind');
+      arrow.style.transform = `rotate(${w.windDir + 180}deg)`;
+    }
+  }
+  if (Number.isFinite(w.humidity)) chip(Droplets, `${Math.round(w.humidity)}%`, 'Humidity', 'humid');
+  if (w.uv !== null) {
+    const band = uvBand(w.uv);
+    chip(Sun, `UV ${Math.round(w.uv)} ${band}`, 'UV index, today’s peak', `uv uv-${band.replace(' ', '-')}`);
+  }
+  return row;
+}
+
+/**
+ * The sun's day as an arc over the horizon: its path from sunrise to sunset, the part already
+ * travelled lit, and the sun where it is now. Null on a day with no sunrise or sunset.
+ */
+function sunArc(w: LocalWeather, now: number): HTMLElement | null {
+  const t = dayProgress(w, now);
+  if (t === null || !w.sunrise || !w.sunset) return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const [W, X0, X1, BASE, TOP] = [240, 12, 228, 46, 8];
+  const at = (s: number) => [X0 + (X1 - X0) * s, BASE - (BASE - TOP) * Math.sin(Math.PI * s)];
+  const path = (to: number) => {
+    const pts = Array.from({ length: 33 }, (_, i) => at((to * i) / 32).map((v) => v.toFixed(1)).join(' '));
+    return `M ${pts.join(' L ')}`;
+  };
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} 52`);
+  svg.setAttribute('class', 'arc');
+  svg.setAttribute('role', 'img');
+  const where = t < 0 ? 'not yet risen' : t > 1 ? 'set' : `${Math.round(t * 100)}% through the day`;
+  svg.setAttribute('aria-label', `Sun ${where}: rises ${w.sunrise}, sets ${w.sunset}`);
+  const add = (tag: string, attrs: Record<string, string | number>) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+    svg.append(e);
+  };
+  add('line', { x1: 0, y1: BASE, x2: W, y2: BASE, class: 'horizon' });
+  add('path', { d: path(1), class: 'track' });
+  if (t > 0) add('path', { d: path(Math.min(t, 1)), class: 'done' });
+  if (t >= 0 && t <= 1) {
+    const [x, y] = at(t);
+    add('circle', { cx: x, cy: y, r: 9, class: 'glow' });
+    add('circle', { cx: x, cy: y, r: 4.5, class: 'disc' });
+  }
+  const times = el('div', 'sun-times');
+  const end = (node: IconNode, text: string, title: string) => {
+    const s = el('span', 'sun-end');
+    s.title = title;
+    s.append(icon(node, 14), document.createTextNode(text));
+    return s;
+  };
+  times.append(
+    end(Sunrise, w.sunrise, 'Sunrise'),
+    el('span', 'daylight', w.daylightS !== null ? `${daylightText(w.daylightS)} of daylight` : ''),
+    end(Sunset, w.sunset, 'Sunset'),
+  );
+  const box = el('div', 'sunarc');
+  box.append(svg, times);
+  return box;
+}
+
 export class PlaceCard {
   private place: Place | undefined;
   private report: PlaceReport = {};
   private timer: ReturnType<typeof setTimeout> | undefined;
   private holdMs = SHOW_MS;
+  private isCity = false;
   private held = false;
   private readonly body: HTMLElement;
   private readonly sub: HTMLElement;
@@ -125,9 +277,15 @@ export class PlaceCard {
     return this.toast.shown;
   }
 
-  /** Open for a place while its report loads. */
-  show(place: Place, labelled: boolean) {
+  /** A city's card: it stays until the viewer moves on (another click, a search, × or Esc). */
+  get city() {
+    return this.isCity && this.shown;
+  }
+
+  /** Open for a place while its report loads (`city`: a city clicked on the globe). */
+  show(place: Place, labelled: boolean, city = false) {
     this.place = place;
+    this.isCity = city;
     this.toast.setTitle(place.name);
     this.sub.textContent = place.detail || formatCoordinates(place.lat, place.lon);
     this.unlabelButton.hidden = !labelled;
@@ -142,6 +300,8 @@ export class PlaceCard {
   fill(place: Place, part: PlaceReport, imperial: boolean, now = Date.now()) {
     if (place !== this.place || !this.shown) return;
     const report = (this.report = { ...this.report, ...part });
+    // A searched place that turns out to be a city stays like a clicked one.
+    if (report.facts) this.isCity = true;
     const w = report.weather;
     const where = report.facts?.where || place.detail || formatCoordinates(place.lat, place.lon);
     this.sub.textContent = w ? `${where} · ${localClock(now, w.utcOffsetS)} local (${w.tzAbbr && !/^GMT[+-]/.test(w.tzAbbr) ? w.tzAbbr : offsetLabel(w.utcOffsetS)})` : where;
@@ -149,11 +309,13 @@ export class PlaceCard {
     const rows: HTMLElement[] = [];
     if (report.facts?.lines.length) rows.push(el('p', 'facts', report.facts.lines.join(' · ')));
     if (w) {
-      rows.push(el('p', 'conditions', conditionsLine(w, imperial)));
-      const detail = detailLine(w, imperial);
-      if (detail) rows.push(el('p', 'detail', detail));
+      rows.push(nowBlock(w, imperial));
+      const chips = weatherChips(w, imperial);
+      if (chips.childElementCount) rows.push(chips);
+      const arc = sunArc(w, now);
       const sun = sunLine(w);
-      if (sun) {
+      if (arc) rows.push(arc);
+      else if (sun) {
         const p = el('p', 'sun');
         p.append(icon(Sunrise), document.createTextNode(sun));
         rows.push(p);
@@ -212,10 +374,11 @@ export class PlaceCard {
     this.toast.show(false);
     this.place = undefined;
     this.held = false;
+    this.isCity = false;
   }
 
   private arm() {
     clearTimeout(this.timer);
-    if (!this.held && this.shown) this.timer = setTimeout(() => this.hide(), this.holdMs);
+    if (!this.held && !this.isCity && this.shown) this.timer = setTimeout(() => this.hide(), this.holdMs);
   }
 }

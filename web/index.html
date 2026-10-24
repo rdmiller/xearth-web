@@ -322,7 +322,6 @@
       /* Place card: after a search, the weather and alerts there; a toast window in its label's pink. */
       #place-card p { margin: 0; }
       #place-card .sub { margin: 0 0 8px; font-size: 12px; color: var(--ink-3); }
-      #place-card .conditions { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: var(--ink-1); }
       #place-card .detail, #place-card .loading, #place-card .no-alerts { margin-top: 3px; font-size: 12px; color: var(--ink-3); }
       #place-card .sun { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #ffe2a0; }
       #place-card .sun svg { flex: none; color: #ffc94d; }
@@ -347,6 +346,47 @@
         color: var(--hud-accent); background: none; border: 1px solid rgb(var(--hud-cyan-rgb) / 0.45); border-radius: var(--r-md); cursor: pointer; }
       #place-card .buoy button:hover { background: rgb(var(--hud-cyan-rgb) / 0.12); }
       #place-card .facts { margin: -4px 0 8px; font-size: 12px; color: var(--ink-2); }
+      /* The weather now: picture, temperature and word, feels-like and high/low on the right. */
+      #place-card .now { display: flex; align-items: center; gap: 10px; }
+      #place-card .now > svg { flex: none; color: var(--ink-2); }
+      #place-card .now.wx-clear > svg, #place-card .now.wx-partly > svg { color: #ffc94d; }
+      #place-card .now.wx-clear-night > svg, #place-card .now.wx-partly-night > svg { color: #cfe0ff; }
+      #place-card .now.wx-drizzle > svg, #place-card .now.wx-rain > svg { color: #6cc4ff; }
+      #place-card .now.wx-snow > svg, #place-card .now.wx-hail > svg { color: #e8f4ff; }
+      #place-card .now.wx-thunder > svg { color: var(--warn); }
+      #place-card .now.wx-fog > svg { color: var(--ink-3); }
+      #place-card .now-main { display: grid; min-width: 0; }
+      #place-card .now-temp { font-size: 26px; font-weight: 600; line-height: 1.05; color: var(--ink-1); }
+      #place-card .now-word { font-size: 12px; letter-spacing: 0.03em; color: var(--ink-2); }
+      #place-card .now-side { display: grid; justify-items: end; gap: 2px; margin-left: auto; font-size: 12px; color: var(--ink-3); }
+      #place-card .hilo { display: flex; gap: 8px; }
+      #place-card .hilo b { font-weight: 600; }
+      #place-card .hilo .hi { color: #ffb37a; }
+      #place-card .hilo .lo { color: #8fd0ff; }
+      /* Wind, humidity, UV. */
+      #place-card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+      #place-card .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: var(--r-md);
+        font-size: 11px; color: var(--ink-2); background: rgba(255, 255, 255, 0.05); }
+      #place-card .chip svg { flex: none; color: var(--ink-3); }
+      #place-card .chip.wind svg { color: var(--hud-accent); }
+      #place-card .chip.humid svg { color: #6cc4ff; }
+      #place-card .chip.uv-low svg { color: var(--ok); }
+      #place-card .chip.uv-moderate svg { color: #ffe066; }
+      #place-card .chip.uv-high svg { color: #ff9f43; }
+      #place-card .chip.uv-very-high svg { color: var(--bad); }
+      #place-card .chip.uv-extreme svg { color: #c77dff; }
+      /* The sun's day: its arc over the horizon, the travelled part lit, the sun where it is now. */
+      #place-card .sunarc { margin-top: 8px; }
+      #place-card .sunarc .arc { display: block; width: 100%; height: auto; overflow: visible; }
+      #place-card .arc .horizon { stroke: var(--ink-4); stroke-width: 1; }
+      #place-card .arc .track { fill: none; stroke: rgba(255, 201, 77, 0.35); stroke-width: 1.2; stroke-dasharray: 2 3; }
+      #place-card .arc .done { fill: none; stroke: #ffc94d; stroke-width: 1.8; }
+      #place-card .arc .glow { fill: rgba(255, 201, 77, 0.22); }
+      #place-card .arc .disc { fill: #ffd76a; }
+      #place-card .sun-times { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; font-size: 12px; color: #ffe2a0; }
+      #place-card .sun-end { display: inline-flex; align-items: center; gap: 5px; }
+      #place-card .sun-end svg { color: #ffc94d; }
+      #place-card .daylight { font-size: 11px; color: var(--ink-3); }
       #place-card .about { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--ink-3);
         display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; line-clamp: 5; overflow: hidden; }
       #place-card .about strong { font-weight: 600; color: var(--ink-2); }
