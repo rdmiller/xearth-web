@@ -102,6 +102,27 @@ export function utc(t: number | string): string {
   return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })} ${d.toISOString().slice(11, 16)} UTC`;
 }
 
+/**
+ * A link from a feed, if it's one to follow: https, no user name or password. Feed strings come
+ * from latest.json files that a shared link's *src settings can point at any host, so nothing
+ * else (javascript:, data:, a relative path) becomes an href.
+ */
+export function safeHref(href: string | null | undefined): string | undefined {
+  if (!href) return undefined;
+  try {
+    const url = new URL(href);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A pick's link to a feed's own page, or undefined when the feed's URL isn't safeHref's. */
+export function feedLink(href: string | null | undefined, text: string): PickDetail['link'] {
+  const safe = safeHref(href);
+  return safe ? { href: safe, text } : undefined;
+}
+
 const sinceIso = (iso: string | null | undefined, now: number) => (iso && !Number.isNaN(Date.parse(iso)) ? now - Date.parse(iso) : undefined);
 
 /** "92 min" for low orbits, "11.97 h" for navigation, "23.93 h" for geostationary. */
@@ -248,7 +269,7 @@ export function eventInfo(e: GdacsEvent, now: number): PickDetail {
     status: level ? { text: e.alert.toUpperCase(), tone: level >= 3 ? 'bad' : level === 2 ? 'warn' : 'ok' } : undefined,
     tiles,
     notes: age !== undefined ? [`Began ${ago(age)}`] : [],
-    link: e.url ? { href: e.url, text: 'GDACS' } : undefined,
+    link: feedLink(e.url, 'GDACS'),
   };
 }
 
@@ -266,7 +287,7 @@ export function tsunamiInfo(b: TsunamiBulletin, now: number): PickDetail {
     status: age !== undefined ? { text: ago(age), tone: alert ? 'bad' : 'info' } : undefined,
     tiles,
     notes: [b.region, ...(b.note ? [clip(b.note, 160)] : []), ...(b.issued ? [`Issued ${utc(b.issued)}`] : [])],
-    link: { href: b.bulletin ?? 'https://www.tsunami.gov/', text: b.bulletin ? 'Bulletin' : 'tsunami.gov' },
+    link: feedLink(b.bulletin, 'Bulletin') ?? { href: 'https://www.tsunami.gov/', text: 'tsunami.gov' },
   };
 }
 

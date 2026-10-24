@@ -77,6 +77,12 @@ describe('MeteoAlarm warnings', () => {
     expect(alarmInfo(m, 'nowhere', NOW, undefined)).toBeUndefined();
   });
 
+  it('links to MeteoAlarm instead of a warning page that is not https', () => {
+    const hostile = structuredClone(m);
+    for (const w of hostile.warnings) w.web = 'javascript:alert(document.domain)';
+    expect(alarmInfo(hostile, HARZ, NOW, undefined)!.link).toEqual({ href: 'https://meteoalarm.org/', text: 'MeteoAlarm' });
+  });
+
   it('labels and announces red warnings, once', () => {
     const reds = labelledAlarms(m, NOW);
     expect(reds).toHaveLength(1);

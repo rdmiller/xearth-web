@@ -11,7 +11,7 @@
 // numbers can tick over every second.
 
 import { el, label, put } from './issView';
-import type { PickDetail } from './picks';
+import { safeHref, type PickDetail } from './picks';
 import type { Toast } from './toasts';
 
 const fmtLat = (v: number) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'N' : 'S'}`;
@@ -90,9 +90,11 @@ export class PickPanelView {
     this.follow.hidden = !d.followable;
     this.follow.setAttribute('aria-pressed', String(following));
     put(this.follow, following ? 'Stop following' : 'Follow');
-    this.link.hidden = !d.link;
-    if (d.link) {
-      if (this.link.getAttribute('href') !== d.link.href) this.link.href = d.link.href;
+    // Every pick's link passes the same https check here, whichever feed built it.
+    const href = safeHref(d.link?.href);
+    this.link.hidden = !href;
+    if (d.link && href) {
+      if (this.link.getAttribute('href') !== href) this.link.href = href;
       put(this.link, `${d.link.text} ↗`);
     }
   }

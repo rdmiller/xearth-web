@@ -5,7 +5,7 @@
 // and red. Decoding and styling only; drawing is in overlay.ts.
 
 import type { LocalAlert } from './locale';
-import { inPolygon, utc, type PickDetail } from './picks';
+import { feedLink, inPolygon, utc, type PickDetail } from './picks';
 import type { Polygon } from './severe';
 import type { ToastTone } from './toasts';
 import { clip } from './tsunami';
@@ -184,7 +184,7 @@ export function alarmInfo(m: AlarmManifest, key: string, now: number, centre: [n
     status: { text: `${LEVEL_NAME[top.level].toUpperCase()} · ${started(top, now) ? 'IN FORCE' : 'TO COME'}`, tone: LEVEL_TONE[top.level] },
     tiles,
     notes,
-    link: top.web ? { href: top.web, text: top.sender ?? 'Warning' } : { href: 'https://meteoalarm.org/', text: 'MeteoAlarm' },
+    link: feedLink(top.web, top.sender ?? 'Warning') ?? { href: 'https://meteoalarm.org/', text: 'MeteoAlarm' },
   };
 }
 

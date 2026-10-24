@@ -66,7 +66,8 @@ def parse_feed(xml: str, center: str) -> list[dict]:
         issued = parse_time((e.findtext("a:updated", namespaces=NS) or "").replace("Z", ""))
         mag = re.match(r"\s*([\d.]+)\s*\(?(\w*)\)?", _field(summary, "Preliminary Magnitude"))
         links = {l.get("title", ""): l.get("href", "") for l in e.findall("a:link", NS)}
-        bulletin = re.search(r'href="([^"]+\.txt)"', summary)
+        # https only: the web app makes it a link (as MeteoAlarm's warning pages).
+        bulletin = re.search(r'href="(https://[^"]+\.txt)"', summary)
         note = re.sub(r"^\*\s*", "", _field(summary, "Note")).strip()
         out.append(
             {

@@ -4,6 +4,7 @@ import { launchState, type Launch } from '../launches';
 import { defaults, parseSettings, toQuery } from '../params';
 import {
   eventInfo,
+  feedLink,
   formatPeriod,
   inPolygon,
   launchDetail,
@@ -11,11 +12,14 @@ import {
   parsePick,
   pickKey,
   quakeDetail,
+  safeHref,
   satDetail,
   stormInfo,
+  tsunamiInfo,
   warningInfo,
 } from '../picks';
 import type { SevereWarning } from '../severe';
+import type { TsunamiBulletin } from '../tsunami';
 
 const NOW = Date.parse('2026-10-23T12:00:00Z');
 
@@ -184,5 +188,53 @@ describe('details', () => {
     expect(d.tiles[0]).toEqual({ label: 'Clock', value: 'T−02:00:00' });
     expect(d.notes[0]).toBe('SpaceX · SLC-4E');
     expect(d.followable).toBe(true);
+  });
+});
+
+describe('links from feeds', () => {
+  it('passes https links and nothing else', () => {
+    expect(safeHref('https://www.gdacs.org/report.aspx?eventid=1023&eventtype=WF')).toBe('https://www.gdacs.org/report.aspx?eventid=1023&eventtype=WF');
+    expect(safeHref('  https://dwd.de/warnungen')).toBe('https://dwd.de/warnungen');
+    for (const bad of [
+      'javascript:alert(1)',
+      ' JavaScript:alert(1)',
+      'java\tscript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'http://www.weather.bg',
+      'https://user:pass@example.com/',
+      '//evil.example/x',
+      '/relative/path',
+      'not a url',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(safeHref(bad), String(bad)).toBeUndefined();
+    }
+    expect(feedLink('javascript:alert(1)', 'GDACS')).toBeUndefined();
+    expect(feedLink('https://www.tsunami.gov/x.txt', 'Bulletin')).toEqual({ href: 'https://www.tsunami.gov/x.txt', text: 'Bulletin' });
+  });
+
+  it('drops a GDACS event link that is not https', () => {
+    const e: GdacsEvent = { id: 'WF1', type: 'WF', name: 'X', country: 'X', alert: 'Green', pos: [0, 0], from: null, to: null, url: 'javascript:alert(1)' };
+    expect(eventInfo(e, NOW).link).toBeUndefined();
+  });
+
+  it('falls back to tsunami.gov for a bulletin link that is not https', () => {
+    const b: TsunamiBulletin = {
+      id: 'PTWC-1',
+      center: 'PTWC',
+      category: 'warning',
+      region: 'VANUATU',
+      lat: -15,
+      lon: 167,
+      magnitude: 7.5,
+      magnitudeType: 'Mw',
+      issued: '2026-10-23T11:00:00Z',
+      note: null,
+      bulletin: 'https://www.tsunami.gov/events/PHEB/2026/10/20/26293000/1/WEGM42/WEGM42.txt',
+    };
+    expect(tsunamiInfo(b, NOW).link).toEqual({ href: b.bulletin, text: 'Bulletin' });
+    expect(tsunamiInfo({ ...b, bulletin: 'javascript:alert(1)' }, NOW).link).toEqual({ href: 'https://www.tsunami.gov/', text: 'tsunami.gov' });
   });
 });

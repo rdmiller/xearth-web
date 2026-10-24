@@ -11,7 +11,7 @@
 // Volcanoes", "Cascade Range") with no number, which aren't places and aren't drawn.
 
 import type { EventOverlay } from './overlay';
-import type { PickDetail } from './picks';
+import { feedLink, type PickDetail } from './picks';
 import type { ToastTone } from './toasts';
 import { US_VOLCANOES, type UsVolcanoRow } from './usVolcanoes';
 import { fromLatLon } from './vec';
@@ -205,6 +205,6 @@ export function volcanoInfo(v: UsVolcano, section?: NoticeSection | null): PickD
     status: rank >= 0 ? { text: `${v.hans.alert_level.toUpperCase()} · ${v.hans.color_code.toUpperCase()}`, tone: TONE[rank] } : undefined,
     tiles,
     notes,
-    link: /^https:\/\//.test(v.hans.notice_url) ? { href: v.hans.notice_url, text: 'USGS notice' } : undefined,
+    link: feedLink(v.hans.notice_url, 'USGS notice'),
   };
 }

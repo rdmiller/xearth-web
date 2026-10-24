@@ -25,6 +25,14 @@ def test_parses_epicentre_category_magnitude_and_note():
     assert b["cap"].endswith("PAAQCAP.xml")
 
 
+def test_bulletin_link_is_https_only():
+    for href in ("javascript:alert(1)//WEAK53.txt", "http://www.tsunami.gov/WEAK53.txt"):
+        xml = NTWC.replace("https://www.tsunami.gov/events/PAAQ/2026/10/20/tn7cbt/1/WEAK53/WEAK53.txt", href)
+        assert href in xml
+        [b] = tsunami.parse_feed(xml, "NTWC")
+        assert b["bulletin"] is None
+
+
 def test_ptwc_uppercase_titles_and_no_note():
     [b] = tsunami.parse_feed(PTWC, "PTWC")
     assert (b["center"], b["region"], b["magnitude"], b["magnitudeType"]) == ("PTWC", "VANUATU", 6.6, "Mwp")
