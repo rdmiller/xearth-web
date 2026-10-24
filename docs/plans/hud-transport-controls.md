@@ -107,20 +107,25 @@ small.
 sideways:
 
 ```
- [⏪] [⏯] [⏩]   OCT 24 2026        [NOW]
-                14:32:07 · 10 MIN/S
+       10 MIN/S
+ [⏪]   [⏯]   [⏩]   OCT 24 2026      [NOW]
+                    ⚠ 14:32:07
 ```
 
 - The step buttons drop out. Stepping on a phone happens in the picker (±1 h / ±1 day
   buttons) and by press-and-hold on ⏪ / ⏩ (below).
 - The date block takes two lines in the HUD Digits face (tabular figures, so its width
-  doesn't jitter as the seconds tick), with the rate after the time. The whole block is the
-  button that opens the picker.
-- Width budget at 320 px (the narrowest phones): 3 × 44 px buttons, a 52 px NOW, 4 × 6 px
-  gaps and 2 × 12 px gutters leave about 88 px for the date block. "14:32:07" at 13 px fits.
-- **Landscape phone** (`max-height: 500px`): the same single row, the date on one line
-  (`OCT 24 14:32:07 · 10 MIN/S`). There's little height, so the bar and dock stack as
-  tightly as they can, with the toast column given what's left.
+  doesn't jitter as the seconds tick): the date, then the time, with the amber ⚠ before it
+  while hazards are hidden. In phase 4 the whole block becomes the button that opens the
+  picker.
+- The rate is a small tag over ⏯ (as the dock tags its buttons: LIVE, TRACK), not on the
+  date's line: "OCT 24 2026 · 10 MIN/S" didn't fit at 360 px, the commonest Android width.
+  At real time there's no tag.
+- Width budget at 320 px (the narrowest phones): 3 × 44 px buttons and NOW leave about 80 px
+  for the date block; below 340 px the gaps tighten and the time drops to 14 px to fit.
+- **Landscape phone** (`max-height: 500px`): the same single row, the date on one line. The
+  dock now takes its phone layout (one row scrolling sideways) here too: wrapped, it was
+  286 px of a 343 px screen, and the bar stacked on it went off the top.
 
 **Touch targets.** Every control is at least 44 × 44 px (Apple's minimum; Android asks for
 48 dp, and 44 CSS px is about that on most phones), with at least 6 px between neighbours.
@@ -182,9 +187,9 @@ bar instead of a popover:
 - Local time is the default on phones (the native pickers are local-time dialogs); the
   UTC/Local toggle is still there, remembered per viewer.
 - Closes on Go, Escape, a tap outside, a swipe down on its handle, and Android's back
-  button, which gets one more step in `main.ts`'s `backButton` chain: picker first, then the
-  bar (when it's only showing because it was pinned), then the existing search → satellite
-  tree → help → minimise.
+  button, which gets more steps in `main.ts`'s `backButton` chain: the picker first, then the
+  existing search → satellite tree → help, then the bar (when it's pinned on screen), then
+  minimise. (The bar comes after help, not before search: back closes what's on top first.)
 
 **Performance on phones.** In `.lite` mode (slow GPUs) the bar drops its backdrop blur like
 every other `.glass`. The date text updates only when the shown text changes: once a second
@@ -368,7 +373,7 @@ Each is its own PR, shippable alone.
 2. **Hazard fade** (done). `hazardFade.ts` + tests; shader strengths; overlay alpha, labels and
    hit-testing; readout row; toast suppression. Worth having before the bar: the `,` / `.`
    keys can already take the clock far from now today.
-3. **Transport bar.** `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
+3. **Transport bar** (done; UTC only until the picker's toggle). `transport.ts`, markup, CSS, reveal-with-dock behaviour, the dock's
    Time button, the HAZARDS HIDDEN chip, and all of *Mobile* that applies to the bar:
    compact and landscape layouts, 44 px targets, touch reveal, press-and-hold, safe areas
    (dock included), `--transport-h` stacking.
