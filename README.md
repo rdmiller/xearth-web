@@ -600,7 +600,7 @@ web/        Vite + TypeScript + WebGL2 app
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
             CelesTrak GP → satellites/latest.json (xearth_clouds.satellites)
-.github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages
+.github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages (and Cloudflare)
 ```
 
 ## Running locally
@@ -664,8 +664,9 @@ pnpm android:run                       # build, install and launch on a device/e
 
 - The bundle has no pipeline beside it, so every layer folder and the NASA textures come
   from `VITE_DATA_BASE`; an Android build without it stops with an error. The server must
-  send `Access-Control-Allow-Origin` on the data: GitHub Pages does, and so does the
-  Docker nginx (also on 404s, so a missing layer reads as missing, not as a CORS failure).
+  send `Access-Control-Allow-Origin` on the data: GitHub Pages does, Cloudflare does (from
+  `public/_headers`), and so does the Docker nginx (also on 404s, so a missing layer reads as
+  missing, not as a CORS failure).
 - Gradle needs JDK 21 (Android Studio's bundled one works) and an Android SDK
   (`android/local.properties`: `sdk.dir=…`, forward slashes on Windows).
 - Android's back button closes the search, the satellite panel, then help, then minimises.
@@ -700,6 +701,37 @@ cd .. && pnpm twa:assetlinks -- --fingerprint AA:BB:…            # public/.wel
 - Checked: a manifest from this script builds and signs with Bubblewrap 1.27 (minSdk 24,
   which androidbrowserhelper 2.7 needs) and launches into Chrome on the emulator. Loading the
   real site needs it deployed over https.
+
+## Hosting on Cloudflare
+
+The deploy workflow also publishes each build to Cloudflare Workers as static assets (free
+plan: asset requests are free and unlimited), once the repo has two secrets. GitHub Actions
+still runs the hourly pipeline; Cloudflare only serves the result.
+
+1. In the Cloudflare dashboard, **My Profile → API Tokens → Create Token**, template
+   **Edit Cloudflare Workers**, scoped to your account. Copy the token, and the **Account ID**
+   (Workers & Pages overview, right-hand column).
+2. Add them to the repo:
+   ```sh
+   gh secret set CLOUDFLARE_API_TOKEN      # paste the token
+   gh secret set CLOUDFLARE_ACCOUNT_ID     # paste the account ID
+   ```
+3. Run the workflow (`gh workflow run deploy.yml`, or push to main). The `cloudflare` job
+   unpacks the Pages artifact and runs `wrangler deploy` in `web/` (`web/wrangler.jsonc`); the
+   site is at `https://xearth-web.<your-subdomain>.workers.dev`. A custom domain is added under
+   the Worker's **Settings → Domains & Routes**.
+
+- **Headers:** `public/_headers` mirrors the nginx config: CORS on every layer folder,
+  textures and `assetlinks.json`; hashed assets immutable for a year, cloud maps for a week,
+  textures for 30 days. Everything else keeps Cloudflare's default, revalidated each load.
+- **Hourly deploys:** Wrangler uploads only files whose hashes changed, so a run sends the new
+  layer data (a few MB), not the whole site. Workers deploys have no monthly cap, unlike
+  Pages' 500 Git builds.
+- **Without the secrets** the job's steps are skipped and GitHub Pages carries on alone.
+- A manual deploy from a local build: `cd web && pnpm build && npx wrangler@4 deploy`
+  (`npx wrangler@4 login` first).
+- **Android:** to load data from Cloudflare, point `VITE_DATA_BASE` in `web/.env.android` at
+  the Worker's URL.
 
 ## Self-hosting with Docker
 

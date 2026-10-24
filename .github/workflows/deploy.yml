@@ -1,6 +1,7 @@
-# Build the site with a fresh cloud map and publish it to GitHub Pages — on
-# every push to main and once an hour. GMGSI files land in NOAA's bucket about
-# 35–45 minutes after the hour, so the hourly run is scheduled at :50.
+# Build the site with a fresh cloud map and publish it to GitHub Pages, and to
+# Cloudflare once its secrets are set — on every push to main and once an hour.
+# GMGSI files land in NOAA's bucket about 35–45 minutes after the hour, so the
+# hourly run is scheduled at :50.
 name: Deploy
 
 on:
@@ -145,3 +146,31 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # The same build on Cloudflare (Workers static assets; web/wrangler.jsonc). Skipped until
+  # the repo has the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets. Wrangler uploads
+  # only the files whose hashes changed, so an hourly run sends the new layer data, not 60 MB.
+  cloudflare:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      # The Pages artifact is web/dist as one tar.
+      - uses: actions/download-artifact@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          name: github-pages
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: mkdir -p web/dist && tar -xf artifact.tar -C web/dist
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 24
+      - name: Deploy to Cloudflare
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4 deploy
+        working-directory: web

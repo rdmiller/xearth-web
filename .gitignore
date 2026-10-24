@@ -18,6 +18,8 @@ web/public/winds/
 web/public/meteors/
 web/public/buoys/
 *.part
+# Wrangler's local state (Cloudflare deploys)
+.wrangler/
 __pycache__/
 *.egg-info/
 .pytest_cache/

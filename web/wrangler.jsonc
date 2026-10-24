@@ -1,0 +1,11 @@
+// Cloudflare Workers, static assets only: the built site (pnpm build → dist), served as is.
+// The deploy workflow runs `wrangler deploy` here after each build; headers come from
+// public/_headers. Without a route, it's served at https://xearth-web.<subdomain>.workers.dev.
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "xearth-web",
+  "compatibility_date": "2026-10-23",
+  "assets": {
+    "directory": "./dist"
+  }
+}

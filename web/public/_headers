@@ -1,0 +1,55 @@
+# Response headers on Cloudflare (Workers static assets), the same as web/nginx.conf.
+# Parsed by Cloudflare, not served. A request gets the headers of every rule it matches,
+# so each Cache-Control is set by one rule only; anything not given one keeps Cloudflare's
+# default (max-age=0, must-revalidate, with an ETag): the app shell, sw.js and every
+# latest.json are revalidated each time, a cheap 304 until a new deploy changes them.
+
+# Build output is content-hashed: it never changes under a name.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Layer data and textures are also read cross-origin: by the Android (Capacitor) app,
+# whose page is https://localhost, and by any other site pointing its *src settings here.
+/clouds/*
+  Access-Control-Allow-Origin: *
+/satellites/*
+  Access-Control-Allow-Origin: *
+/launches/*
+  Access-Control-Allow-Origin: *
+/storms/*
+  Access-Control-Allow-Origin: *
+/fires/*
+  Access-Control-Allow-Origin: *
+/lightning/*
+  Access-Control-Allow-Origin: *
+/events/*
+  Access-Control-Allow-Origin: *
+/snowice/*
+  Access-Control-Allow-Origin: *
+/smoke/*
+  Access-Control-Allow-Origin: *
+/tsunami/*
+  Access-Control-Allow-Origin: *
+/meteoalarm/*
+  Access-Control-Allow-Origin: *
+/ionosphere/*
+  Access-Control-Allow-Origin: *
+/winds/*
+  Access-Control-Allow-Origin: *
+/meteors/*
+  Access-Control-Allow-Origin: *
+/buoys/*
+  Access-Control-Allow-Origin: *
+
+# Cloud maps are named by their scan time, so they never change; latest.json does.
+/clouds/clouds-*
+  Cache-Control: public, max-age=604800, immutable
+
+# NASA imagery: fixed files, large.
+/textures/*
+  Cache-Control: public, max-age=2592000
+  Access-Control-Allow-Origin: *
+
+# Android TWA: Digital Asset Links (pnpm twa:assetlinks writes it).
+/.well-known/assetlinks.json
+  Access-Control-Allow-Origin: *
