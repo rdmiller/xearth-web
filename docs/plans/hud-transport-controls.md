@@ -281,7 +281,8 @@ No behaviour change in this step.
 ### 2. Transport semantics (`web/src/hotkeys.ts`)
 
 - `rewindSpeed(current)` / `forwardSpeed(current)`: the media-player ladders above.
-- `shortSpeed(speed)`: the rate chip's text (beside the existing `formatSpeed`).
+- `shortSpeed(speed)`: the rate chip's text (beside the existing `formatSpeed`); it comes
+  with the bar in phase 3.
 - `HotkeyContext` gains `jumpTo(date: Date)` and `stepTime(ms: number)`, implemented in
   `main.ts` with `clock.ts`, re-anchoring `clockStart` like `setSpeed`.
 - New hotkeys in the `Time` group (all currently free):
@@ -290,7 +291,7 @@ No behaviour change in this step.
   | --- | --- |
   | `;` / `'` | Step back / forward 1 hour (Shift: 1 day), repeating |
   | `Shift+,` / `Shift+.` | Rewind / fast-forward (media ladder) |
-  | `Shift+C` | Show the transport bar and open the picker |
+  | `Shift+C` | Show the transport bar and open the picker (phase 4) |
 
   `<` and `>` are bound today as aliases of `,` and `.`; they move to rewind and
   fast-forward. On layouts where Shift+`,` isn't `<`, the buttons still work.
@@ -355,7 +356,7 @@ xearth's `-time` flag worked.
 
 Each is its own PR, shippable alone.
 
-1. **Clock model.** `clock.ts` + tests; `main.ts` delegates to it; `jumpTo`/`stepTime` in
+1. **Clock model** (done). `clock.ts` + tests; `main.ts` delegates to it; `jumpTo`/`stepTime` in
    the hotkey context; the new step and rewind/forward hotkeys. *Keyboard-only users get
    everything except the picker.*
 2. **Hazard fade.** `hazardFade.ts` + tests; shader strengths; overlay alpha, labels and
