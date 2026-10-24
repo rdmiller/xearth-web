@@ -8,7 +8,8 @@
   "assets": {
     "directory": "./dist"
   },
-  // As set in the dashboard (Observability): each deploy would otherwise reset it.
+  // Workers logs and traces, every request, kept (the dashboard's Observability tab).
+  // Set here, since each deploy applies this file over the dashboard's settings.
   "observability": {
     "logs": {
       "enabled": true,
@@ -17,7 +18,7 @@
       "persist": true
     },
     "traces": {
-      "enabled": false,
+      "enabled": true,
       "head_sampling_rate": 1,
       "persist": true
     }
