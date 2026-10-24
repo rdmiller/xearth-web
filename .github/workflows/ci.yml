@@ -1,9 +1,10 @@
 name: CI
 
+# Pull requests here; pushes to main through the Deploy workflow, which runs this first
+# and publishes only if it passes.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
 
 jobs:
   pipeline:

@@ -61,6 +61,8 @@ describe('tsunami bulletins', () => {
     expect(tsunamiLabelled({ ...fresh, issued: '2026-10-21T10:30:00.000Z' }, NOW)).toBe(false);
     const warning = { ...SAND_POINT, category: 'warning' };
     expect(tsunamiShown(warning, NOW) && tsunamiLabelled(warning, NOW)).toBe(true);
+    // Past the pipeline's 48 h window: a stale copy, kept only because tsunami.gov was down.
+    expect(tsunamiShown({ ...warning, issued: '2026-10-19T22:00:00.000Z' }, NOW)).toBe(false);
   });
 
   it('reads as category, magnitude and region, then age and note', () => {

@@ -600,7 +600,7 @@ web/        Vite + TypeScript + WebGL2 app
   scripts/fetch-textures.mjs   downloads NASA Blue/Black Marble
 pipeline/   Python: GMGSI NetCDF → clouds/clouds-YYYYMMDDTHHMMZ.webp + latest.json;
             CelesTrak GP → satellites/latest.json (xearth_clouds.satellites)
-.github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages (and Cloudflare)
+.github/workflows/  CI, and an hourly build-and-deploy to GitHub Pages (and Cloudflare), after CI
 ```
 
 ## Running locally
@@ -695,6 +695,9 @@ cd .. && pnpm twa:assetlinks -- --fingerprint AA:BB:…            # public/.wel
   with one. If Google Play re-signs the app, add Play's fingerprint too (comma-separated).
 - The installed site also gets a service worker (`public/sw.js`): the app shell opens
   offline, hashed assets and textures are cached, and layer data is always fetched fresh.
+  Files that keep their name across builds (textures, `stars.json`, icons, the manifest,
+  `relief.webp`) come from the cache and are checked with the server behind it (a 304 when
+  unchanged), so a rebuilt one shows on the next load.
 - Bubblewrap downloads its own JDK 17 and Android SDK on first run if it can't use yours.
 - `twa-manifest.json` is the project file to commit; the generated Gradle project, builds
   and the keystore are gitignored. Keep the keystore safe: updates must be signed with it.
@@ -727,9 +730,11 @@ still runs the hourly pipeline; Cloudflare only serves the result.
 - **Hourly deploys:** Wrangler uploads only files whose hashes changed, so a run sends the new
   layer data (a few MB), not the whole site. Workers deploys have no monthly cap, unlike
   Pages' 500 Git builds.
-- **Without the secrets** the job's steps are skipped and GitHub Pages carries on alone.
-- A manual deploy from a local build: `cd web && pnpm build && npx wrangler@4 deploy`
-  (`npx wrangler@4 login` first).
+- **Without the secrets** the job runs `wrangler deploy --dry-run` on the unpacked artifact
+  (nothing is uploaded) and GitHub Pages carries on alone, so the first real deploy has
+  already run every step but the upload. Wrangler is pinned in the workflow (`WRANGLER`).
+- A manual deploy from a local build: `cd web && pnpm build && npx wrangler@4.151.3 deploy`
+  (`npx wrangler@4.151.3 login` first).
 - **Android:** to load data from Cloudflare, point `VITE_DATA_BASE` in `web/.env.android` at
   the Worker's URL.
 
@@ -1019,7 +1024,7 @@ into the webcast. So launch mode is built from what *is* published, and says whi
       QC flag is 3 or 4 (probably bad, bad) are dropped; real-time salinity especially has
       sensors that drift to nonsense. Profiles older than 30 days are pruned. With no store,
       it's rebuilt from the last 10 days, a day at a time (5–10 min, once). The deploy
-      workflow carries `web/public/buoys` between runs with actions/cache; Docker's volume
+      workflow carries every layer's folder between runs with actions/cache; Docker's volume
       keeps it anyway. A failed request is retried once after 20 s (the server returns an
       occasional 500); if Argo is down for a run, the buoys go out without floats, and the
       store is left as it was.

@@ -1,7 +1,8 @@
 # Build the site with a fresh cloud map and publish it to GitHub Pages, and to
 # Cloudflare once its secrets are set — on every push to main and once an hour.
 # GMGSI files land in NOAA's bucket about 35–45 minutes after the hour, so the
-# hourly run is scheduled at :50.
+# hourly run is scheduled at :50. CI runs first on the same commit, so neither a
+# push nor an hourly rebuild publishes code the tests reject.
 name: Deploy
 
 on:
@@ -21,8 +22,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
+    needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # To drop the previous run's copy of the layers cache.
+      actions: write
+    env:
+      # Every layer's folder (pipeline/xearth_clouds/run.py's JOBS), carried from one run to the
+      # next. Each job writes its files atomically, so one that fails (its feed down for the
+      # hour) leaves the last good files in place to publish again, as the Docker setup's data
+      # volume does, instead of the site going out without that layer.
+      LAYERS: |
+        web/public/satellites
+        web/public/launches
+        web/public/storms
+        web/public/fires
+        web/public/lightning
+        web/public/events
+        web/public/snowice
+        web/public/smoke
+        web/public/tsunami
+        web/public/meteoalarm
+        web/public/ionosphere
+        web/public/winds
+        web/public/meteors
+        web/public/buoys
+        web/public/clouds
     steps:
       - uses: actions/checkout@v4
 
@@ -31,27 +63,21 @@ jobs:
           python-version: '3.12'
       - run: pip install ./pipeline
 
-      # CelesTrak updates GP data every 2 h and refuses repeat downloads inside that
-      # window, so carry the last satellites/latest.json between runs; the pipeline
-      # only refetches when it is over 3 h old.
-      - name: Restore previous satellite elements
-        uses: actions/cache@v4
+      # Some jobs also read their own last output: CelesTrak updates GP data every 2 h and
+      # refuses repeat downloads inside that window (satellites refetch when over 3 h old),
+      # Launch Library 2 reuses pre-launch SupGP CelesTrak says hasn't changed, and
+      # buoys/argo.json is the store Argo profiles are kept in.
+      - name: Restore every layer from the last run
+        uses: actions/cache/restore@v4
         with:
-          path: web/public/satellites
-          key: satellites-${{ github.run_id }}
-          restore-keys: satellites-
+          path: ${{ env.LAYERS }}
+          key: layers-${{ github.run_id }}
+          restore-keys: layers-
       - name: Satellite elements from CelesTrak
         continue-on-error: true
         run: python -m xearth_clouds.satellites --out web/public/satellites
 
       # Launch Library 2's free tier allows ~15 requests an hour; this makes two.
-      # Pre-launch SupGP is reused from the cached file when CelesTrak says it hasn't changed.
-      - name: Restore previous launch data
-        uses: actions/cache@v4
-        with:
-          path: web/public/launches
-          key: launches-${{ github.run_id }}
-          restore-keys: launches-
       - name: Upcoming launches (Launch Library 2 + SpaceX pre-launch orbits)
         continue-on-error: true
         run: python -m xearth_clouds.launches --out web/public/launches
@@ -95,15 +121,8 @@ jobs:
       - name: Meteors, last 24 h (Global Meteor Network) and fireballs (NASA/JPL CNEOS)
         continue-on-error: true
         run: python -m xearth_clouds.meteors --out web/public/meteors
-      # Argo floats' latest profiles arrive a few hundred a day; buoys/argo.json is the
-      # store they're kept in, so carry it between runs (without it, the job rebuilds it
-      # from the last 10 days, which takes ~10 min).
-      - name: Restore previous Argo profiles
-        uses: actions/cache@v4
-        with:
-          path: web/public/buoys
-          key: buoys-${{ github.run_id }}
-          restore-keys: buoys-
+      # Argo floats' latest profiles arrive a few hundred a day; without the carried
+      # buoys/argo.json the job rebuilds it from the last 10 days, which takes ~10 min.
       - name: Buoys and their last 24 h (NOAA OSMC + NDBC, DART), and Argo floats
         continue-on-error: true
         run: python -m xearth_clouds.buoys --out web/public/buoys
@@ -116,9 +135,25 @@ jobs:
       - name: NASA textures (the cloud job uses Blue Marble as its clear-sky reference)
         run: node web/scripts/fetch-textures.mjs
       - name: Build cloud map from the newest GMGSI files (IR + visible by day)
-        # A NOAA outage shouldn't block a deploy; the page says "clouds unavailable".
+        # A NOAA outage shouldn't block a deploy; the last map is published again.
         continue-on-error: true
         run: python -m xearth_clouds --out web/public/clouds
+
+      # Caches can't be overwritten, so each run saves a new one and drops the one before:
+      # the repo keeps a single copy instead of an hourly pile of them.
+      - name: Save every layer for the next run
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.LAYERS }}
+          key: layers-${{ github.run_id }}
+      - name: Drop the previous runs' copies of the layers
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --key layers- --limit 100 --json id,key \
+            --jq '.[] | select(.key != "layers-${{ github.run_id }}") | .id' |
+            xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -147,30 +182,35 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # The same build on Cloudflare (Workers static assets; web/wrangler.jsonc). Skipped until
-  # the repo has the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets. Wrangler uploads
-  # only the files whose hashes changed, so an hourly run sends the new layer data, not 60 MB.
+  # The same build on Cloudflare (Workers static assets; web/wrangler.jsonc). Until the repo has
+  # the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets this is a dry run: the Pages
+  # artifact is unpacked and wrangler reads it, uploading nothing, so every step but the upload
+  # has run before the first real deploy. Wrangler uploads only the files whose hashes changed,
+  # so an hourly run sends the new layer data, not 60 MB.
   cloudflare:
     needs: build
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Pinned: a new wrangler reaches the deploy by a commit here, not on its own.
+      WRANGLER: wrangler@4.151.3
+      WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
-        if: env.CLOUDFLARE_API_TOKEN != ''
-      # The Pages artifact is web/dist as one tar.
+      # The Pages artifact is web/dist as one tar, artifact.tar.
       - uses: actions/download-artifact@v4
-        if: env.CLOUDFLARE_API_TOKEN != ''
         with:
           name: github-pages
-      - if: env.CLOUDFLARE_API_TOKEN != ''
-        run: mkdir -p web/dist && tar -xf artifact.tar -C web/dist
+      - run: mkdir -p web/dist && tar -xf artifact.tar -C web/dist && test -f web/dist/index.html
       - uses: actions/setup-node@v4
-        if: env.CLOUDFLARE_API_TOKEN != ''
         with:
           node-version: 24
       - name: Deploy to Cloudflare
         if: env.CLOUDFLARE_API_TOKEN != ''
-        run: npx --yes wrangler@4 deploy
+        run: npx --yes "$WRANGLER" deploy
+        working-directory: web
+      - name: Check the Cloudflare deploy (dry run until the secrets are set)
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: npx --yes "$WRANGLER" deploy --dry-run
         working-directory: web

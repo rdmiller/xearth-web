@@ -39,7 +39,12 @@ export function isTsunamiManifest(v: unknown): v is TsunamiManifest {
   return !!m && typeof m.generated === 'string' && Array.isArray(m.bulletins);
 }
 
-/** Alerts (warning, threat, advisory, watch) show for the bulletin window; statements for a day. */
+/**
+ * Alerts (warning, threat, advisory, watch) show for the bulletin window, the pipeline's 48 h,
+ * which also ends one carried over from an earlier run while tsunami.gov is down; statements
+ * for a day.
+ */
+const ALERT_HOURS = 48;
 const STATEMENT_HOURS = 24;
 /** Statements carry a label for this long, then just a marker. */
 const STATEMENT_LABEL_HOURS = 6;
@@ -58,7 +63,8 @@ export const TSUNAMI_COLOR: Record<string, string> = {
 const hoursSince = (iso: string | null, now: number) => (iso ? (now - Date.parse(iso)) / 3_600_000 : Infinity);
 
 export function tsunamiShown(b: TsunamiBulletin, now: number): boolean {
-  return isAlertCategory(b.category) || hoursSince(b.issued, now) <= STATEMENT_HOURS;
+  const hours = hoursSince(b.issued, now);
+  return isAlertCategory(b.category) ? !b.issued || hours <= ALERT_HOURS : hours <= STATEMENT_HOURS;
 }
 
 export function tsunamiLabelled(b: TsunamiBulletin, now: number): boolean {
