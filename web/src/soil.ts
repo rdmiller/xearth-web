@@ -12,8 +12,11 @@
 // brown when dry to blue when wet. The open top (0.70 or more) is real: the peat of the boreal
 // forests and the Amazon's and Congo's wetlands, where the soil is mostly water.
 //
-// GIBS leaves the ice sheets and open water transparent, so Antarctica, Greenland and the sea
-// stay as they are.
+// GIBS leaves the ice sheets and open water (the sea, big lakes) transparent, so Antarctica,
+// Greenland and the sea stay as they are. Frozen ground is not left out: on 2026-01-15 every
+// texel whose top soil layer was below 0 °C in L4's own soil temperature (126,002 of them, most
+// of Siberia and Canada) had a value, and the land seen north of 50°N was the same in January,
+// July and October.
 
 import { GIBS_BASE, newestDate } from './gibs';
 import { fetchField, reader, SST_H, SST_W } from './sst';
